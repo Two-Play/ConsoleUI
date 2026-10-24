@@ -1,0 +1,6 @@
+[package]
+name = "consoleui-core"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]

@@ -1,0 +1,12 @@
+[package]
+name = "consoleui"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+consoleui-core.workspace = true
+slint = "1.18.1"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+
+[build-dependencies]
+slint-build = "1.18.1"

@@ -1,0 +1,253 @@
+import { Theme } from "theme.slint";
+import { AppTile, NavAction } from "types.slint";
+import { Tile } from "tile.slint";
+
+export { AppTile, NavAction }
+
+export component AppWindow inherits Window {
+    title: "ConsoleUI";
+    preferred-width: 1280px;
+    preferred-height: 720px;
+    background: Theme.base;
+    forward-focus: keys;
+
+    in property <[AppTile]> tiles;
+    in property <int> focused: 0;
+    // Kurzer „Drück“-Effekt auf der fokussierten Kachel; setzt sich selbst zurück.
+    in-out property <bool> pulse: false;
+    in property <string> clock: "--:--";
+    in property <bool> show-fps: false;
+    in property <string> fps-text;
+
+    callback action(NavAction);
+    callback quit();
+
+    // Alle Maße skalieren mit der Fenstergröße (Referenz: 1920×1080).
+    property <float> s: max(0.4, min(root.width / 1920px, root.height / 1080px));
+    property <length> margin: 110px * s;
+    property <length> tile: 150px * s;
+    property <length> tile-focused: 230px * s;
+    property <length> gap: 20px * s;
+    property <length> row-y: 150px * s;
+    property <length> info-y: root.row-y + root.tile-focused + 56px * s;
+
+    property <AppTile> current: root.tiles[root.focused];
+    property <color> glow: root.current.accent;
+    animate glow {
+        duration: Theme.background-duration;
+        easing: ease-in-out;
+    }
+
+    Timer {
+        interval: Theme.pulse-duration;
+        running: root.pulse;
+        triggered => {
+            root.pulse = false;
+        }
+    }
+
+    keys := FocusScope {
+        width: 100%;
+        height: 100%;
+
+        key-pressed(event) => {
+            if (event.modifiers.control && (event.text == "q" || event.text == "Q")) {
+                root.quit();
+                return accept;
+            }
+            if (event.text == Key.LeftArrow || event.text == "a") {
+                root.action(NavAction.left);
+                return accept;
+            }
+            if (event.text == Key.RightArrow || event.text == "d") {
+                root.action(NavAction.right);
+                return accept;
+            }
+            if (event.text == Key.UpArrow || event.text == "w") {
+                root.action(NavAction.up);
+                return accept;
+            }
+            if (event.text == Key.DownArrow || event.text == "s") {
+                root.action(NavAction.down);
+                return accept;
+            }
+            if (event.text == Key.Return || event.text == Key.Space) {
+                root.action(NavAction.confirm);
+                return accept;
+            }
+            if (event.text == Key.Escape || event.text == Key.Backspace) {
+                root.action(NavAction.back);
+                return accept;
+            }
+            if (event.text == Key.Tab || event.text == "m") {
+                root.action(NavAction.menu);
+                return accept;
+            }
+            reject
+        }
+
+        // Hintergrund: Verlauf und Lichtschein in der Akzentfarbe der fokussierten App
+        Rectangle {
+            width: 100%;
+            height: 100%;
+            background: @linear-gradient(160deg, root.glow.darker(0.4) 0%, Theme.base 70%);
+        }
+
+        Rectangle {
+            x: root.width * 0.4;
+            y: -root.height * 0.45;
+            width: root.width * 0.95;
+            height: self.width;
+            background: @radial-gradient(circle, root.glow.with-alpha(0.45) 0%, transparent 65%);
+        }
+
+        // Top-Bar
+        Text {
+            x: root.margin;
+            y: 52px * s;
+            text: "Spiele";
+            color: Theme.text;
+            font-size: 26px * s;
+            font-weight: 700;
+        }
+
+        Text {
+            x: root.margin + 130px * s;
+            y: 52px * s;
+            text: "Medien";
+            color: Theme.text-dim;
+            font-size: 26px * s;
+            font-weight: 600;
+        }
+
+        clock-label := Text {
+            x: root.width - root.margin - self.width;
+            y: 52px * s;
+            text: root.clock;
+            color: Theme.text;
+            font-size: 26px * s;
+            font-weight: 600;
+        }
+
+        Rectangle {
+            width: 40px * s;
+            height: self.width;
+            x: clock-label.x - self.width - 24px * s;
+            y: clock-label.y + (clock-label.height - self.height) / 2;
+            border-radius: self.width / 2;
+            background: @linear-gradient(135deg, #7c5cff 0%, #00d4ff 100%);
+        }
+
+        // Kachelreihe: Die fokussierte Kachel bleibt links stehen, die Reihe gleitet darunter durch.
+        for app[i] in root.tiles: Tile {
+            property <length> base: i == root.focused ? root.tile-focused : root.tile;
+            property <length> size: root.pulse && i == root.focused ? self.base * 0.94 : self.base;
+
+            data: app;
+            focused: i == root.focused;
+            width: self.size;
+            height: self.size;
+            x: root.margin + (i - root.focused) * (root.tile + root.gap) + (i > root.focused ? root.tile-focused - root.tile : 0px) + (self.base - self.size) / 2;
+            y: root.row-y + (self.base - self.size) / 2;
+
+            animate x, y, width, height {
+                duration: Theme.focus-duration;
+                easing: ease-out-quart;
+            }
+        }
+
+        // Infos zur fokussierten App
+        Text {
+            x: root.margin;
+            y: root.info-y;
+            text: root.current.kind;
+            color: Theme.text-dim;
+            font-size: 18px * s;
+            font-weight: 600;
+            letter-spacing: 3px * s;
+        }
+
+        Text {
+            x: root.margin;
+            y: root.info-y + 28px * s;
+            text: root.current.title;
+            color: Theme.text;
+            font-size: 64px * s;
+            font-weight: 800;
+        }
+
+        Text {
+            x: root.margin;
+            y: root.info-y + 112px * s;
+            text: root.current.subtitle;
+            color: Theme.text-dim;
+            font-size: 26px * s;
+        }
+
+        play-button := Rectangle {
+            x: root.margin;
+            y: root.info-y + 176px * s;
+            width: 220px * s;
+            height: 64px * s;
+            border-radius: self.height / 2;
+            background: Theme.text;
+
+            Text {
+                width: 100%;
+                height: 100%;
+                text: root.current.action-label;
+                color: Theme.base;
+                font-size: 24px * s;
+                font-weight: 700;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+
+        Rectangle {
+            x: play-button.x + play-button.width + 20px * s;
+            y: play-button.y;
+            width: play-button.height;
+            height: play-button.height;
+            border-radius: self.height / 2;
+            background: Theme.surface;
+
+            Text {
+                width: 100%;
+                height: 100%;
+                text: "•••";
+                color: Theme.text;
+                font-size: 20px * s;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+
+        // Steuerungshinweise
+        Text {
+            x: root.margin;
+            y: root.height - 64px * s;
+            text: "◀ ▶  Navigieren        ⏎  Auswählen        Strg+Q  Beenden";
+            color: Theme.text-dim;
+            font-size: 18px * s;
+        }
+
+        if root.show-fps: Rectangle {
+            x: 12px;
+            y: 12px;
+            width: fps-label.preferred-width + 16px;
+            height: 26px;
+            border-radius: 6px;
+            background: #000000b3;
+
+            fps-label := Text {
+                x: 8px;
+                height: 100%;
+                text: root.fps-text;
+                color: #7cffb2;
+                font-size: 13px;
+                vertical-alignment: center;
+            }
+        }
+    }
+}
