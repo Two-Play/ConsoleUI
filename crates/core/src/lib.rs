@@ -1,7 +1,9 @@
 //! Plattformunabhängige Logik der ConsoleUI-Shell, ohne UI-Abhängigkeiten.
 
 pub mod accent;
+pub mod bluetooth;
 pub mod desktop;
+pub mod fakenet;
 mod grid;
 mod history;
 mod icons;
@@ -9,6 +11,8 @@ pub mod input;
 pub mod launch;
 mod library;
 mod nav;
+pub mod netpages;
+pub mod network;
 pub mod osk;
 pub mod ownership;
 pub mod running;
@@ -19,6 +23,7 @@ pub mod status;
 pub mod steam;
 pub mod system;
 pub mod vdf;
+pub mod wifi;
 pub mod xdg;
 
 pub use grid::Grid;

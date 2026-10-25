@@ -61,4 +61,43 @@ export struct SettingRow {
     label: string,
     description: string,
     value: string,
+    // Öffnet eine Unterseite (WLAN, Bluetooth) statt den Wert zu ändern
+    opens-page: bool,
+}
+
+// Zeile der WLAN- bzw. Bluetooth-Seite
+export struct NetRow {
+    // Symbol als Text (Bluetooth-Geräteart, Ein/Aus)
+    symbol: string,
+    title: string,
+    detail: string,
+    // Rechts, z. B. „An“
+    value: string,
+    // WLAN-Signal 1–4, sonst 0
+    bars: int,
+    secured: bool,
+    // Controller hervorheben
+    gamepad: bool,
+    // Verbunden
+    active: bool,
+    // Auftrag läuft (Verbinden, Koppeln …)
+    busy: bool,
+    // Wartet auf den zweiten Druck zum Entfernen
+    armed: bool,
+}
+
+// Unterseite „WLAN“ oder „Bluetooth“ der Einstellungen, inklusive Passwort-Eingabe
+export struct NetView {
+    open: bool,
+    title: string,
+    status: string,
+    rows: [NetRow],
+    focused: int,
+    empty-title: string,
+    empty-text: string,
+    password-open: bool,
+    password-ssid: string,
+    password-text: string,
+    keys: [KeyCap],
+    key-focused: int,
 }

@@ -25,6 +25,7 @@ cargo run --release -- --windowed --dummy --tiles 50 --bench   # perf benchmark,
 cargo run -p consoleui-core --example list_library   # print what discovery finds on this machine
 cargo run --release -- --windowed --start library --snapshot /tmp/lib.png   # render own window to PNG and exit
 cargo run --release -- --windowed --start search --query red --snapshot /tmp/search.png
+cargo run --release -- --windowed --dummy --fake-network --start settings --actions "down,down,down,down,confirm" --snapshot /tmp/wifi.png
 cargo test --workspace
 cargo test -p consoleui-core carousel   # single test / filter
 cargo clippy --workspace --all-targets -- -D warnings  # must pass (Definition of Done)
@@ -35,7 +36,10 @@ Use `--snapshot` to check UI changes visually instead of screenshotting the desk
 can pick up the user's other windows. Set `XDG_CONFIG_HOME` to a scratch directory when scripted actions
 touch the settings page (otherwise they overwrite the user's `~/.config/consoleui/settings.json`), and
 keep in mind that UI sounds really play through the speakers unless `"sounds": false` is set there.
-Snapshot, `--actions` and `--bench` start only after the boot screen is gone (library loaded + 1.2 s).
+Snapshot, `--actions` and `--bench` start only after the boot screen is gone (library loaded + 1.2 s);
+with `--actions` the snapshot waits until the script is done (+0.7 s).
+The WLAN/Bluetooth pages really change system state on ✕/□/≡ (connect, radio, discovery, pairing).
+Use `--fake-network` for scripted tests; without it, only opening the pages is read-only.
 
 Console session (see `docs/spike-gamescope.md`; gamescope runs in Steam mode `-e` and the shell acts as Steam):
 
@@ -85,6 +89,12 @@ Cargo workspace (edition 2024, `default-members` = the shell):
     `steam::running_app_id()` (reads `~/.steam/registry.vdf`) for Steam games, with a minimum hold time.
   - `settings.rs` (persisted `Settings`, the rows of the settings page), `sound.rs` (synthesized UI sounds
     as raw PCM), `input::evdev` (key codes/axis normalization for the exclusive grab).
+  - `wifi.rs` / `bluetooth.rs`: D-Bus-free models for NetworkManager/BlueZ (merge/sort networks, AP
+    security flags, device kind from `Icon`/Class/name, visible devices). `network.rs`: `Request`,
+    `Response`, the `Backend` trait and `spawn` (backend thread, coalesces refreshes); `fakenet.rs` is the
+    simulated backend (`--fake-network`); `netpages.rs` holds the WLAN/Bluetooth sub-page state (focus,
+    password entry via `OnScreenKeyboard::password()` with a Shift layer, remove confirmation, busy
+    requests) and builds plain view rows.
   - `status.rs` reads network/battery from sysfs; `system.rs` wraps `wpctl` (volume) and
     `systemctl suspend|reboot|poweroff`; `accent::from_rgba` derives tile colors from covers.
 - `crates/shell` (binary `consoleui`): Slint UI plus glue.
@@ -123,6 +133,10 @@ Cargo workspace (edition 2024, `default-members` = the shell):
     for the main window and the overlay window separately (globals are per component instance).
   - `ui/settings.slint`, `ui/boot.slint`, `ui/toast.slint`: settings page, boot screen, toast.
   - `ui/glyph.slint`: `ButtonGlyph` (button symbol per `ControllerStyle`) and `HintBar`; Rust fills `hints`.
+  - `src/dbus.rs`: real WLAN/Bluetooth backend (zbus blocking API on the system bus, own BlueZ pairing
+    agent); only ever runs on the network thread. `src/network.rs`: glue between `NetPages`, the thread
+    and the `NetView` Slint struct (`ui/network.slint`, shown over the settings page while a sub-page is
+    open). `main.rs` polls responses every 100 ms (`Shell::poll_network`); results become toasts.
   - `src/perf.rs`: frame stats from Slint's rendering notifier. `src/cover.rs`: procedural
     placeholder covers. `src/options.rs`: hand-rolled CLI parsing.
 

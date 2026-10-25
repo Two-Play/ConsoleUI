@@ -19,7 +19,8 @@ Für die Entwicklung:
   --actions <LISTE>   Eingaben simulieren, z. B. \"right,confirm,wait:3000,guide\"
                       (up, down, left, right, confirm, back, menu, search, secondary,
                       prev-tab, next-tab, guide, wait:<ms>)
-  --dummy-launch <BEFEHL>  Dummy-Einträge starten diesen Befehl (z. B. glxgears)";
+  --dummy-launch <BEFEHL>  Dummy-Einträge starten diesen Befehl (z. B. glxgears)
+  --fake-network      WLAN und Bluetooth simulieren statt NetworkManager/BlueZ zu fragen";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum StartScreen {
@@ -50,6 +51,7 @@ pub struct Options {
     pub snapshot: Option<PathBuf>,
     pub actions: Vec<ScriptStep>,
     pub dummy_launch: Option<String>,
+    pub fake_network: bool,
 }
 
 impl Default for Options {
@@ -66,6 +68,7 @@ impl Default for Options {
             snapshot: None,
             actions: Vec::new(),
             dummy_launch: None,
+            fake_network: false,
         }
     }
 }
@@ -80,6 +83,7 @@ impl Options {
                 "--dummy" => options.dummy = true,
                 "--fps" => options.show_fps = true,
                 "--bench" => options.bench = true,
+                "--fake-network" => options.fake_network = true,
                 "-h" | "--help" => options.help = true,
                 "--tiles" => {
                     let value = value(&mut args, "--tiles")?;
@@ -153,8 +157,8 @@ mod tests {
 
     #[test]
     fn parses_all_flags() {
-        let options = parse(&["--windowed", "--dummy", "--tiles", "50", "--fps", "--bench"]).unwrap();
-        assert!(options.windowed && options.dummy && options.show_fps && options.bench);
+        let options = parse(&["--windowed", "--dummy", "--tiles", "50", "--fps", "--bench", "--fake-network"]).unwrap();
+        assert!(options.windowed && options.dummy && options.show_fps && options.bench && options.fake_network);
         assert_eq!(options.tiles, 50);
     }
 
