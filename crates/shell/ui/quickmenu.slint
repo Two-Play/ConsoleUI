@@ -68,7 +68,9 @@ export component QuickMenu inherits Rectangle {
             height: root.card * 0.82;
             border-radius: 18px * root.s;
             background: item.armed ? #ff5a5a : self.is-focused ? Theme.accent : Theme.surface;
-            animate y, background { duration: Theme.focus-duration; easing: ease-out-quart; }
+            // Only the lift animates: a fading background with the text color switched at once
+            // left the card that loses the focus as a pale "ghost" for a moment.
+            animate y { duration: Theme.focus-duration; easing: ease-out-quart; }
 
             Text {
                 x: 18px * root.s;
