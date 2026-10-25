@@ -395,6 +395,37 @@ Deck o. Ä.) sollten wir später den Skia-Renderer vergleichen (Story 6.5).
 - Lösung: `Gamescope::focus_app` setzt ihn auf das Fenster der App, falls er nicht in einem
   ihrer Fenster oder Unterfenster liegt (läuft alle 500 ms mit `restore_keyboard_focus`).
 
+### Sprint 7 – Performance & Parallax (umgesetzt: 6.5 Rest, 6.3, Icon-Fehler)
+
+- **Heroes im Hintergrund (6.5):** `src/hero.rs` dekodiert die Steam-Heroes (bis 3840 px breit) auf
+  zwei Worker-Threads und verkleinert sie auf höchstens 1920×1080. Das alte Bild bleibt stehen, bis
+  das neue fertig ist, dann blenden die beiden Ebenen über. Die Nachbarn der fokussierten Kachel
+  (±1, +2, in der Bibliothek auch die Zeile darüber/darunter) werden vorab geladen, veraltete
+  Aufträge verfallen beim nächsten Fokuswechsel, der Cache hält die letzten 12. Abgeholt wird mit
+  einem `Timer::single_shot`, der sich nur bei offenen Aufträgen neu plant.
+- **Parallaxe (6.3):** `ui/hero.slint` (`HeroLayer`) ist 6 % größer als das Fenster und wandert mit
+  der Fokusspalte um bis zu 3 % zur Gegenseite; beim Einblenden gleitet das Bild aus 5 % Zoom zurück
+  (1,5 s). Beides animiert nur nach einer Änderung, ein ruhender Bildschirm zeichnet nicht neu. Mit
+  „Animationen aus“ sind die Dauern 0 und die Verschiebung ist 0.
+- **Icons ohne Dateiendung:** `consoleui_core::image_format::sniff` erkennt PNG, JPEG (Signatur) und
+  SVG (Text) am Dateianfang; `tiles::load_icon` lädt damit z. B. `~/AppImages/.icons/designcraft`
+  (alle sieben AppImage-Einträge zeigen jetzt ihr Icon statt des Buchstabens).
+- **Benchmark:** `--bench` gibt zusätzlich den größten Frameabstand und die längste
+  Eingabeverarbeitung im UI-Thread aus. Messung echte Bibliothek, Home, 4 Läufe abwechselnd
+  (Rechner wenig belastet):
+
+  | | vorher | nachher |
+  |---|---|---|
+  | Ø fps | 71–108 | 101–110 |
+  | Renderzeit max | 14–52 ms | 14–20 ms |
+  | max Frameabstand | 19–62 ms | 17–24 ms |
+  | längste Eingabe im UI-Thread | 12–25 ms | 0,06–0,12 ms |
+
+  Unter starker Last (andere Builds, Load ≈ 32) waren es vorher bis 730 ms im UI-Thread, nachher
+  höchstens 7 ms.
+- **Nicht getestet:** die Parallaxe in Bewegung (Snapshots zeigen nur den Endzustand), 4K-Ausgabe
+  (dort ist ein 1920er-Hero etwas weicher).
+
 ## Risiken / offene Fragen
 
 - **gamescope-Fokussteuerung** ist kaum dokumentiert und auf XWayland bzw. Steam ausgelegt → deshalb Spike 0.3 früh einplanen. Falls das nicht klappt, wird Epic 7 wichtiger.

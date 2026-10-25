@@ -2,7 +2,6 @@
 //! zur UI (Hauptfenster, in gamescope zusätzlich Overlay-Fenster und Fenstersteuerung).
 
 use std::cell::Cell;
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -24,6 +23,7 @@ use slint::{ComponentHandle, Image, ModelRc, VecModel};
 use crate::audio::Audio;
 use crate::context::{ContextAction, ContextMenu, ContextOutcome, EntryState};
 use crate::gamescope::{Gamescope, x11_window_id};
+use crate::hero::Heroes;
 use crate::loader::Library;
 use crate::network::Network;
 use crate::quick::{ForegroundApp, QuickAction, QuickMenu, QuickOutcome};
@@ -109,10 +109,8 @@ pub struct Shell {
     collection_path: Option<PathBuf>,
     /// Offenes Kontextmenü für den fokussierten Eintrag
     context: Option<ContextMenu>,
-    /// Hero-Bilder werden erst beim Fokussieren geladen und dann behalten.
-    heroes: HashMap<String, Image>,
-    /// Eintrag, dessen Hero gerade angezeigt wird (verhindert unnötiges Überblenden)
-    hero_entry: Option<String>,
+    /// Hero-Bilder, im Hintergrund dekodiert und begrenzt zwischengespeichert
+    heroes: Heroes,
 
     running: Vec<Running>,
     next_app_id: u32,
@@ -211,8 +209,7 @@ impl Shell {
             collection: Collection::default(),
             collection_path: None,
             context: None,
-            heroes: HashMap::new(),
-            hero_entry: None,
+            heroes: Heroes::new(ui),
             running: Vec::new(),
             next_app_id: FIRST_DESKTOP_APP_ID,
             foreground: None,
@@ -243,7 +240,7 @@ impl Shell {
         self.history_path = library.history_path;
         self.collection = library.collection;
         self.collection_path = library.collection_path;
-        self.hero_entry = None;
+        self.heroes.invalidate();
         self.refresh(ui);
     }
 
@@ -750,31 +747,62 @@ impl Shell {
         self.update_hints(ui);
     }
 
-    /// Lädt das Hero-Bild in die gerade unsichtbare Ebene und blendet dann um.
+    /// Blendet den Hero des fokussierten Eintrags ein (sobald er dekodiert ist), lädt die
+    /// Nachbarn vorab und verschiebt den Hintergrund leicht mit dem Fokus (Parallaxe, Story 6.3).
     fn show_hero(&mut self, ui: &AppWindow) {
-        let index = self.focused_entry();
-        let id = index.map(|i| self.entries[i].id.clone());
-        if id == self.hero_entry {
-            return;
-        }
-        let hero = index.and_then(|i| self.hero(i)).unwrap_or_default();
-        self.hero_entry = id;
-        let front_a = !ui.get_hero_front_a();
-        if front_a {
-            ui.set_hero_a(hero);
-        } else {
-            ui.set_hero_b(hero);
-        }
-        ui.set_hero_front_a(front_a);
+        let layout = self.focus_layout(ui);
+        let entry = self.focused_entry().map(|i| &self.entries[i]);
+        let prefetch = layout
+            .map(|(pos, len, row)| {
+                let offsets = [1, -1, row as isize, -(row as isize), 2];
+                offsets
+                    .iter()
+                    .filter_map(|&d| pos.checked_add_signed(d).filter(|&p| p < len && p != pos))
+                    .filter_map(|p| self.entry_at(p))
+                    .filter_map(|i| {
+                        let e = &self.entries[i];
+                        e.artwork.hero.clone().map(|path| (e.id.clone(), path))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        self.heroes.show(entry.map(|e| e.id.as_str()), entry.and_then(|e| e.artwork.hero.as_deref()), prefetch);
+
+        let parallax = match layout {
+            Some((pos, len, row)) if self.settings.animations => {
+                let (col, cols) = if row < len { (pos % row.max(1), row) } else { (pos, len) };
+                if cols > 1 { col as f32 / (cols - 1) as f32 * 2.0 - 1.0 } else { 0.0 }
+            }
+            _ => 0.0,
+        };
+        ui.set_hero_parallax(parallax);
     }
 
-    fn hero(&mut self, index: usize) -> Option<Image> {
-        let entry = self.entries.get(index)?;
-        let path = entry.artwork.hero.as_deref()?;
-        if !self.heroes.contains_key(&entry.id) {
-            self.heroes.insert(entry.id.clone(), tiles::load(path)?);
+    /// Fokus auf dem aktuellen Bildschirm: (Position, Anzahl Kacheln, Kacheln pro Zeile).
+    fn focus_layout(&self, ui: &AppWindow) -> Option<(usize, usize, usize)> {
+        match self.screen {
+            Screen::Home => Some((self.home.focused(), self.home_len(), self.home_len())),
+            Screen::Library => {
+                Some((self.grid.focused(), self.library.len(), ui.get_library_columns().max(1) as usize))
+            }
+            Screen::Search => Some((self.result_row.focused(), self.results.len(), self.results.len())),
+            Screen::Settings => None,
         }
-        self.heroes.get(&entry.id).cloned()
+    }
+
+    /// Index in `entries` der Kachel an Position `pos` des aktuellen Bildschirms.
+    fn entry_at(&self, pos: usize) -> Option<usize> {
+        match self.screen {
+            Screen::Home => (pos < self.tiles.len().min(HOME_COUNT)).then_some(pos),
+            Screen::Library => self.library.get(pos).copied(),
+            Screen::Search => self.results.get(pos).copied(),
+            Screen::Settings => None,
+        }
+    }
+
+    /// Bild für den Startbildschirm: der Hero, falls schon dekodiert, sonst das Cover.
+    fn launch_image(&self, index: usize) -> Image {
+        self.heroes.cached(&self.entries[index].id).unwrap_or_else(|| self.tiles[index].cover.clone())
     }
 
     /// Hinweisleiste unten, passend zu Bildschirm und Auswahl.
@@ -1033,11 +1061,10 @@ impl Shell {
             return;
         }
 
-        let hero = self.hero(index);
+        ui.set_launch_image(self.launch_image(index));
         let entry = &self.entries[index];
         let tile = &self.tiles[index];
         ui.set_launch_title(tile.title.clone());
-        ui.set_launch_image(hero.unwrap_or_else(|| tile.cover.clone()));
         ui.set_launch_accent(tile.accent);
 
         let now = Instant::now();
@@ -1087,9 +1114,8 @@ impl Shell {
         }) else {
             return;
         };
-        let hero = self.hero(index);
         ui.set_launch_title(self.tiles[index].title.clone());
-        ui.set_launch_image(hero.unwrap_or_else(|| self.tiles[index].cover.clone()));
+        ui.set_launch_image(self.launch_image(index));
         ui.set_launch_accent(self.tiles[index].accent);
         ui.set_launch_status("läuft".into());
         ui.set_launching(true);

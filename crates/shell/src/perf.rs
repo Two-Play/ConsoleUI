@@ -6,11 +6,15 @@ pub struct Sample {
     pub frames: u32,
     pub busy: Duration,
     pub worst: Duration,
+    /// Größter Abstand zwischen zwei Frame-Starts (zeigt auch Arbeit außerhalb des Renderns,
+    /// z. B. Bilddekodierung im UI-Thread)
+    pub worst_gap: Duration,
 }
 
 impl Sample {
-    fn add(&mut self, frame: Duration) {
+    fn add(&mut self, frame: Duration, gap: Option<Duration>) {
         self.frames += 1;
+        self.worst_gap = self.worst_gap.max(gap.unwrap_or_default());
         self.busy += frame;
         self.worst = self.worst.max(frame);
     }
@@ -25,6 +29,7 @@ impl Sample {
 #[derive(Default)]
 pub struct FrameStats {
     frame_start: Option<Instant>,
+    last_start: Option<Instant>,
     current: Sample,
     total: Sample,
 }
@@ -37,8 +42,9 @@ impl FrameStats {
     pub fn frame_finished(&mut self) {
         if let Some(start) = self.frame_start.take() {
             let frame = start.elapsed();
-            self.current.add(frame);
-            self.total.add(frame);
+            let gap = self.last_start.replace(start).map(|last| start - last);
+            self.current.add(frame, gap);
+            self.total.add(frame, gap);
         }
     }
 
@@ -48,6 +54,7 @@ impl FrameStats {
 
     pub fn reset_total(&mut self) {
         self.total = Sample::default();
+        self.last_start = None;
     }
 
     pub fn total(&self) -> Sample {
@@ -69,13 +76,15 @@ pub fn format_second(sample: &Sample) -> String {
     )
 }
 
-pub fn print_bench_summary(tiles: usize, steps: usize, elapsed: Duration, total: Sample) {
+pub fn print_bench_summary(tiles: usize, steps: usize, elapsed: Duration, total: Sample, worst_step: Duration) {
     let secs = elapsed.as_secs_f64().max(f64::EPSILON);
     println!("Benchmark: {tiles} Kacheln, {steps} Schritte in {secs:.1} s");
     println!(
-        "  Ø {:.1} fps | Renderzeit Ø {:.2} ms | max {:.2} ms",
+        "  Ø {:.1} fps | Renderzeit Ø {:.2} ms | max {:.2} ms | max Frameabstand {:.1} ms",
         total.frames as f64 / secs,
         ms(total.average()),
-        ms(total.worst)
+        ms(total.worst),
+        ms(total.worst_gap)
     );
+    println!("  längste Eingabeverarbeitung im UI-Thread: {:.2} ms", ms(worst_step));
 }

@@ -8,6 +8,7 @@ pub mod fakenet;
 mod grid;
 mod history;
 mod icons;
+pub mod image_format;
 pub mod input;
 pub mod launch;
 mod library;

@@ -21,7 +21,8 @@ Rust is installed via rustup; in non-login shells `~/.cargo/bin` may be missing 
 cargo run -- --windowed            # run the shell in a window (default: fullscreen)
 cargo run -- --windowed --fps      # with FPS / render-time overlay
 cargo run -- --windowed --dummy    # made-up entries instead of the real Steam/desktop library
-cargo run --release -- --windowed --dummy --tiles 50 --bench   # perf benchmark, prints results and exits
+cargo run --release -- --windowed --dummy --tiles 50 --bench   # perf benchmark (fps, render time, max frame gap,
+                                                               # slowest input step on the UI thread), then exits
 cargo run -p consoleui-core --example list_library   # print what discovery finds on this machine
 cargo run --release -- --windowed --start library --snapshot /tmp/lib.png   # render own window to PNG and exit
 cargo run --release -- --windowed --start search --query red --snapshot /tmp/search.png
@@ -40,6 +41,8 @@ Snapshot, `--actions` and `--bench` start only after the boot screen is gone (li
 with `--actions` the snapshot waits until the script is done (+0.7 s).
 The WLAN/Bluetooth pages really change system state on ✕/□/≡ (connect, radio, discovery, pairing).
 Use `--fake-network` for scripted tests; without it, only opening the pages is read-only.
+A scratch `XDG_DATA_HOME` (to keep the history untouched) also hides `~/.local/share/applications`;
+prepend `$HOME/.local/share` to `XDG_DATA_DIRS` to still see those entries.
 
 Console session (see `docs/spike-gamescope.md`; gamescope runs in Steam mode `-e` and the shell acts as Steam):
 
@@ -111,12 +114,19 @@ Cargo workspace (edition 2024, `default-members` = the shell):
   - `src/shell.rs`: `Shell` owns entries plus a parallel `tiles` vector, all `running` apps (each with a
     gamescope app ID, a stop handle and an `Owner`), the `foreground` app, the three tile models (home =
     `home_entries` from `home_view` + library tile, library view, search results), the `Collection`,
-    the current `Screen`, focus, history, the hero cache, the tracked running app, the open context menu
+    the current `Screen`, focus, history, the hero loader, the tracked running app, the open context menu
     and the quit confirmation. `Shell::apply(action)` is the single entry point for input; it dispatches
     by screen and ends with `sync()` (screen, focus, hero, hints). `refresh()` rebuilds the models after a launch, an app exit or a re-sort. The hero background uses two
     image layers (`hero-a`/`hero-b` + `hero-front-a`) for crossfades; a launch moves the entry to index 0
     under the fullscreen launch overlay.
+  - `src/hero.rs`: `Heroes` decodes hero images on two worker threads (downscaled to max 1920×1080,
+    LRU cache of 12, neighbours of the focused tile prefetched, stale jobs dropped). A self-stopping
+    `Timer::single_shot` chain polls results only while jobs are open; the old hero stays until the new
+    one is ready, then the layers flip. `ui/hero.slint` (`HeroLayer`): parallax (`hero-parallax` -1…1,
+    from the focused column, 0 when animations are off) and a settle-zoom on fade-in; both animate only
+    after a change, so a static screen does not redraw.
   - `src/tiles.rs`: `AppEntry` → `AppTile` (loads cover, icon and logo, overrides the accent from the cover).
+    Icons that Slint cannot load (no file extension) are sniffed with `consoleui_core::image_format`.
   - `src/loader.rs`: background thread that discovers the library and decodes covers/logos with the
     `image` crate into `SharedPixelBuffer`s (Slint `Image`s are created on the UI thread in `tiles.rs`);
     `main.rs` polls the channel, calls `Shell::set_library` and then hides the boot screen.
