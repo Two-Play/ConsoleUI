@@ -120,6 +120,11 @@ impl Policy {
         events
     }
 
+    /// Whether the window has shown content (committed a buffer) yet.
+    pub fn is_visible(&self, id: WindowId) -> bool {
+        self.windows.iter().any(|w| w.id == id && w.visible)
+    }
+
     pub fn set_title(&mut self, id: WindowId, title: &str) {
         if let Some(window) = self.window_mut(id) {
             title.clone_into(&mut window.title);

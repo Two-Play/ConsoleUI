@@ -340,11 +340,12 @@ impl State {
     pub fn window_committed(&mut self, window: &Window) {
         let Some(surface) = window.wl_surface() else { return };
         let has_buffer = with_renderer_surface_state(&surface, |state| state.buffer().is_some()).unwrap_or(false);
-        if has_buffer {
-            let events = self.policy.show(Self::window_id(window));
-            if !events.is_empty() {
-                self.after_policy_change(events);
-            }
+        let id = Self::window_id(window);
+        if has_buffer && !self.policy.is_visible(id) {
+            // Apply the policy even without events: the shell's first buffer changes no front
+            // window, but its window only now becomes the keyboard focus target.
+            let events = self.policy.show(id);
+            self.after_policy_change(events);
         }
     }
 

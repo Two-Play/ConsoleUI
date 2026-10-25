@@ -574,6 +574,11 @@ changed the least code).
     glxgears launched through XWayland, mapped to its app and shown fullscreen, focus went to the shell
     for the quick menu and back to the game. ("Unable to become drm master" is logged but harmless.)
   - 128 core + 10 compositor + 8 shell tests, clippy, `cargo fmt --check` (in the dev container).
+- **Bug found by hand in the VM:** the keyboard did not reach the shell on `--drm` (the pointer did).
+  The shell's first buffer changed no front window, so the policy was not re-applied and the shell
+  never got keyboard focus; nested runs hid it because a resize re-applied the policy, and the tests
+  used `--actions` instead of real keys. Fixed in `State::window_committed`; verified with keys injected
+  through QMP `send-key`. `dev/vm.sh try` now runs compositor + shell in the VM with one command.
 - **Not tested:** VT switching and hotplug on DRM, real games, Steam, real gamepad, HiDPI, other
   keyboard layouts, the login session through a display manager.
 - **Known gaps (next stories):** toasts are not visible over a running app and the quick menu shows the
