@@ -1,0 +1,16 @@
+#!/bin/sh
+# ConsoleUI as a console session on its own compositor (Epic 7, crates/compositor) instead of
+# gamescope: DRM/KMS + libinput + libseat (logind), the shell as fullscreen client, XWayland for
+# games. When the shell exits, the session ends.
+#
+# Environment variables:
+#   CONSOLEUI_BIN              path of the shell (default: /usr/local/bin/consoleui)
+#   CONSOLEUI_COMPOSITOR_BIN   path of the compositor (default: /usr/local/bin/consoleui-compositor)
+#   CONSOLEUI_COMPOSITOR_ARGS  extra compositor options, e.g. "--no-xwayland"
+#   RUST_LOG                   compositor log level, e.g. "debug" (default: info)
+set -eu
+
+bin="${CONSOLEUI_BIN:-/usr/local/bin/consoleui}"
+compositor="${CONSOLEUI_COMPOSITOR_BIN:-/usr/local/bin/consoleui-compositor}"
+# shellcheck disable=SC2086 # The options are meant to be split into words.
+exec "$compositor" --drm ${CONSOLEUI_COMPOSITOR_ARGS:-} -- "$bin" "$@"

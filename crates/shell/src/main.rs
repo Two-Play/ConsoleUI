@@ -11,6 +11,7 @@ use consoleui_core::Action;
 use slint::{RenderingState, Rgba8Pixel, SharedPixelBuffer, Timer, TimerMode};
 
 mod audio;
+mod compositor;
 mod context;
 mod cover;
 mod dbus;
@@ -48,6 +49,8 @@ const LOADER_POLL: Duration = Duration::from_millis(30);
 const WATCH_INTERVAL: Duration = Duration::from_millis(500);
 /// How often responses of the network thread (Wi-Fi/Bluetooth) are collected
 const NETWORK_POLL: Duration = Duration::from_millis(100);
+/// How often messages of our own compositor are collected
+const COMPOSITOR_POLL: Duration = Duration::from_millis(50);
 
 fn main() -> Result<(), Box<dyn Error>> {
     let options = match Options::parse(std::env::args().skip(1)) {
@@ -81,16 +84,18 @@ fn main() -> Result<(), Box<dyn Error>> {
     });
     let boot_started = Instant::now();
 
-    // In the gamescope session (Steam mode) the shell controls the windows itself and shows the
-    // quick menu as its own overlay window.
-    let gamescope = match gamescope::Gamescope::connect() {
+    // Inside our own compositor (Epic 7) the control socket decides what is in front. In the
+    // gamescope session (Steam mode) the shell controls the windows itself and shows the quick
+    // menu as its own overlay window.
+    let compositor = compositor::Compositor::connect();
+    let gamescope = match compositor.is_none().then(gamescope::Gamescope::connect).flatten() {
         Some(control) => {
             Some(GamescopeUi::new(control, OverlayWindow::new()?, NotificationWindow::new()?))
         }
         None => None,
     };
     let overlay = gamescope.as_ref().map(|g| g.overlay.as_weak());
-    let shell = Rc::new(RefCell::new(Shell::new(&ui, gamescope, settings, settings_path)));
+    let shell = Rc::new(RefCell::new(Shell::new(&ui, gamescope, compositor, settings, settings_path)));
     if let Some(overlay) = overlay.and_then(|o| o.upgrade()) {
         overlay.on_action({
             let ui = ui.as_weak();
@@ -204,6 +209,17 @@ fn main() -> Result<(), Box<dyn Error>> {
         move || {
             if let Some(ui) = ui.upgrade() {
                 shell.borrow_mut().poll_network(&ui);
+            }
+        }
+    });
+
+    let compositor_timer = Timer::default();
+    compositor_timer.start(TimerMode::Repeated, COMPOSITOR_POLL, {
+        let ui = ui.as_weak();
+        let shell = shell.clone();
+        move || {
+            if let Some(ui) = ui.upgrade() {
+                shell.borrow_mut().poll_compositor(&ui);
             }
         }
     });

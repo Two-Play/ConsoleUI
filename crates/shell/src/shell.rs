@@ -1,5 +1,6 @@
 //! Shell state: entries, screens, focus, history, running apps and the connection to the UI
-//! (main window; in gamescope also the overlay window and window control).
+//! (main window; in gamescope also the overlay window and window control; in our own compositor
+//! the control socket).
 
 use std::cell::Cell;
 use std::path::PathBuf;
@@ -11,6 +12,7 @@ use consoleui_core::game_options::{GameOptions, GameOptionsPanel, GameOptionsSto
 use consoleui_core::launch::{self, ProcessHandle};
 use consoleui_core::netpages::Page;
 use consoleui_core::osk::{KeyboardEvent, OnScreenKeyboard};
+use consoleui_core::protocol::{CompositorMessage, ShellMessage};
 use consoleui_core::ownership::{self, FIRST_DESKTOP_APP_ID, Owner, SHELL_APP_ID};
 use consoleui_core::running::{MIN_HOLD, Phase, RunningApp};
 use consoleui_core::settings::{GlyphChoice, Setting, Settings};
@@ -23,6 +25,7 @@ use consoleui_core::{
 use slint::{ComponentHandle, Image, ModelRc, VecModel};
 
 use crate::audio::Audio;
+use crate::compositor::Compositor;
 use crate::context::{ContextAction, ContextMenu, ContextOutcome, EntryState};
 use crate::gamescope::{Gamescope, x11_window_id};
 use crate::hero::Heroes;
@@ -54,7 +57,7 @@ struct Running {
     stop: Stop,
     /// How its processes are recognized (for window assignment)
     owner: Option<Owner>,
-    /// Already assigned a window in gamescope?
+    /// Already assigned a window in gamescope (or shown by our compositor)?
     has_window: bool,
 }
 
@@ -129,6 +132,8 @@ pub struct Shell {
     confirm_quit: Option<String>,
     quick: Option<QuickMenu>,
     gamescope: Option<GamescopeUi>,
+    /// Our own compositor (Epic 7), instead of gamescope
+    compositor: Option<Compositor>,
 
     settings: Settings,
     settings_path: Option<PathBuf>,
@@ -171,6 +176,7 @@ impl Shell {
     pub fn new(
         ui: &AppWindow,
         gamescope: Option<GamescopeUi>,
+        compositor: Option<Compositor>,
         settings: Settings,
         settings_path: Option<PathBuf>,
     ) -> Self {
@@ -225,6 +231,7 @@ impl Shell {
             confirm_quit: None,
             quick: None,
             gamescope,
+            compositor,
             settings,
             settings_path,
             settings_row: 0,
@@ -357,7 +364,7 @@ impl Shell {
         if self.quick.is_some() {
             return true;
         }
-        if self.gamescope.is_none() {
+        if self.gamescope.is_none() && self.compositor.is_none() {
             return ui.get_window_active();
         }
         action == Action::Guide || self.shell_in_front(ui)
@@ -1083,6 +1090,9 @@ impl Shell {
     /// Size the nested gamescope outputs at: in gamescope the screen (root window), otherwise the
     /// shell's own window (the screen when fullscreen).
     fn output_size(&self, ui: &AppWindow) -> Option<(u32, u32)> {
+        if let Some(size) = self.compositor.as_ref().and_then(Compositor::output_size) {
+            return Some(size);
+        }
         if let Some(size) = self.gamescope.as_ref().and_then(|g| g.control.root_size()) {
             return Some(size);
         }
@@ -1142,6 +1152,11 @@ impl Shell {
         let items = ModelRc::new(VecModel::from(quick.items()));
         let (title, focused) = (quick.title(), quick.focused() as i32);
         let Some(gamescope) = &mut self.gamescope else {
+            // In our compositor the shell window comes above the app while the menu is open
+            // (Story 7.6 will show only the menu).
+            if let Some(compositor) = &mut self.compositor {
+                compositor.set_overlay(open);
+            }
             ui.set_quick_items(items);
             ui.set_quick_title(title.into());
             ui.set_quick_focused(focused);
@@ -1205,6 +1220,18 @@ impl Shell {
                         (app_id, RunningApp::process(handle.clone(), now), Stop::Process(handle.clone()), handle.owner())
                     }
                 };
+                if let Some(compositor) = &mut self.compositor {
+                    let steam_app_id = match entry.launch {
+                        Launch::Steam(steam_id) => Some(steam_id),
+                        _ => None,
+                    };
+                    compositor.send(&ShellMessage::Launched {
+                        app_id,
+                        pid: handle.pid(),
+                        scope: handle.scope().map(str::to_owned),
+                        steam_app_id,
+                    });
+                }
                 self.running.push(Running { entry_id: id.clone(), app_id, app, stop, owner, has_window: false });
                 ui.set_launch_status(tr("Starting …").into());
                 ui.set_launching(true);
@@ -1229,7 +1256,7 @@ impl Shell {
     /// Brings a running app to the front. Without gamescope this is not possible; then the
     /// launch screen shows that it is running.
     fn bring_to_front(&mut self, ui: &AppWindow, app_id: u32) {
-        if self.gamescope.is_some() {
+        if self.gamescope.is_some() || self.compositor.is_some() {
             self.set_foreground(Some(app_id));
             return;
         }
@@ -1253,6 +1280,9 @@ impl Shell {
 
     fn set_foreground(&mut self, app_id: Option<u32>) {
         self.foreground = app_id;
+        if let Some(compositor) = &mut self.compositor {
+            compositor.focus(app_id);
+        }
         if let Some(gamescope) = &self.gamescope {
             match app_id {
                 Some(app_id) => gamescope.control.set_baselayer(&[app_id, SHELL_APP_ID]),
@@ -1306,6 +1336,9 @@ impl Shell {
         }
         self.running.retain(|r| !finished.iter().any(|(_, app_id)| *app_id == r.app_id));
         for (entry_id, app_id) in &finished {
+            if let Some(compositor) = &mut self.compositor {
+                compositor.send(&ShellMessage::Exited { app_id: *app_id });
+            }
             self.set_running_flag(entry_id, false);
             if self.confirm_quit.as_deref() == Some(entry_id.as_str()) {
                 self.close_confirm(ui);
@@ -1315,6 +1348,30 @@ impl Shell {
             }
         }
         self.refresh(ui);
+    }
+
+    /// Messages from our compositor: which launched apps show a window (the launch screen closes
+    /// as soon as the app in front has one).
+    pub fn poll_compositor(&mut self, ui: &AppWindow) {
+        let Some(compositor) = &mut self.compositor else { return };
+        for message in compositor.poll() {
+            match message {
+                CompositorMessage::WindowMapped { app_id, .. } => {
+                    if let Some(running) = self.running.iter_mut().find(|r| r.app_id == app_id) {
+                        running.has_window = true;
+                        if self.foreground == Some(app_id) {
+                            ui.set_launching(false);
+                        }
+                    }
+                }
+                CompositorMessage::AppGone { app_id } => {
+                    if let Some(running) = self.running.iter_mut().find(|r| r.app_id == app_id) {
+                        running.has_window = false;
+                    }
+                }
+                _ => {}
+            }
+        }
     }
 
     /// If the shell is in front but has no keyboard focus (happens after the overlay), it takes it.

@@ -46,6 +46,23 @@ impl ProcessHandle {
         }
     }
 
+    /// PID of the launched process (for the compositor's window mapping).
+    pub fn pid(&self) -> Option<u32> {
+        match &self.stopper {
+            Stopper::None => None,
+            Stopper::Scope { pid, .. } => Some(*pid),
+            Stopper::ProcessGroup(pid) => Some(*pid),
+        }
+    }
+
+    /// Transient systemd scope unit the app runs in, if any.
+    pub fn scope(&self) -> Option<&str> {
+        match &self.stopper {
+            Stopper::Scope { unit, .. } => Some(unit),
+            _ => None,
+        }
+    }
+
     /// Asks the app via SIGTERM to quit.
     pub fn stop(&self) -> io::Result<()> {
         if self.has_exited() {

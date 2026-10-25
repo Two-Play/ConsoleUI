@@ -1,10 +1,13 @@
 #!/bin/sh
-# Simuliert die Konsolen-Session in einem Fenster auf dem Desktop: gamescope läuft verschachtelt
-# im Steam-Modus, und alles, was die Shell startet, öffnet sich in diesem Fenster (die Programme
-# sehen nur das XWayland von gamescope). Zum Testen ohne Abmelden.
+# Simulates the console session in a window on the desktop, for testing without logging out.
 #
-#   session/consoleui-nested                 # 1920×1080, Release-Build aus diesem Repo
-#   session/consoleui-nested --dummy         # Optionen gehen an die Shell
+# Default: gamescope runs nested in Steam mode, and everything the shell starts opens in this
+# window (the programs only see gamescope's XWayland).
+# --compositor: our own compositor (Epic 7) runs nested instead (consoleui-compositor --winit).
+#
+#   session/consoleui-nested                       # 1920×1080, release build from this repo
+#   session/consoleui-nested --dummy               # options go to the shell
+#   session/consoleui-nested --compositor --dummy  # own compositor instead of gamescope
 #   CONSOLEUI_GAMESCOPE_ARGS="-W 2560 -H 1440" session/consoleui-nested
 set -eu
 
@@ -13,13 +16,23 @@ export CONSOLEUI_BIN="${CONSOLEUI_BIN:-$root/target/release/consoleui}"
 export CONSOLEUI_GAMESCOPE_ARGS="${CONSOLEUI_GAMESCOPE_ARGS:--W 1920 -H 1080}"
 
 if [ ! -x "$CONSOLEUI_BIN" ]; then
-    echo "Bitte zuerst 'cargo build --release' ausführen." >&2
+    echo "Run 'cargo build --release' first." >&2
     exit 1
 fi
-# Ein schon laufendes Steam nimmt steam://-Aufrufe an und öffnet Spiele auf dem Desktop.
+# A Steam already running takes steam:// calls and opens games on the desktop.
 if pgrep -x steam >/dev/null; then
-    echo "Hinweis: Steam läuft schon auf dem Desktop; Steam-Spiele öffnen sich dann dort." >&2
-    echo "         Für den Test Steam vorher beenden, dann startet es in der Session." >&2
+    echo "Note: Steam is already running on the desktop; Steam games then open there." >&2
+    echo "      Quit Steam before the test, then it starts inside the session." >&2
+fi
+
+if [ "${1:-}" = "--compositor" ]; then
+    shift
+    compositor="${CONSOLEUI_COMPOSITOR_BIN:-$root/target/toolbox/release/consoleui-compositor}"
+    if [ ! -x "$compositor" ]; then
+        echo "Run 'dev/toolbox.sh run cargo build --release -p consoleui-compositor' first." >&2
+        exit 1
+    fi
+    exec "$compositor" --winit --size 1920x1080 -- "$CONSOLEUI_BIN" "$@"
 fi
 
 exec "$root/session/consoleui-session" "$@"
