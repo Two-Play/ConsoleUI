@@ -90,10 +90,20 @@ pub enum Setting {
     Animations,
     Sounds,
     Glyphs,
+    /// Öffnet die WLAN-Seite (Story 5.3)
+    Wifi,
+    /// Öffnet die Bluetooth-Seite (Story 5.4)
+    Bluetooth,
 }
 
 impl Setting {
-    pub const ALL: [Setting; 4] = [Self::Accent, Self::Animations, Self::Sounds, Self::Glyphs];
+    pub const ALL: [Setting; 6] =
+        [Self::Accent, Self::Animations, Self::Sounds, Self::Glyphs, Self::Wifi, Self::Bluetooth];
+
+    /// Zeilen, die eine Unterseite öffnen, statt einen Wert zu ändern
+    pub fn opens_page(self) -> bool {
+        matches!(self, Self::Wifi | Self::Bluetooth)
+    }
 
     pub fn label(self) -> &'static str {
         match self {
@@ -101,6 +111,8 @@ impl Setting {
             Self::Animations => "Animationen",
             Self::Sounds => "Klänge",
             Self::Glyphs => "Tastensymbole",
+            Self::Wifi => "WLAN",
+            Self::Bluetooth => "Bluetooth",
         }
     }
 
@@ -110,6 +122,8 @@ impl Setting {
             Self::Animations => "Übergänge und Bewegungen",
             Self::Sounds => "Klänge beim Navigieren",
             Self::Glyphs => "Symbole in den Hinweisen",
+            Self::Wifi => "Netzwerke anzeigen und verbinden",
+            Self::Bluetooth => "Controller und andere Geräte koppeln",
         }
     }
 }
@@ -151,12 +165,14 @@ impl Settings {
         fs::rename(tmp, path)
     }
 
+    /// Wert der Zeile; Unterseiten (WLAN, Bluetooth) zeigt die Shell mit ihrem eigenen Zustand.
     pub fn value_label(&self, setting: Setting) -> &'static str {
         match setting {
             Setting::Accent => self.accent.label(),
             Setting::Animations => on_off(self.animations),
             Setting::Sounds => on_off(self.sounds),
             Setting::Glyphs => self.glyphs.label(),
+            Setting::Wifi | Setting::Bluetooth => "",
         }
     }
 
@@ -167,6 +183,7 @@ impl Settings {
             Setting::Animations => self.animations = !self.animations,
             Setting::Sounds => self.sounds = !self.sounds,
             Setting::Glyphs => self.glyphs = cycle(&GlyphChoice::ALL, self.glyphs, forward),
+            Setting::Wifi | Setting::Bluetooth => {}
         }
     }
 }
@@ -187,6 +204,10 @@ mod tests {
         assert_eq!(settings.value_label(Setting::Sounds), "Aus");
         settings.change(Setting::Glyphs, true);
         assert_eq!(settings.glyphs, GlyphChoice::PlayStation);
+        // Unterseiten ändern keinen Wert
+        settings.change(Setting::Wifi, true);
+        assert_eq!(settings.glyphs, GlyphChoice::PlayStation);
+        assert!(Setting::Bluetooth.opens_page() && !Setting::Sounds.opens_page());
     }
 
     #[test]

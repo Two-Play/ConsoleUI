@@ -8,6 +8,7 @@ use std::rc::Rc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use consoleui_core::launch::{self, ProcessHandle};
+use consoleui_core::netpages::Page;
 use consoleui_core::osk::{KeyboardEvent, OnScreenKeyboard};
 use consoleui_core::ownership::{self, FIRST_DESKTOP_APP_ID, Owner, SHELL_APP_ID};
 use consoleui_core::running::{MIN_HOLD, Phase, RunningApp};
@@ -24,6 +25,7 @@ use crate::audio::Audio;
 use crate::context::{ContextAction, ContextMenu, ContextOutcome, EntryState};
 use crate::gamescope::{Gamescope, x11_window_id};
 use crate::loader::Library;
+use crate::network::Network;
 use crate::quick::{ForegroundApp, QuickAction, QuickMenu, QuickOutcome};
 use crate::{AppTile, AppWindow, ControllerStyle, GlyphButton, Hint, KeyCap, OverlayWindow, Screen, SettingRow, Theme, tiles};
 
@@ -127,6 +129,8 @@ pub struct Shell {
     toast_generation: Rc<Cell<u64>>,
     /// Warnung „Controller-Akku schwach“ schon gezeigt
     battery_warned: bool,
+    /// Unterseiten WLAN und Bluetooth der Einstellungen
+    network: Network,
 }
 
 /// So lange bleibt ein Hinweis stehen
@@ -144,6 +148,7 @@ struct Feedback {
     focus: [usize; 8],
     query_len: usize,
     settings: Settings,
+    network: [usize; 5],
 }
 
 /// Startwerte der Animationsdauern in Millisekunden (wie in `theme.slint`)
@@ -217,6 +222,7 @@ impl Shell {
             audio: Audio::start(),
             toast_generation: Rc::default(),
             battery_warned: false,
+            network: Network::default(),
         };
         shell.apply_settings(ui);
         shell.refresh(ui);
@@ -342,6 +348,7 @@ impl Shell {
             ],
             query_len: self.query.len(),
             settings: self.settings,
+            network: self.network.pages.feedback(),
         }
     }
 
@@ -403,6 +410,7 @@ impl Shell {
             return;
         }
         match (self.screen, action) {
+            (Screen::Settings, _) if self.network.pages.is_open() => self.apply_network(ui, action),
             (Screen::Home, Action::NextTab) => self.screen = Screen::Library,
             (Screen::Library, Action::PrevTab) => self.screen = Screen::Home,
             (Screen::Library, Action::NextTab) => self.screen = Screen::Settings,
@@ -455,6 +463,13 @@ impl Shell {
         match action {
             Action::Up => self.settings_row = self.settings_row.saturating_sub(1),
             Action::Down => self.settings_row = (self.settings_row + 1).min(Setting::ALL.len() - 1),
+            Action::Confirm if setting.opens_page() => {
+                let page = if setting == Setting::Wifi { Page::Wifi } else { Page::Bluetooth };
+                let requests = self.network.pages.open(page);
+                self.network.send(requests);
+                ui.set_net_view(self.network.view());
+            }
+            Action::Left | Action::Right if setting.opens_page() => {}
             Action::Left | Action::Right | Action::Confirm => {
                 self.settings.change(setting, action != Action::Left);
                 if let Some(path) = &self.settings_path
@@ -486,21 +501,58 @@ impl Shell {
         if let Some(gamescope) = &self.gamescope {
             apply_theme(gamescope.overlay.global::<Theme>());
         }
-
-        let rows: Vec<SettingRow> = Setting::ALL
-            .iter()
-            .map(|&setting| SettingRow {
-                label: setting.label().into(),
-                description: setting.description().into(),
-                value: self.settings.value_label(setting).into(),
-            })
-            .collect();
-        ui.set_settings_rows(ModelRc::new(VecModel::from(rows)));
+        self.update_settings_rows(ui);
         let footer = match &self.settings_path {
             Some(path) => format!("Wird automatisch gespeichert: {}", path.display()),
             None => "Einstellungen werden nicht gespeichert".into(),
         };
         ui.set_settings_footer(footer.into());
+    }
+
+    fn update_settings_rows(&self, ui: &AppWindow) {
+        let rows: Vec<SettingRow> = Setting::ALL
+            .iter()
+            .map(|&setting| SettingRow {
+                label: setting.label().into(),
+                description: setting.description().into(),
+                value: match setting {
+                    Setting::Wifi => self.network.pages.summary(Page::Wifi).into(),
+                    Setting::Bluetooth => self.network.pages.summary(Page::Bluetooth).into(),
+                    _ => self.settings.value_label(setting).into(),
+                },
+                opens_page: setting.opens_page(),
+            })
+            .collect();
+        ui.set_settings_rows(ModelRc::new(VecModel::from(rows)));
+    }
+
+    // --- WLAN und Bluetooth (Stories 5.3/5.4) ----------------------------------------------
+
+    /// Startet den Netzwerk-Thread (`fake`: simuliert, ändert nichts am System) und liest einmal.
+    pub fn start_network(&mut self, fake: bool) {
+        self.network.start(fake);
+        self.network.send(vec![consoleui_core::network::Request::Refresh]);
+    }
+
+    /// Läuft per Timer: Antworten des Netzwerk-Threads übernehmen und Hinweise zeigen.
+    pub fn poll_network(&mut self, ui: &AppWindow) {
+        let (changed, notices) = self.network.poll(self.screen == Screen::Settings);
+        for notice in notices {
+            self.toast(ui, notice.symbol, &notice.title, &notice.text);
+        }
+        if changed {
+            self.update_settings_rows(ui);
+            if self.network.pages.is_open() {
+                ui.set_net_view(self.network.view());
+                self.update_hints(ui);
+            }
+        }
+    }
+
+    fn apply_network(&mut self, ui: &AppWindow, action: Action) {
+        let requests = self.network.pages.apply(action);
+        self.network.send(requests);
+        ui.set_net_view(self.network.view());
     }
 
     fn apply_search(&mut self, ui: &AppWindow, action: Action) {
@@ -517,7 +569,7 @@ impl Shell {
                         self.search_area = SearchArea::Results;
                     }
                 }
-                KeyboardEvent::Moved | KeyboardEvent::None => {}
+                KeyboardEvent::Moved | KeyboardEvent::Shift | KeyboardEvent::None => {}
             },
             (SearchArea::Results, Action::Up | Action::Back) => self.search_area = SearchArea::Keyboard,
             (SearchArea::Results, Action::Confirm) => {
@@ -536,6 +588,10 @@ impl Shell {
     pub fn type_text(&mut self, ui: &AppWindow, text: &str) -> bool {
         let printable = !text.is_empty()
             && text.chars().all(|c| !c.is_control() && !('\u{e000}'..='\u{f8ff}').contains(&c));
+        if printable && self.screen == Screen::Settings && self.quick.is_none() && self.network.pages.type_text(text) {
+            ui.set_net_view(self.network.view());
+            return true;
+        }
         if !printable || self.screen != Screen::Search || ui.get_launching() || self.quick.is_some() {
             return false;
         }
@@ -549,6 +605,10 @@ impl Shell {
     }
 
     pub fn erase_text(&mut self, ui: &AppWindow) {
+        if self.screen == Screen::Settings && self.network.pages.erase() {
+            ui.set_net_view(self.network.view());
+            return;
+        }
         self.erase(ui);
         self.sync(ui);
     }
@@ -715,6 +775,15 @@ impl Shell {
                 hints.push(hint(GlyphButton::West, "Filter"));
                 hints.push(hint(GlyphButton::Menu, "Optionen"));
                 hints.push(hint(GlyphButton::North, "Suchen"));
+                hints.push(hint(GlyphButton::Back, "Zurück"));
+            }
+            Screen::Settings if self.network.pages.is_open() => {
+                hints.extend(self.network.hints().into_iter().map(|(button, label)| hint(button, label)));
+            }
+            Screen::Settings if Setting::ALL[self.settings_row].opens_page() => {
+                hints.push(hint(GlyphButton::Updown, "Auswählen"));
+                hints.push(hint(GlyphButton::Confirm, "Öffnen"));
+                hints.push(hint(GlyphButton::L1, "Bibliothek"));
                 hints.push(hint(GlyphButton::Back, "Zurück"));
             }
             Screen::Settings => {

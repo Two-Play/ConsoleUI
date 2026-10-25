@@ -12,10 +12,12 @@ use slint::{RenderingState, Rgba8Pixel, SharedPixelBuffer, Timer, TimerMode};
 mod audio;
 mod context;
 mod cover;
+mod dbus;
 mod gamepad;
 mod gamescope;
 mod grab;
 mod loader;
+mod network;
 mod options;
 mod perf;
 mod quick;
@@ -35,11 +37,15 @@ const BENCH_STEP: Duration = Duration::from_millis(200);
 const GAMEPAD_POLL: Duration = Duration::from_millis(8);
 const SNAPSHOT_DELAY: Duration = Duration::from_millis(1500);
 const SCRIPT_START_DELAY: Duration = Duration::from_millis(800);
+const SCRIPT_TICK: Duration = Duration::from_millis(20);
+const SNAPSHOT_AFTER_SCRIPT: Duration = Duration::from_millis(700);
 /// Die Boot-Animation steht mindestens so lange, auch wenn die Bibliothek schneller geladen ist.
 const MIN_BOOT: Duration = Duration::from_millis(1200);
 const LOADER_POLL: Duration = Duration::from_millis(30);
 /// Wie oft geprüft wird, ob die gestartete App noch läuft.
 const WATCH_INTERVAL: Duration = Duration::from_millis(500);
+/// Wie oft Antworten des Netzwerk-Threads (WLAN/Bluetooth) abgeholt werden
+const NETWORK_POLL: Duration = Duration::from_millis(100);
 
 fn main() -> Result<(), Box<dyn Error>> {
     let options = match Options::parse(std::env::args().skip(1)) {
@@ -180,6 +186,18 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     });
 
+    shell.borrow_mut().start_network(options.fake_network);
+    let network_timer = Timer::default();
+    network_timer.start(TimerMode::Repeated, NETWORK_POLL, {
+        let ui = ui.as_weak();
+        let shell = shell.clone();
+        move || {
+            if let Some(ui) = ui.upgrade() {
+                shell.borrow_mut().poll_network(&ui);
+            }
+        }
+    });
+
     let watch = Timer::default();
     watch.start(TimerMode::Repeated, WATCH_INTERVAL, {
         let ui = ui.as_weak();
@@ -263,6 +281,8 @@ impl ReadyTasks {
     /// Startet Benchmark, Skript und Snapshot; die Timer müssen am Leben bleiben.
     fn start(self, ui: &AppWindow, shell: Rc<RefCell<Shell>>, stats: Rc<RefCell<FrameStats>>) -> Vec<Timer> {
         let mut timers = Vec::new();
+        // Mit Skript erst nach dessen letztem Schritt (plus Zeit für die Animationen) fotografieren
+        let snapshot_delay = SNAPSHOT_DELAY.max(script_duration(&self.actions) + SNAPSHOT_AFTER_SCRIPT);
         if self.bench {
             timers.push(start_bench(ui, shell.clone(), stats));
         }
@@ -273,7 +293,7 @@ impl ReadyTasks {
             let timer = Timer::default();
             let ui = ui.as_weak();
             // Etwas warten, bis Seitenwechsel und Hero-Überblendung fertig sind.
-            timer.start(TimerMode::SingleShot, SNAPSHOT_DELAY, move || {
+            timer.start(TimerMode::SingleShot, snapshot_delay, move || {
                 if let Some(ui) = ui.upgrade() {
                     match ui.window().take_snapshot().map_err(Box::<dyn Error>::from).and_then(|px| save_png(&path, &px)) {
                         Ok(()) => println!("Snapshot gespeichert: {}", path.display()),
@@ -288,6 +308,15 @@ impl ReadyTasks {
     }
 }
 
+/// Ungefähre Laufzeit eines `--actions`-Skripts (Startverzögerung, Wartezeiten, ein Tick pro Schritt)
+fn script_duration(steps: &[ScriptStep]) -> Duration {
+    if steps.is_empty() {
+        return Duration::ZERO;
+    }
+    let waits: u64 = steps.iter().map(|s| if let ScriptStep::Wait(ms) = s { *ms } else { 0 }).sum();
+    SCRIPT_START_DELAY + SCRIPT_TICK * steps.len() as u32 + Duration::from_millis(waits)
+}
+
 /// Spielt `--actions` ab (für Tests ohne echte Eingabe). Die Aktionen gehen direkt an die Shell,
 /// unabhängig vom Fensterfokus.
 fn run_script(ui: &AppWindow, shell: Rc<RefCell<Shell>>, steps: Vec<ScriptStep>) -> Timer {
@@ -296,7 +325,7 @@ fn run_script(ui: &AppWindow, shell: Rc<RefCell<Shell>>, steps: Vec<ScriptStep>)
     // Kurz warten, bis das Fenster steht
     let mut due = Instant::now() + SCRIPT_START_DELAY;
     let timer = Timer::default();
-    timer.start(TimerMode::Repeated, Duration::from_millis(20), move || {
+    timer.start(TimerMode::Repeated, SCRIPT_TICK, move || {
         let Some(ui) = ui.upgrade() else { return };
         if Instant::now() < due {
             return;

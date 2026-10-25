@@ -1,5 +1,5 @@
 import { Theme } from "theme.slint";
-import { AppTile, ContextItem, ControllerStyle, GlyphButton, Hint, KeyCap, NavAction, NetworkState, QuickItem, Screen, SettingRow } from "types.slint";
+import { AppTile, ContextItem, ControllerStyle, GlyphButton, Hint, KeyCap, NavAction, NetRow, NetView, NetworkState, QuickItem, Screen, SettingRow } from "types.slint";
 import { StatusBar } from "statusbar.slint";
 import { ButtonGlyph, HintBar } from "glyph.slint";
 import { HomePage } from "home.slint";
@@ -9,10 +9,11 @@ import { QuickMenu } from "quickmenu.slint";
 import { ContextMenu } from "contextmenu.slint";
 import { OverlayWindow } from "overlay.slint";
 import { SettingsPage } from "settings.slint";
+import { NetworkPage } from "network.slint";
 import { BootScreen } from "boot.slint";
 import { Toast } from "toast.slint";
 
-export { AppTile, ContextItem, ControllerStyle, GlyphButton, Hint, KeyCap, NavAction, NetworkState, QuickItem, Screen, SettingRow, OverlayWindow, Theme }
+export { AppTile, ContextItem, ControllerStyle, GlyphButton, Hint, KeyCap, NavAction, NetRow, NetView, NetworkState, QuickItem, Screen, SettingRow, OverlayWindow, Theme }
 
 export component AppWindow inherits Window {
     title: "ConsoleUI";
@@ -43,6 +44,8 @@ export component AppWindow inherits Window {
     in property <[SettingRow]> settings-rows;
     in property <int> settings-focused;
     in property <string> settings-footer;
+    // Unterseite WLAN/Bluetooth der Einstellungen (Stories 5.3/5.4)
+    in property <NetView> net-view;
 
     in property <string> search-query;
     in property <[KeyCap]> keys;
@@ -171,8 +174,10 @@ export component AppWindow inherits Window {
                 root.action(NavAction.guide);
                 return accept;
             }
-            // In der Suche tippt die Tastatur; WASD und die Buchstabenkürzel gelten dort nicht.
-            if (root.screen == Screen.search && !root.launching && !root.confirm-open) {
+            // In der Suche (und der WLAN-Passwort-Eingabe) tippt die Tastatur; WASD und die
+            // Buchstabenkürzel gelten dort nicht.
+            if ((root.screen == Screen.search || (root.screen == Screen.settings && root.net-view.password-open))
+                && !root.launching && !root.confirm-open) {
                 if (event.text == Key.Backspace) {
                     root.erase();
                     return accept;
@@ -369,8 +374,8 @@ export component AppWindow inherits Window {
         SettingsPage {
             width: root.width;
             height: root.height;
-            x: root.screen == Screen.settings ? 0 : 60px * s;
-            opacity: root.screen == Screen.settings ? 1 : 0;
+            x: root.screen == Screen.settings ? (root.net-view.open ? -60px * s : 0) : 60px * s;
+            opacity: root.screen == Screen.settings && !root.net-view.open ? 1 : 0;
             visible: self.opacity > 0.01;
             animate x, opacity {
                 duration: Theme.page-duration;
@@ -379,6 +384,20 @@ export component AppWindow inherits Window {
             rows: root.settings-rows;
             focused: root.settings-focused;
             footer: root.settings-footer;
+            s: root.s;
+        }
+
+        NetworkPage {
+            width: root.width;
+            height: root.height;
+            x: root.screen == Screen.settings && root.net-view.open ? 0 : 60px * s;
+            opacity: root.screen == Screen.settings && root.net-view.open ? 1 : 0;
+            visible: self.opacity > 0.01;
+            animate x, opacity {
+                duration: Theme.page-duration;
+                easing: ease-out-quart;
+            }
+            view: root.net-view;
             s: root.s;
         }
 

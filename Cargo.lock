@@ -763,9 +763,11 @@ dependencies = [
  "libc",
  "png",
  "raw-window-handle",
+ "serde",
  "slint",
  "slint-build",
  "x11rb 0.14.0",
+ "zbus",
 ]
 
 [[package]]

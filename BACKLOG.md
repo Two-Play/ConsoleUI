@@ -332,6 +332,41 @@ Deck o. Ä.) sollten wir später den Skia-Renderer vergleichen (Story 6.5).
   ausgeblendeten Eintrag, „Beenden“ mit `--dummy-launch "sleep 15"`). **Nicht getestet:** mit
   echter Bibliothek und echtem Controller.
 
+### Sprint 7 – WLAN & Bluetooth (umgesetzt: 5.3, 5.4)
+
+- **Einstieg:** zwei neue Zeilen „WLAN“ und „Bluetooth“ in den Einstellungen. Sie zeigen den
+  Zustand („Kein Adapter“, Netzname, „1 Gerät verbunden“, „Aus“) und öffnen mit ✕ eine Unterseite,
+  ○ führt zurück. Die Unterseiten sind ein Zustand der Einstellungsseite (kein neuer `Screen`).
+- **WLAN (5.3):** Ein/Aus-Zeile, darunter die Netze mit Signalbalken, Schloss für gesicherte Netze
+  und „Verbunden“-Badge (pro SSID zusammengefasst, verbundenes Netz zuerst, dann nach Signal).
+  ✕ verbindet bzw. trennt, □ sucht neu. Gesicherte Netze ohne gespeichertes Profil öffnen die
+  Passwort-Eingabe: dieselbe Bildschirmtastatur wie die Suche, mit einer neuen Umschalttaste ⇧
+  (Großbuchstaben und Sonderzeichen), ≡ zeigt das Passwort an, auch die echte Tastatur tippt.
+  Ohne Adapter steht dort „Kein WLAN-Adapter“.
+- **Bluetooth (5.4):** Ein/Aus-Zeile mit Adaptername, □ startet bzw. beendet die Gerätesuche.
+  Geräte mit Art (Controller, Audio, Tastatur …, aus BlueZ-`Icon`, Class of Device oder Name),
+  Controller sind mit Grafik und Rahmen hervorgehoben und stehen vorne. ✕ koppelt (Pair + Trusted
+  + Connect), verbindet oder trennt; ≡ zweimal entfernt ein gekoppeltes Gerät. Für die Kopplung
+  registriert die Shell einen eigenen BlueZ-Agenten („NoInputNoOutput“, nimmt alles an), damit es
+  auch in der gamescope-Session ohne KDE-Agent klappt. Unbenannte, ungekoppelte Geräte werden
+  ausgeblendet.
+- **Technik:** NetworkManager und BlueZ über D-Bus mit `zbus` (blockierend) in einem eigenen
+  Thread (`consoleui_core::network::spawn`), die UI holt die Antworten alle 100 ms per Timer ab.
+  Neu gelesen wird nur, solange die Einstellungen offen sind (alle 3 s, bei Suche/Auftrag 1 s).
+  Ergebnisse kommen als Toast („Verbunden mit …“, „Kopplung fehlgeschlagen“).
+  Logik ohne D-Bus (Modelle, Sortierung, Flags, Seitenzustand, Simulation) liegt in `core` mit Tests.
+- **Entwickler-Option:** `--fake-network` simuliert WLAN und Bluetooth (Netze, Passwortprüfung,
+  Geräte bei der Suche, eine Kopplung, die immer scheitert) und ändert nichts am System.
+  Snapshots mit `--actions` warten jetzt, bis das Skript durch ist.
+- Getestet: alle Abläufe mit `--fake-network` per `--snapshot` (Liste, Passwort, Verbinden,
+  Suche, Koppeln, Fehler, Entfernen). Auf diesem PC (nur Ethernet) nur lesend: Die WLAN-Seite
+  zeigt „Kein WLAN-Adapter“, die Bluetooth-Seite den ausgeschalteten Adapter „fedora-pc“.
+- **Nicht getestet (keine Hardware bzw. bewusst keine Systemänderung):** echtes Verbinden mit
+  einem WLAN (`AddAndActivateConnection`, WPA3/SAE, Löschen des Profils bei falschem Passwort),
+  WLAN ein/aus und `RequestScan`, Bluetooth ein/aus, Gerätesuche, Koppeln mit dem eigenen Agenten
+  (DualSense, Xbox), Verbinden/Trennen/Entfernen. Der Agent ist bewusst einfach (kein PIN-Dialog,
+  alte Geräte bekommen „0000“). WEP und WPA-Enterprise werden abgelehnt.
+
 ## Risiken / offene Fragen
 
 - **gamescope-Fokussteuerung** ist kaum dokumentiert und auf XWayland bzw. Steam ausgelegt → deshalb Spike 0.3 früh einplanen. Falls das nicht klappt, wird Epic 7 wichtiger.

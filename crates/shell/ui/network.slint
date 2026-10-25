@@ -1,0 +1,323 @@
+import { KeyCap, NetRow, NetView } from "types.slint";
+import { Theme } from "theme.slint";
+
+// WLAN-Signal als vier Balken
+component SignalBars inherits Rectangle {
+    in property <int> bars;
+    in property <color> tint;
+    in property <float> s;
+    width: 34px * root.s;
+    height: 26px * root.s;
+
+    for i in 4: Rectangle {
+        x: i * 9px * root.s;
+        y: parent.height - self.height;
+        width: 6px * root.s;
+        height: (8px + i * 6px) * root.s;
+        border-radius: 2px * root.s;
+        background: i < root.bars ? root.tint : root.tint.with-alpha(0.25);
+    }
+}
+
+// Kleines Schloss für gesicherte Netze
+component LockIcon inherits Rectangle {
+    in property <color> tint;
+    in property <float> s;
+    width: 18px * root.s;
+    height: 22px * root.s;
+
+    Rectangle {
+        x: 3px * root.s;
+        y: 0;
+        width: 12px * root.s;
+        height: 14px * root.s;
+        border-radius: 6px * root.s;
+        border-width: 2.5px * root.s;
+        border-color: root.tint;
+    }
+
+    Rectangle {
+        y: 9px * root.s;
+        width: 100%;
+        height: 13px * root.s;
+        border-radius: 3px * root.s;
+        background: root.tint;
+    }
+}
+
+// Passwort-Eingabe mit der Bildschirmtastatur (gleicher Stil wie die Suche)
+component PasswordEntry inherits Rectangle {
+    in property <NetView> view;
+    in property <float> s;
+
+    property <length> margin: 110px * root.s;
+    property <length> unit: 62px * root.s;
+    property <length> key-gap: 8px * root.s;
+    property <length> keyboard-y: 330px * root.s;
+
+    Text {
+        x: root.margin;
+        y: 120px * root.s;
+        text: "Passwort";
+        color: Theme.text;
+        font-size: 44px * root.s;
+        font-weight: 800;
+    }
+
+    Text {
+        x: root.margin;
+        y: 180px * root.s;
+        text: "für „" + root.view.password-ssid + "“";
+        color: Theme.text-dim;
+        font-size: 22px * root.s;
+    }
+
+    Rectangle {
+        x: root.margin;
+        y: 230px * root.s;
+        width: 11 * root.unit - root.key-gap;
+        height: 64px * root.s;
+        border-radius: self.height / 2;
+        background: Theme.surface;
+        border-width: 2px;
+        border-color: Theme.accent;
+
+        Text {
+            x: 28px * root.s;
+            height: 100%;
+            width: parent.width - 56px * root.s;
+            text: root.view.password-text == "" ? "WLAN-Passwort eingeben" : root.view.password-text + "|";
+            color: root.view.password-text == "" ? Theme.text-dim : Theme.text;
+            font-size: 26px * root.s;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+    }
+
+    for key[i] in root.view.keys: Rectangle {
+        property <bool> is-focused: i == root.view.key-focused;
+        x: root.margin + key.x * root.unit;
+        y: root.keyboard-y + key.row * root.unit;
+        width: key.width * root.unit - root.key-gap;
+        height: root.unit - root.key-gap;
+        border-radius: 10px * root.s;
+        background: self.is-focused ? Theme.accent : Theme.surface;
+        animate background { duration: 90ms; }
+
+        Text {
+            width: 100%;
+            height: 100%;
+            text: key.label;
+            color: parent.is-focused ? Theme.base : Theme.text;
+            font-size: (key.label.character-count > 1 ? 18px : 24px) * root.s;
+            font-weight: 600;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+
+    Text {
+        x: root.margin;
+        y: root.keyboard-y + 5 * root.unit + 20px * root.s;
+        text: "⇧ schaltet auf Großbuchstaben und Sonderzeichen um. „Fertig“ verbindet.";
+        color: Theme.text-dim;
+        font-size: 18px * root.s;
+    }
+}
+
+// Unterseite „WLAN“ bzw. „Bluetooth“: Liste mit Ein/Aus-Zeile, Netzen bzw. Geräten.
+export component NetworkPage inherits Rectangle {
+    in property <NetView> view;
+    in property <float> s;
+
+    property <length> margin: 110px * root.s;
+    property <length> row-height: 92px * root.s;
+    property <length> pitch: root.row-height + 12px * root.s;
+    property <length> list-y: 230px * root.s;
+    property <length> list-height: root.height - root.list-y - 130px * root.s;
+    property <length> card-width: min(980px * root.s, root.width - 2 * root.margin);
+    // Scrollt so, dass unter der fokussierten Zeile noch eine zu sehen ist
+    property <length> scroll: max(0, min((root.view.focused + 2) * root.pitch - root.list-height,
+        root.view.rows.length * root.pitch - root.list-height));
+
+    property <bool> list-shown: !root.view.password-open;
+
+    Rectangle {
+        opacity: root.list-shown ? 1 : 0;
+        visible: self.opacity > 0.01;
+        animate opacity { duration: Theme.page-duration; }
+
+        Text {
+            x: root.margin;
+            y: 120px * root.s;
+            text: root.view.title;
+            color: Theme.text;
+            font-size: 44px * root.s;
+            font-weight: 800;
+        }
+
+        Text {
+            x: root.margin;
+            y: 180px * root.s;
+            text: root.view.status;
+            color: Theme.text-dim;
+            font-size: 22px * root.s;
+        }
+
+        Rectangle {
+            x: 0;
+            y: root.list-y;
+            width: root.width;
+            height: root.list-height;
+            clip: true;
+
+            for row[i] in root.view.rows: card := Rectangle {
+                property <bool> is-focused: i == root.view.focused;
+                property <color> fg: self.is-focused ? Theme.base : Theme.text;
+                property <color> fg-dim: self.is-focused ? Theme.base.with-alpha(0.7) : Theme.text-dim;
+                x: root.margin;
+                y: i * root.pitch - root.scroll;
+                animate y {
+                    duration: Theme.focus-duration;
+                    easing: ease-out-quart;
+                }
+                width: root.card-width;
+                height: root.row-height;
+                border-radius: 18px * root.s;
+                background: self.is-focused ? (row.armed ? #ff6b6b : Theme.accent) : Theme.surface;
+                animate background { duration: Theme.focus-duration; }
+                border-width: !self.is-focused && (row.gamepad || row.armed) ? 2px : 0;
+                border-color: row.armed ? #ff6b6b : Theme.accent.with-alpha(0.6);
+
+                // Symbol links: WLAN-Balken, Controller-Grafik oder Textsymbol
+                Rectangle {
+                    x: 26px * root.s;
+                    width: 44px * root.s;
+                    height: 100%;
+
+                    if row.bars > 0: SignalBars {
+                        bars: row.bars;
+                        tint: card.fg;
+                        s: root.s;
+                    }
+
+                    if row.bars == 0 && row.gamepad: Image {
+                        width: 40px * root.s;
+                        height: 40px * root.s;
+                        source: @image-url("icons/gamepad.svg");
+                        colorize: card.is-focused ? Theme.base : Theme.accent;
+                    }
+
+                    if row.bars == 0 && !row.gamepad: Text {
+                        text: row.symbol;
+                        color: card.fg-dim;
+                        font-size: 28px * root.s;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+
+                VerticalLayout {
+                    x: 92px * root.s;
+                    y: (parent.height - self.height) / 2;
+                    width: parent.width - 92px * root.s - 260px * root.s;
+                    height: self.preferred-height;
+                    spacing: 4px * root.s;
+
+                    Text {
+                        text: row.title;
+                        color: card.fg;
+                        font-size: 24px * root.s;
+                        font-weight: 700;
+                        overflow: elide;
+                    }
+
+                    Text {
+                        text: row.detail;
+                        color: row.busy && !card.is-focused ? Theme.accent : card.fg-dim;
+                        font-size: 17px * root.s;
+                        overflow: elide;
+                    }
+                }
+
+                HorizontalLayout {
+                    x: parent.width - self.width - 30px * root.s;
+                    width: self.preferred-width;
+                    height: 100%;
+                    spacing: 16px * root.s;
+                    alignment: end;
+
+                    if row.active: Rectangle {
+                        y: (parent.height - self.height) / 2;
+                        width: badge.preferred-width + 24px * root.s;
+                        height: 34px * root.s;
+                        border-radius: self.height / 2;
+                        background: card.is-focused ? Theme.base.with-alpha(0.15) : Theme.accent.with-alpha(0.2);
+
+                        badge := Text {
+                            width: 100%;
+                            height: 100%;
+                            text: "● Verbunden";
+                            color: card.is-focused ? Theme.base : Theme.accent;
+                            font-size: 16px * root.s;
+                            font-weight: 700;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    if row.secured: Rectangle {
+                        width: 18px * root.s;
+
+                        LockIcon {
+                            y: (parent.height - self.height) / 2;
+                            tint: card.fg-dim;
+                            s: root.s;
+                        }
+                    }
+
+                    if row.value != "": Text {
+                        text: row.value;
+                        color: card.fg;
+                        font-size: 22px * root.s;
+                        font-weight: 600;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+
+        // Leerer Zustand (kein Adapter, ausgeschaltet, nichts gefunden …)
+        if root.view.empty-title != "": VerticalLayout {
+            x: root.margin;
+            y: root.list-y + root.view.rows.length * root.pitch + (root.view.rows.length == 0 ? 10px : 30px) * root.s;
+            width: root.card-width;
+            height: self.preferred-height;
+            spacing: 10px * root.s;
+
+            Text {
+                text: root.view.empty-title;
+                color: Theme.text;
+                font-size: 32px * root.s;
+                font-weight: 700;
+            }
+
+            Text {
+                text: root.view.empty-text;
+                color: Theme.text-dim;
+                font-size: 20px * root.s;
+                wrap: word-wrap;
+            }
+        }
+    }
+
+    PasswordEntry {
+        width: root.width;
+        height: root.height;
+        view: root.view;
+        s: root.s;
+        opacity: root.view.password-open ? 1 : 0;
+        visible: self.opacity > 0.01;
+        animate opacity { duration: Theme.page-duration; }
+    }
+}

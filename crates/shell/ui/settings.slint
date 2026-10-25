@@ -53,7 +53,8 @@ export component SettingsPage inherits Rectangle {
         Text {
             x: parent.width - self.width - 30px * root.s;
             height: 100%;
-            text: (card.is-focused ? "◀  " : "") + row.value + (card.is-focused ? "  ▶" : "");
+            text: row.opens-page ? row.value + "   ›"
+                : (card.is-focused ? "◀  " : "") + row.value + (card.is-focused ? "  ▶" : "");
             color: card.is-focused ? Theme.base : Theme.text;
             font-size: 22px * root.s;
             font-weight: 600;
