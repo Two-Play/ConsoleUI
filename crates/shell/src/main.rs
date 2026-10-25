@@ -10,6 +10,7 @@ use consoleui_core::Action;
 use slint::{RenderingState, Rgba8Pixel, SharedPixelBuffer, Timer, TimerMode};
 
 mod audio;
+mod context;
 mod cover;
 mod gamepad;
 mod gamescope;

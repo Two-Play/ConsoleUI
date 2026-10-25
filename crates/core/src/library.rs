@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use chrono::NaiveDate;
 
+use crate::collection::Collection;
 use crate::history::History;
 use crate::search::normalize;
 
@@ -128,6 +129,8 @@ pub enum LibraryFilter {
     All,
     Games,
     Apps,
+    /// Nur die ausgeblendeten Einträge, um sie wieder anzuzeigen
+    Hidden,
 }
 
 impl LibraryFilter {
@@ -135,7 +138,8 @@ impl LibraryFilter {
         match self {
             Self::All => Self::Games,
             Self::Games => Self::Apps,
-            Self::Apps => Self::All,
+            Self::Apps => Self::Hidden,
+            Self::Hidden => Self::All,
         }
     }
 
@@ -144,14 +148,17 @@ impl LibraryFilter {
             Self::All => "Alle",
             Self::Games => "Spiele",
             Self::Apps => "Apps",
+            Self::Hidden => "Ausgeblendet",
         }
     }
 
-    fn matches(self, kind: AppKind) -> bool {
+    fn matches(self, entry: &AppEntry, collection: &Collection) -> bool {
+        let hidden = collection.is_hidden(&entry.id);
         match self {
-            Self::All => true,
-            Self::Games => kind == AppKind::Game,
-            Self::Apps => kind == AppKind::App,
+            Self::All => !hidden,
+            Self::Games => !hidden && entry.kind == AppKind::Game,
+            Self::Apps => !hidden && entry.kind == AppKind::App,
+            Self::Hidden => hidden,
         }
     }
 }
@@ -180,8 +187,14 @@ impl LibrarySort {
 }
 
 /// Indizes in `entries` für die Bibliothek. `entries` ist bereits nach letzter Nutzung sortiert.
-pub fn library_view(entries: &[AppEntry], filter: LibraryFilter, sort: LibrarySort) -> Vec<usize> {
-    let mut view: Vec<usize> = (0..entries.len()).filter(|&i| filter.matches(entries[i].kind)).collect();
+/// Ausgeblendete erscheinen nur im Filter „Ausgeblendet“; Angeheftete behalten die normale Sortierung.
+pub fn library_view(
+    entries: &[AppEntry],
+    filter: LibraryFilter,
+    sort: LibrarySort,
+    collection: &Collection,
+) -> Vec<usize> {
+    let mut view: Vec<usize> = (0..entries.len()).filter(|&i| filter.matches(&entries[i], collection)).collect();
     if sort == LibrarySort::Alphabetical {
         view.sort_by_cached_key(|&i| normalize(&entries[i].title));
     }
@@ -261,10 +274,24 @@ mod tests {
         apps[2].title = "Browser".into();
         apps[3].kind = AppKind::App;
         apps[3].title = "anno".into();
-        assert_eq!(library_view(&apps, LibraryFilter::All, LibrarySort::Recent), [0, 1, 2, 3]);
-        assert_eq!(library_view(&apps, LibraryFilter::Games, LibrarySort::Alphabetical), [1, 0]);
-        assert_eq!(library_view(&apps, LibraryFilter::Apps, LibrarySort::Alphabetical), [3, 2]);
-        assert_eq!(LibraryFilter::Apps.next(), LibraryFilter::All);
+        let none = Collection::default();
+        assert_eq!(library_view(&apps, LibraryFilter::All, LibrarySort::Recent, &none), [0, 1, 2, 3]);
+        assert_eq!(library_view(&apps, LibraryFilter::Games, LibrarySort::Alphabetical, &none), [1, 0]);
+        assert_eq!(library_view(&apps, LibraryFilter::Apps, LibrarySort::Alphabetical, &none), [3, 2]);
+        assert_eq!(library_view(&apps, LibraryFilter::Hidden, LibrarySort::Recent, &none), Vec::<usize>::new());
+        assert_eq!(LibraryFilter::Apps.next(), LibraryFilter::Hidden);
+        assert_eq!(LibraryFilter::Hidden.next(), LibraryFilter::All);
+    }
+
+    #[test]
+    fn library_view_hides_and_keeps_pinned_in_normal_order() {
+        let apps = dummy_library(4);
+        let mut collection = Collection::default();
+        collection.hide("dummy:1");
+        collection.pin("dummy:3");
+        assert_eq!(library_view(&apps, LibraryFilter::All, LibrarySort::Recent, &collection), [0, 2, 3]);
+        assert_eq!(library_view(&apps, LibraryFilter::Games, LibrarySort::Recent, &collection), [0, 2, 3]);
+        assert_eq!(library_view(&apps, LibraryFilter::Hidden, LibrarySort::Recent, &collection), [1]);
     }
 
     #[test]

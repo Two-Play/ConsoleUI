@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 
 use consoleui_core::{
-    AppEntry, History, Launch, accent, apply_history, discover_library, dummy_library, sort_by_recent,
+    AppEntry, Collection, History, Launch, accent, apply_history, discover_library, dummy_library, sort_by_recent,
 };
 use slint::{Rgba8Pixel, SharedPixelBuffer};
 
@@ -29,6 +29,9 @@ pub struct Library {
     pub entries: Vec<LoadedEntry>,
     pub history: History,
     pub history_path: Option<PathBuf>,
+    /// Angeheftete und ausgeblendete Einträge
+    pub collection: Collection,
+    pub collection_path: Option<PathBuf>,
 }
 
 pub fn spawn(options: LoadOptions) -> mpsc::Receiver<Library> {
@@ -43,11 +46,13 @@ fn load(options: &LoadOptions) -> Library {
     if !options.dummy {
         let history_path = History::default_path();
         let history = history_path.as_deref().map(History::load).unwrap_or_default();
+        let collection_path = Collection::default_path();
+        let collection = collection_path.as_deref().map(Collection::load).unwrap_or_default();
         let mut entries = discover_library();
         if !entries.is_empty() {
             apply_history(&mut entries, &history);
             sort_by_recent(&mut entries);
-            return Library { entries: decode_all(entries), history, history_path };
+            return Library { entries: decode_all(entries), history, history_path, collection, collection_path };
         }
         eprintln!("Keine Spiele oder Apps gefunden, zeige Dummy-Einträge.");
     }
@@ -58,7 +63,14 @@ fn load(options: &LoadOptions) -> Library {
             entry.launch = Launch::Command(argv.clone());
         }
     }
-    Library { entries: decode_all(entries), history: History::default(), history_path: None }
+    // Dummy-Einträge speichern weder Historie noch Sammlung (ihre IDs gibt es nicht wirklich).
+    Library {
+        entries: decode_all(entries),
+        history: History::default(),
+        history_path: None,
+        collection: Collection::default(),
+        collection_path: None,
+    }
 }
 
 /// Dekodiert die Bilder auf mehreren Threads; die Reihenfolge bleibt erhalten.

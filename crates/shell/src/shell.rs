@@ -15,18 +15,19 @@ use consoleui_core::settings::{GlyphChoice, Setting, Settings};
 use consoleui_core::sound::Sound;
 use consoleui_core::system;
 use consoleui_core::{
-    Action, AppEntry, AppKind, Carousel, Grid, History, Launch, LibraryFilter, LibrarySort, library_view, search,
-    steam,
+    Action, AppEntry, AppKind, Carousel, Collection, Grid, History, Launch, LibraryFilter, LibrarySort, home_view,
+    library_view, search, steam,
 };
 use slint::{ComponentHandle, Image, ModelRc, VecModel};
 
 use crate::audio::Audio;
+use crate::context::{ContextAction, ContextMenu, ContextOutcome, EntryState};
 use crate::gamescope::{Gamescope, x11_window_id};
 use crate::loader::Library;
 use crate::quick::{ForegroundApp, QuickAction, QuickMenu, QuickOutcome};
 use crate::{AppTile, AppWindow, ControllerStyle, GlyphButton, Hint, KeyCap, OverlayWindow, Screen, SettingRow, Theme, tiles};
 
-/// So viele zuletzt genutzte Einträge zeigt die Home-Reihe vor der Bibliothekskachel.
+/// So viele Einträge zeigt die Home-Reihe vor der Bibliothekskachel (Angeheftete immer alle).
 const HOME_COUNT: usize = 12;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -78,6 +79,8 @@ pub struct Shell {
 
     screen: Screen,
     home: Carousel,
+    /// Indizes in `entries` für die Home-Reihe (Angeheftete zuerst, ohne Ausgeblendete)
+    home_entries: Vec<usize>,
     grid: Grid,
     /// Indizes in `entries` für die Bibliothek (gefiltert und sortiert)
     library: Vec<usize>,
@@ -95,6 +98,11 @@ pub struct Shell {
 
     history: History,
     history_path: Option<PathBuf>,
+    /// Angeheftete und ausgeblendete Einträge
+    collection: Collection,
+    collection_path: Option<PathBuf>,
+    /// Offenes Kontextmenü für den fokussierten Eintrag
+    context: Option<ContextMenu>,
     /// Hero-Bilder werden erst beim Fokussieren geladen und dann behalten.
     heroes: HashMap<String, Image>,
     /// Eintrag, dessen Hero gerade angezeigt wird (verhindert unnötiges Überblenden)
@@ -131,8 +139,9 @@ const LOW_BATTERY: u8 = 15;
 struct Feedback {
     screen: Screen,
     quick_open: bool,
+    context_open: bool,
     launching: bool,
-    focus: [usize; 7],
+    focus: [usize; 8],
     query_len: usize,
     settings: Settings,
 }
@@ -177,6 +186,7 @@ impl Shell {
             results_model,
             screen: Screen::Home,
             home: Carousel::new(0),
+            home_entries: Vec::new(),
             grid: Grid::new(0),
             library: Vec::new(),
             filter: LibraryFilter::default(),
@@ -189,6 +199,9 @@ impl Shell {
             search_origin: Screen::Home,
             history: History::default(),
             history_path: None,
+            collection: Collection::default(),
+            collection_path: None,
+            context: None,
             heroes: HashMap::new(),
             hero_entry: None,
             running: Vec::new(),
@@ -218,6 +231,8 @@ impl Shell {
         self.library_tile = tiles::library_tile(self.entries.len());
         self.history = library.history;
         self.history_path = library.history_path;
+        self.collection = library.collection;
+        self.collection_path = library.collection_path;
         self.hero_entry = None;
         self.refresh(ui);
     }
@@ -269,7 +284,7 @@ impl Shell {
 
     /// Anzahl der Einträge in der Home-Reihe (inklusive Bibliothekskachel), für den Benchmark.
     pub fn home_len(&self) -> usize {
-        self.tiles.len().min(HOME_COUNT) + 1
+        self.home_entries.len() + 1
     }
 
     /// Solange die Steuerzentrale offen ist, liest die Shell die Controller exklusiv.
@@ -313,6 +328,7 @@ impl Shell {
         Feedback {
             screen: self.screen,
             quick_open: self.quick.is_some(),
+            context_open: self.context.is_some(),
             launching: ui.get_launching(),
             focus: [
                 self.home.focused(),
@@ -322,6 +338,7 @@ impl Shell {
                 self.settings_row,
                 self.quick.as_ref().map_or(0, QuickMenu::focused),
                 usize::from(self.search_area == SearchArea::Results),
+                self.context.as_ref().map_or(0, ContextMenu::focused),
             ],
             query_len: self.query.len(),
             settings: self.settings,
@@ -334,6 +351,8 @@ impl Shell {
         }
         let sound = if after.quick_open != before.quick_open {
             if after.quick_open { Sound::Open } else { Sound::Back }
+        } else if after.context_open != before.context_open && !after.launching {
+            if after.context_open { Sound::Open } else { Sound::Back }
         } else if after.launching && !before.launching {
             Sound::Confirm
         } else if after.screen != before.screen || after.launching != before.launching {
@@ -356,6 +375,7 @@ impl Shell {
             return;
         }
         if action == Action::Guide {
+            self.close_context(ui);
             self.open_quick(ui);
             return;
         }
@@ -375,6 +395,11 @@ impl Shell {
                 Action::Back => self.close_confirm(ui),
                 _ => {}
             }
+            return;
+        }
+        if self.context.is_some() {
+            self.apply_context(ui, action);
+            self.sync(ui);
             return;
         }
         match (self.screen, action) {
@@ -397,11 +422,7 @@ impl Shell {
                 Some(index) => self.launch(ui, index),
                 None => self.screen = Screen::Library,
             },
-            Action::Menu => {
-                if let Some(index) = self.home_entry() {
-                    self.ask_quit(ui, index);
-                }
-            }
+            Action::Menu => self.open_context(ui),
             _ => {
                 self.home.apply(action);
             }
@@ -421,14 +442,8 @@ impl Shell {
                 self.grid.focus(0);
                 self.refresh_library(ui);
             }
-            Action::Menu => {
-                let keep = self.focused_entry().map(|i| self.entries[i].id.clone());
-                self.sort = self.sort.next();
-                self.refresh_library(ui);
-                if let Some(pos) = keep.and_then(|id| self.library.iter().position(|&i| self.entries[i].id == id)) {
-                    self.grid.focus(pos);
-                }
-            }
+            // Sortierung steht seit dem Kontextmenü (Story 2.7) dort mit drin.
+            Action::Menu => self.open_context(ui),
             _ => {
                 self.grid.apply(action, ui.get_library_columns().max(1) as usize);
             }
@@ -559,8 +574,7 @@ impl Shell {
     }
 
     fn home_entry(&self) -> Option<usize> {
-        let focused = self.home.focused();
-        (focused < self.tiles.len().min(HOME_COUNT)).then_some(focused)
+        self.home_entries.get(self.home.focused()).copied()
     }
 
     /// Index in `entries` des Eintrags, der auf dem aktuellen Bildschirm fokussiert ist.
@@ -581,7 +595,11 @@ impl Shell {
 
     /// Baut alle Kachelmodelle neu auf (nach Start, Ende einer App oder Umsortierung).
     fn refresh(&mut self, ui: &AppWindow) {
-        let mut home: Vec<AppTile> = self.tiles.iter().take(HOME_COUNT).cloned().collect();
+        for (tile, entry) in self.tiles.iter_mut().zip(&self.entries) {
+            tile.pinned = self.collection.is_pinned(&entry.id);
+        }
+        self.home_entries = home_view(&self.entries, &self.collection, HOME_COUNT);
+        let mut home: Vec<AppTile> = self.home_entries.iter().map(|&i| self.tiles[i].clone()).collect();
         home.push(self.library_tile.clone());
         let focused = self.home.focused();
         self.home = Carousel::new(home.len());
@@ -593,7 +611,7 @@ impl Shell {
     }
 
     fn refresh_library(&mut self, ui: &AppWindow) {
-        self.library = library_view(&self.entries, self.filter, self.sort);
+        self.library = library_view(&self.entries, self.filter, self.sort, &self.collection);
         self.grid.set_len(self.library.len());
         self.library_model.set_vec(self.library.iter().map(|&i| self.tiles[i].clone()).collect::<Vec<_>>());
         ui.set_filter_label(self.filter.label().into());
@@ -602,7 +620,7 @@ impl Shell {
 
     fn refresh_results(&mut self, ui: &AppWindow) {
         let keep = self.results.get(self.result_row.focused()).map(|&i| self.entries[i].id.clone());
-        self.results = search::search(&self.entries, &self.query);
+        self.results = search::search(&self.entries, &self.query, &self.collection);
         self.result_row = Carousel::new(self.results.len());
         if let Some(pos) = keep.and_then(|id| self.results.iter().position(|&i| self.entries[i].id == id)) {
             self.result_row.focus(pos);
@@ -663,15 +681,22 @@ impl Shell {
             AppKind::App => "Öffnen",
         };
         let mut hints = Vec::new();
+        if self.context.is_some() {
+            hints.push(hint(GlyphButton::Updown, "Auswählen"));
+            hints.push(hint(GlyphButton::Confirm, "OK"));
+            hints.push(hint(GlyphButton::Back, "Schließen"));
+            ui.set_hints(ModelRc::new(VecModel::from(hints)));
+            return;
+        }
         match self.screen {
             Screen::Home => {
                 hints.push(hint(GlyphButton::Dpad, "Navigieren"));
                 match self.home_entry() {
-                    Some(i) if self.running_for(i).is_some() => {
-                        hints.push(hint(GlyphButton::Confirm, "Fortsetzen"));
-                        hints.push(hint(GlyphButton::Menu, "Beenden"));
+                    Some(i) => {
+                        let label = if self.running_for(i).is_some() { "Fortsetzen" } else { start_label(i) };
+                        hints.push(hint(GlyphButton::Confirm, label));
+                        hints.push(hint(GlyphButton::Menu, "Optionen"));
                     }
-                    Some(i) => hints.push(hint(GlyphButton::Confirm, start_label(i))),
                     None => hints.push(hint(GlyphButton::Confirm, "Bibliothek öffnen")),
                 }
                 hints.push(hint(GlyphButton::North, "Suchen"));
@@ -688,7 +713,7 @@ impl Shell {
                     hints.push(hint(GlyphButton::Confirm, label));
                 }
                 hints.push(hint(GlyphButton::West, "Filter"));
-                hints.push(hint(GlyphButton::Menu, "Sortierung"));
+                hints.push(hint(GlyphButton::Menu, "Optionen"));
                 hints.push(hint(GlyphButton::North, "Suchen"));
                 hints.push(hint(GlyphButton::Back, "Zurück"));
             }
@@ -717,6 +742,89 @@ impl Shell {
             }
         }
         ui.set_hints(ModelRc::new(VecModel::from(hints)));
+    }
+
+    // --- Kontextmenü -----------------------------------------------------------------------
+
+    /// Öffnet das Kontextmenü für den fokussierten Eintrag (in der Bibliothek auch ohne Eintrag,
+    /// wegen der Sortierung). Auf der Bibliothekskachel in Home passiert nichts.
+    fn open_context(&mut self, ui: &AppWindow) {
+        let entry = self.focused_entry().map(|i| {
+            let id = self.entries[i].id.clone();
+            EntryState {
+                title: self.entries[i].title.clone(),
+                pinned: self.collection.is_pinned(&id),
+                hidden: self.collection.is_hidden(&id),
+                running: self.running_for(i).is_some(),
+                id,
+            }
+        });
+        let menu = ContextMenu::new(entry, self.screen == Screen::Library);
+        if !menu.is_empty() {
+            self.context = Some(menu);
+            self.show_context(ui);
+        }
+    }
+
+    fn apply_context(&mut self, ui: &AppWindow, action: Action) {
+        let Some(menu) = self.context.as_mut() else { return };
+        match menu.apply(action) {
+            ContextOutcome::Stay => self.show_context(ui),
+            ContextOutcome::Close => self.close_context(ui),
+            ContextOutcome::Run(action) => self.run_context(ui, action),
+        }
+    }
+
+    fn run_context(&mut self, ui: &AppWindow, action: ContextAction) {
+        if action == ContextAction::Sort {
+            let keep = self.focused_entry().map(|i| self.entries[i].id.clone());
+            self.sort = self.sort.next();
+            self.refresh_library(ui);
+            if let Some(id) = keep {
+                self.focus_entry(&id);
+            }
+            self.show_context(ui);
+            return;
+        }
+        let Some(id) = self.context.as_ref().and_then(|m| m.entry_id()).map(str::to_string) else { return };
+        self.close_context(ui);
+        match action {
+            ContextAction::Quit => {
+                if let Some(index) = self.entries.iter().position(|e| e.id == id) {
+                    self.ask_quit(ui, index);
+                }
+                return;
+            }
+            ContextAction::Pin => self.collection.pin(&id),
+            ContextAction::Unpin => self.collection.unpin(&id),
+            ContextAction::Hide => self.collection.hide(&id),
+            ContextAction::Show => self.collection.show(&id),
+            ContextAction::Sort => {}
+        }
+        if let Some(path) = &self.collection_path
+            && let Err(err) = self.collection.save(path)
+        {
+            eprintln!("Sammlung konnte nicht gespeichert werden ({}): {err}", path.display());
+        }
+        self.refresh(ui);
+        // Angeheftet/gelöst: Der Fokus wandert mit dem Eintrag an seinen neuen Platz.
+        if matches!(action, ContextAction::Pin | ContextAction::Unpin) {
+            self.focus_entry(&id);
+        }
+    }
+
+    fn show_context(&self, ui: &AppWindow) {
+        let Some(menu) = &self.context else { return };
+        ui.set_context_title(menu.title().to_uppercase().into());
+        ui.set_context_items(ModelRc::new(VecModel::from(menu.items(self.sort))));
+        ui.set_context_focused(menu.focused() as i32);
+        ui.set_context_open(true);
+    }
+
+    fn close_context(&mut self, ui: &AppWindow) {
+        if self.context.take().is_some() {
+            ui.set_context_open(false);
+        }
     }
 
     // --- Quick-Menü ------------------------------------------------------------------------
@@ -889,8 +997,11 @@ impl Shell {
         }
     }
 
-    /// Fokus in Bibliothek und Suche auf den Eintrag setzen (nach dem Umsortieren).
+    /// Fokus in Home, Bibliothek und Suche auf den Eintrag setzen (nach dem Umsortieren).
     fn focus_entry(&mut self, id: &str) {
+        if let Some(pos) = self.home_entries.iter().position(|&i| self.entries[i].id == id) {
+            self.home.focus(pos);
+        }
         if let Some(pos) = self.library.iter().position(|&i| self.entries[i].id == id) {
             self.grid.focus(pos);
         }

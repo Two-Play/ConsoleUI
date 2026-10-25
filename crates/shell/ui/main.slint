@@ -1,17 +1,18 @@
 import { Theme } from "theme.slint";
-import { AppTile, ControllerStyle, GlyphButton, Hint, KeyCap, NavAction, NetworkState, QuickItem, Screen, SettingRow } from "types.slint";
+import { AppTile, ContextItem, ControllerStyle, GlyphButton, Hint, KeyCap, NavAction, NetworkState, QuickItem, Screen, SettingRow } from "types.slint";
 import { StatusBar } from "statusbar.slint";
 import { ButtonGlyph, HintBar } from "glyph.slint";
 import { HomePage } from "home.slint";
 import { LibraryPage } from "library.slint";
 import { SearchPage } from "search.slint";
 import { QuickMenu } from "quickmenu.slint";
+import { ContextMenu } from "contextmenu.slint";
 import { OverlayWindow } from "overlay.slint";
 import { SettingsPage } from "settings.slint";
 import { BootScreen } from "boot.slint";
 import { Toast } from "toast.slint";
 
-export { AppTile, ControllerStyle, GlyphButton, Hint, KeyCap, NavAction, NetworkState, QuickItem, Screen, SettingRow, OverlayWindow, Theme }
+export { AppTile, ContextItem, ControllerStyle, GlyphButton, Hint, KeyCap, NavAction, NetworkState, QuickItem, Screen, SettingRow, OverlayWindow, Theme }
 
 export component AppWindow inherits Window {
     title: "ConsoleUI";
@@ -74,6 +75,12 @@ export component AppWindow inherits Window {
     in property <string> quick-title;
     in property <[QuickItem]> quick-items;
     in property <int> quick-focused;
+
+    // Kontextmenü (Options/Tab) für den fokussierten Eintrag
+    in property <bool> context-open;
+    in property <string> context-title;
+    in property <[ContextItem]> context-items;
+    in property <int> context-focused;
 
     // Rückfrage, z. B. vor dem Beenden einer laufenden App
     in property <bool> confirm-open;
@@ -411,6 +418,17 @@ export component AppWindow inherits Window {
             results: root.results;
             result-focused: root.result-focused;
             pulse: root.pulse && root.screen == Screen.search;
+            s: root.s;
+        }
+
+        // Unter der Hinweisleiste, damit deren Hinweise zum Menü lesbar bleiben
+        ContextMenu {
+            width: 100%;
+            height: 100%;
+            open: root.context-open;
+            title: root.context-title;
+            items: root.context-items;
+            focused: root.context-focused;
             s: root.s;
         }
 

@@ -43,6 +43,7 @@ pub fn to_tile(loaded: &LoadedEntry, index: usize, today: NaiveDate) -> AppTile 
             .unwrap_or_else(|| cover::generate(entry.accent, entry.accent2, index as u32, COVER_SIZE)),
         accent: Color::from_rgb_u8(entry.accent[0], entry.accent[1], entry.accent[2]),
         running: false,
+        pinned: false,
     }
 }
 
@@ -73,6 +74,7 @@ pub fn library_tile(count: usize) -> AppTile {
         has_logo: false,
         accent: Color::from_rgb_u8(accent[0], accent[1], accent[2]),
         running: false,
+        pinned: false,
     }
 }
 

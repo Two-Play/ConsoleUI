@@ -70,6 +70,26 @@ export component Tile inherits Rectangle {
         }
     }
 
+    // Nadel oben rechts für angeheftete Einträge
+    if root.data.pinned: Rectangle {
+        property <length> size: max(14px, root.width * 0.15);
+        x: root.width - self.size - root.width * 0.07;
+        y: root.width * 0.07;
+        width: self.size;
+        height: self.size;
+        border-radius: self.size / 2;
+        background: #000000c0;
+
+        Image {
+            width: parent.size * 0.62;
+            height: self.width;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            source: @image-url("icons/pin.svg");
+            colorize: Theme.accent;
+        }
+    }
+
     // Fokusrahmen
     Rectangle {
         width: 100%;
