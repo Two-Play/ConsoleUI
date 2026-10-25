@@ -48,7 +48,10 @@ use smithay::wayland::shell::xdg::decoration::{XdgDecorationHandler, XdgDecorati
 use smithay::wayland::shell::xdg::{
     PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState, XdgToplevelSurfaceData,
 };
+use smithay::wayland::selection::primary_selection::{PrimarySelectionHandler, PrimarySelectionState};
 use smithay::wayland::shm::{ShmHandler, ShmState};
+use smithay::wayland::xwayland_shell::XWaylandShellState;
+use smithay::xwayland::X11Wm;
 use smithay::wayland::single_pixel_buffer::SinglePixelBufferState;
 use smithay::wayland::socket::ListeningSocketSource;
 use smithay::wayland::viewporter::ViewporterState;
@@ -125,6 +128,12 @@ pub struct State {
     pub control: Control,
     pub shell: Option<ShellProcess>,
     pub screenshots: Vec<ScreenshotRequest>,
+
+    pub xwayland_shell_state: XWaylandShellState,
+    pub primary_selection_state: PrimarySelectionState,
+    pub xwm: Option<X11Wm>,
+    /// XWayland display number (`DISPLAY=:N`)
+    pub xdisplay: Option<u32>,
 }
 
 impl State {
@@ -181,6 +190,7 @@ impl State {
         let runtime_dir = std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
         let control = Control::listen(&runtime_dir.join(format!("consoleui-{socket_name}.sock")), &handle)?;
 
+        let dh_for_x = dh.clone();
         Ok(State {
             display_handle: dh,
             loop_handle: handle,
@@ -218,6 +228,10 @@ impl State {
             control,
             shell: None,
             screenshots: Vec::new(),
+            xwayland_shell_state: XWaylandShellState::new::<Self>(&dh_for_x),
+            primary_selection_state: PrimarySelectionState::new::<Self>(&dh_for_x),
+            xwm: None,
+            xdisplay: None,
         })
     }
 
@@ -240,6 +254,7 @@ impl State {
         for window in windows {
             self.fit_window(&window);
         }
+        self.apply_policy();
         let message = CompositorMessage::Output { width: size.w as u32, height: size.h as u32 };
         self.control.set_greeting(message.clone());
         self.control.broadcast(&message);
@@ -318,7 +333,7 @@ impl State {
     }
 
     /// A window committed: once it has a buffer, the policy may bring it to the front.
-    fn window_committed(&mut self, window: &Window) {
+    pub fn window_committed(&mut self, window: &Window) {
         let Some(surface) = window.wl_surface() else { return };
         let has_buffer = with_renderer_surface_state(&surface, |state| state.buffer().is_some()).unwrap_or(false);
         if has_buffer {
@@ -530,7 +545,6 @@ impl CompositorHandler for State {
         {
             warn!("initial popup configure failed: {err}");
         }
-        crate::xwayland::commit(self, surface);
     }
 }
 
@@ -714,6 +728,12 @@ impl SelectionHandler for State {
 impl DataDeviceHandler for State {
     fn data_device_state(&mut self) -> &mut DataDeviceState {
         &mut self.data_device_state
+    }
+}
+
+impl PrimarySelectionHandler for State {
+    fn primary_selection_state(&mut self) -> &mut PrimarySelectionState {
+        &mut self.primary_selection_state
     }
 }
 

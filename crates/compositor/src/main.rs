@@ -76,13 +76,17 @@ fn main() {
 }
 
 impl State {
-    /// After the backend is up: XWayland (7.3), the shell, scheduled screenshots.
+    /// After the backend is up: XWayland, then the shell (with `DISPLAY`), scheduled screenshots.
     pub fn start(&mut self, options: &Options) {
         for (delay, path) in &options.screenshots {
             self.schedule_screenshot(*delay, path.clone());
         }
         info!("WAYLAND_DISPLAY={} CONSOLEUI_COMPOSITOR={}", self.socket_name, self.control.path().display());
-        child::start_shell_or_stop(self, options.shell.as_deref(), None);
+        if options.xwayland {
+            xwayland::start(self, options.shell.clone());
+        } else {
+            child::start_shell_or_stop(self, options.shell.as_deref(), None);
+        }
     }
 
     /// Stops the shell and returns the exit code; the rest is cleaned up when `State` drops.

@@ -193,7 +193,6 @@ impl TouchTarget<State> for FocusTarget {
 }
 
 /// Drag and drop between Wayland and X11 clients (required by Smithay's X11 window manager).
-#[allow(dead_code)] // the X11 variant is used with XWayland (Story 7.3)
 pub enum FocusOfferData<S: Source> {
     Wayland(WlOfferData<S>),
     X11(XwmOfferData<S>),
@@ -239,8 +238,9 @@ impl DndFocus<State> for FocusTarget {
             FocusTarget::Wayland(surface) => {
                 DndFocus::enter(surface, data, dh, source, seat, location, serial).map(FocusOfferData::Wayland)
             }
-            // X11 drag and drop needs the X11 window manager (Story 7.3).
-            FocusTarget::X11(_) => None,
+            FocusTarget::X11(surface) => {
+                DndFocus::enter(surface, data, dh, source, seat, location, serial).map(FocusOfferData::X11)
+            }
         }
     }
 
@@ -257,6 +257,10 @@ impl DndFocus<State> for FocusTarget {
                 DndFocus::motion(surface, data, Some(offer), seat, location, time)
             }
             (FocusTarget::Wayland(surface), None) => DndFocus::motion(surface, data, None::<&mut WlOfferData<S>>, seat, location, time),
+            (FocusTarget::X11(surface), Some(FocusOfferData::X11(offer))) => {
+                DndFocus::motion(surface, data, Some(offer), seat, location, time)
+            }
+            (FocusTarget::X11(surface), None) => DndFocus::motion(surface, data, None::<&mut XwmOfferData<S>>, seat, location, time),
             _ => {}
         }
     }
@@ -267,6 +271,10 @@ impl DndFocus<State> for FocusTarget {
                 DndFocus::leave(surface, data, Some(offer), seat)
             }
             (FocusTarget::Wayland(surface), None) => DndFocus::leave(surface, data, None::<&mut WlOfferData<S>>, seat),
+            (FocusTarget::X11(surface), Some(FocusOfferData::X11(offer))) => {
+                DndFocus::leave(surface, data, Some(offer), seat)
+            }
+            (FocusTarget::X11(surface), None) => DndFocus::leave(surface, data, None::<&mut XwmOfferData<S>>, seat),
             _ => {}
         }
     }
@@ -277,6 +285,10 @@ impl DndFocus<State> for FocusTarget {
                 DndFocus::drop(surface, data, Some(offer), seat)
             }
             (FocusTarget::Wayland(surface), None) => DndFocus::drop(surface, data, None::<&mut WlOfferData<S>>, seat),
+            (FocusTarget::X11(surface), Some(FocusOfferData::X11(offer))) => {
+                DndFocus::drop(surface, data, Some(offer), seat)
+            }
+            (FocusTarget::X11(surface), None) => DndFocus::drop(surface, data, None::<&mut XwmOfferData<S>>, seat),
             _ => {}
         }
     }
