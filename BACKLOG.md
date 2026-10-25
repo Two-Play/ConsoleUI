@@ -788,6 +788,13 @@ Branch `agent/compositor-blur`, on top of the UI feedback round (6.10).
   (the bar's blur no longer fades; region updates keep a running toast fade going). The animated
   background pauses while the quick menu is open, so the shell redraws only the menu instead of two
   windows at once. Measured on the NVIDIA host: the blur takes ~0.45 ms CPU per frame (max ~1 ms).
+- **Second follow-up (tested by the user in the VM):** reopening the quick menu right when the
+  hide timer of the previous close ran out (450 ms) hid the window just shown, because `open` is
+  set only 30 ms after showing: the menu was then open (and took the input) but invisible. The open
+  and close timers now check a generation counter (`Shell::quick_generation`). The cards keep one
+  model (`Shell::quick_items`, only changed rows are replaced), so the focus animates from card to
+  card instead of the row being rebuilt on every input (96 instead of 38 menu frames for three
+  steps). Verified with timed `--actions` around the 450 ms mark and real key events in the VM.
 - **Observed (pre-existing, also on 6.10):** the winit backend logs `EGL_BAD_SURFACE` from
   `eglQuerySurface` (buffer age) after frames without damage and after screenshots, because the
   surface is no longer current; harmless, but noisy.
