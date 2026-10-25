@@ -1,12 +1,15 @@
 import { Theme } from "theme.slint";
 import { Toast } from "toast.slint";
 
-// Own transparent window for notices over running games (gamescope only). Rust sets STEAM_OVERLAY
+// Own transparent window for notices over running games. In gamescope, Rust sets STEAM_OVERLAY
 // without STEAM_INPUT_FOCUS and makes the window narrower than the screen; then gamescope treats it
 // as its notification window: always on top, but never with keyboard/controller focus. gamescope
 // centers it and scales it to the screen height, so the window is almost as large as the screen
-// and the notice sits in its top right corner.
+// and the notice sits in its top right corner. In our own compositor the title (announced as
+// `WindowRole::Notification`, Story 7.6) makes it the topmost window without any input; it has the
+// output size there.
 export component NotificationWindow inherits Window {
+    // Must match NOTIFICATION_TITLE in src/compositor.rs
     title: "ConsoleUI notification";
     no-frame: true;
     background: transparent;

@@ -59,6 +59,11 @@ impl Control {
         &self.path
     }
 
+    /// Whether a shell is connected (it may then claim reserved keys like Guide).
+    pub fn has_clients(&self) -> bool {
+        !self.clients.is_empty()
+    }
+
     /// Replaces the greeting entry of the same kind (e.g. a new output size).
     pub fn set_greeting(&mut self, message: CompositorMessage) {
         self.greeting.retain(|m| std::mem::discriminant(m) != std::mem::discriminant(&message));

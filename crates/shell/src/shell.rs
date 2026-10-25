@@ -82,6 +82,20 @@ impl GamescopeUi {
     }
 }
 
+/// Only in our own compositor (Story 7.6): the quick menu and toasts as separate toplevels. The
+/// compositor knows them by their titles (`WindowRole`), stacks them above the app in front and
+/// keeps toasts from ever taking input. Used only if the compositor supports it.
+pub struct CompositorUi {
+    pub overlay: OverlayWindow,
+    notification: NotificationWindow,
+}
+
+impl CompositorUi {
+    pub fn new(overlay: OverlayWindow, notification: NotificationWindow) -> Self {
+        Self { overlay, notification }
+    }
+}
+
 pub struct Shell {
     entries: Vec<AppEntry>,
     /// Tile per entry, in the same order as `entries`
@@ -137,6 +151,8 @@ pub struct Shell {
     gamescope: Option<GamescopeUi>,
     /// Our own compositor (Epic 7), instead of gamescope
     compositor: Option<Compositor>,
+    /// Overlay and notification windows for our compositor
+    compositor_ui: Option<CompositorUi>,
 
     settings: Settings,
     settings_path: Option<PathBuf>,
@@ -180,6 +196,7 @@ impl Shell {
         ui: &AppWindow,
         gamescope: Option<GamescopeUi>,
         compositor: Option<Compositor>,
+        compositor_ui: Option<CompositorUi>,
         settings: Settings,
         settings_path: Option<PathBuf>,
     ) -> Self {
@@ -235,6 +252,7 @@ impl Shell {
             quick: None,
             gamescope,
             compositor,
+            compositor_ui,
             settings,
             settings_path,
             settings_row: 0,
@@ -265,23 +283,26 @@ impl Shell {
     }
 
     /// Shows a toast at the top right; a new one replaces the old one. If an app is in front in
-    /// gamescope, it appears in the notification window above it, otherwise in the main window.
+    /// gamescope or our compositor, it appears in the notification window above it, otherwise in
+    /// the main window.
     pub fn toast(&mut self, ui: &AppWindow, symbol: &str, title: &str, text: &str) {
         let generation = self.toast_generation.get() + 1;
         self.toast_generation.set(generation);
         let over_app = !self.shell_in_front(ui);
-        if let Some(gamescope) = self.gamescope.as_mut().filter(|_| over_app) {
+        if let Some(notification) = self.notification_window().filter(|_| over_app).map(|n| n.clone_strong()) {
             ui.set_toast_shown(false);
-            let notification = &gamescope.notification;
             notification.set_symbol(symbol.into());
             notification.set_title_text(title.into());
             notification.set_text(text.into());
             if notification.window().is_visible() {
                 notification.set_shown(true);
             } else {
-                show_notification_window(gamescope);
+                match &mut self.gamescope {
+                    Some(gamescope) => show_notification_window(gamescope),
+                    None => show_compositor_notification(&notification, self.output_size(ui)),
+                }
                 // Fade in only after showing, so the toast slides in.
-                let weak = gamescope.notification.as_weak();
+                let weak = notification.as_weak();
                 let current = self.toast_generation.clone();
                 slint::Timer::single_shot(Duration::from_millis(30), move || {
                     if let Some(notification) = weak.upgrade()
@@ -299,7 +320,7 @@ impl Shell {
             ui.set_toast_shown(true);
         }
         let weak = ui.as_weak();
-        let notification = self.gamescope.as_ref().map(|g| g.notification.as_weak());
+        let notification = self.notification_window().map(|n| n.as_weak());
         let current = self.toast_generation.clone();
         slint::Timer::single_shot(TOAST_DURATION, move || {
             if current.get() != generation {
@@ -316,10 +337,23 @@ impl Shell {
 
     /// Hides a toast in the notification window (if one is visible).
     fn hide_notification(&self) {
-        if let Some(gamescope) = &self.gamescope
-            && gamescope.notification.get_shown()
+        if let Some(notification) = self.notification_window()
+            && notification.get_shown()
         {
-            hide_notification_window(&gamescope.notification);
+            hide_notification_window(notification);
+        }
+    }
+
+    /// The overlay and notification windows of our compositor, if it places them (Story 7.6).
+    fn compositor_ui(&self) -> Option<&CompositorUi> {
+        self.compositor_ui.as_ref().filter(|_| self.compositor.as_ref().is_some_and(Compositor::overlays))
+    }
+
+    /// The window for toasts over running apps (gamescope or our compositor).
+    fn notification_window(&self) -> Option<&NotificationWindow> {
+        match &self.gamescope {
+            Some(gamescope) => Some(&gamescope.notification),
+            None => self.compositor_ui().map(|c| &c.notification),
         }
     }
 
@@ -570,6 +604,10 @@ impl Shell {
         if let Some(gamescope) = &self.gamescope {
             apply_theme(gamescope.overlay.global::<Theme>());
             apply_theme(gamescope.notification.global::<Theme>());
+        }
+        if let Some(windows) = &self.compositor_ui {
+            apply_theme(windows.overlay.global::<Theme>());
+            apply_theme(windows.notification.global::<Theme>());
         }
         self.update_settings_rows(ui);
         let footer = match &self.settings_path {
@@ -1147,17 +1185,41 @@ impl Shell {
         self.quick = None;
     }
 
-    /// Shows the quick menu in the overlay window (gamescope) or as a layer in the main window.
+    /// Shows the quick menu in the overlay window (gamescope, our compositor) or as a layer in the
+    /// main window.
     fn show_quick(&mut self, ui: &AppWindow, open: bool) {
         let Some(quick) = &self.quick else { return };
         let items = ModelRc::new(VecModel::from(quick.items()));
         let (title, focused) = (quick.title(), quick.focused() as i32);
-        let Some(gamescope) = &mut self.gamescope else {
-            // In our compositor the shell window comes above the app while the menu is open
-            // (Story 7.6 will show only the menu).
-            if let Some(compositor) = &mut self.compositor {
-                compositor.set_overlay(open);
+        // In our compositor the app in front gets no input while the menu is open (Story 7.5).
+        if let Some(compositor) = &mut self.compositor {
+            compositor.set_overlay(open);
+        }
+        if let Some(overlay) = self.compositor_ui().map(|c| c.overlay.clone_strong()) {
+            // Story 7.6: the compositor stacks this window above the app; the game stays visible.
+            overlay.set_items(items);
+            overlay.set_title_text(title.into());
+            overlay.set_focused(focused);
+            overlay.set_controller_style(ui.get_controller_style());
+            if open && !overlay.get_open() {
+                overlay.window().set_fullscreen(true);
+                if let Err(err) = overlay.show() {
+                    eprintln!("Cannot show the overlay: {err}");
+                }
+                // Slint's winit backend created the Wayland toplevel up front (hidden, without a
+                // buffer) and does not draw it on `show()` by itself.
+                overlay.window().request_redraw();
+                open_overlay_later(&overlay);
+            } else if !open {
+                close_overlay(&overlay);
+                // Opened as a layer before the compositor's `Welcome` arrived
+                ui.set_quick_open(false);
             }
+            return;
+        }
+        let Some(gamescope) = &mut self.gamescope else {
+            // Without overlay windows (desktop, older compositor): a layer in the main window; an
+            // older compositor brings the whole shell window above the app.
             ui.set_quick_items(items);
             ui.set_quick_title(title.into());
             ui.set_quick_focused(focused);
@@ -1171,21 +1233,9 @@ impl Shell {
         overlay.set_controller_style(ui.get_controller_style());
         if open && !overlay.get_open() {
             show_overlay_window(gamescope);
-            // Open only after showing, so the bar slides in.
-            let weak = gamescope.overlay.as_weak();
-            slint::Timer::single_shot(Duration::from_millis(30), move || {
-                if let Some(overlay) = weak.upgrade() {
-                    overlay.set_open(true);
-                }
-            });
+            open_overlay_later(&gamescope.overlay);
         } else if !open {
-            overlay.set_open(false);
-            let weak = gamescope.overlay.as_weak();
-            slint::Timer::single_shot(Duration::from_millis(450), move || {
-                if let Some(overlay) = weak.upgrade().filter(|o| !o.get_open()) {
-                    let _ = overlay.hide();
-                }
-            });
+            close_overlay(&gamescope.overlay);
         }
     }
 
@@ -1366,6 +1416,7 @@ impl Shell {
     /// as soon as the app in front has one).
     pub fn poll_compositor(&mut self, ui: &AppWindow) {
         let Some(compositor) = &mut self.compositor else { return };
+        let mut guide = false;
         for message in compositor.poll() {
             match message {
                 CompositorMessage::WindowMapped { app_id, .. } => {
@@ -1381,8 +1432,13 @@ impl Shell {
                         running.has_window = false;
                     }
                 }
+                // The keyboard's Guide key, reserved by the compositor (Story 7.5)
+                CompositorMessage::Guide => guide = true,
                 _ => {}
             }
+        }
+        if guide {
+            self.apply(ui, Action::Guide);
         }
     }
 
@@ -1546,6 +1602,42 @@ fn show_overlay_window(gamescope: &mut GamescopeUi) {
         let _ = overlay.show();
         gamescope.overlay_window = window;
     }
+}
+
+/// Opens the quick menu only after the window is shown, so the bar slides in.
+fn open_overlay_later(overlay: &OverlayWindow) {
+    let weak = overlay.as_weak();
+    slint::Timer::single_shot(Duration::from_millis(30), move || {
+        if let Some(overlay) = weak.upgrade() {
+            overlay.set_open(true);
+        }
+    });
+}
+
+/// Slides the quick menu out and then hides its window, unless it was opened again meanwhile.
+fn close_overlay(overlay: &OverlayWindow) {
+    overlay.set_open(false);
+    let weak = overlay.as_weak();
+    slint::Timer::single_shot(Duration::from_millis(450), move || {
+        if let Some(overlay) = weak.upgrade().filter(|o| !o.get_open()) {
+            let _ = overlay.hide();
+        }
+    });
+}
+
+/// Shows the notification window in our compositor (Story 7.6). The compositor makes every shell
+/// toplevel fullscreen and lets pointer input pass through it, so it just has the output size.
+fn show_compositor_notification(notification: &NotificationWindow, output: Option<(u32, u32)>) {
+    if let Some((width, height)) = output {
+        let scale = notification.window().scale_factor();
+        notification.set_window_width(width as f32 / scale);
+        notification.set_window_height(height as f32 / scale);
+    }
+    notification.window().set_fullscreen(true);
+    if let Err(err) = notification.show() {
+        eprintln!("Cannot show the notification window: {err}");
+    }
+    notification.window().request_redraw();
 }
 
 /// Shows the notification window. gamescope picks it as a notification (instead of an

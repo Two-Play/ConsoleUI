@@ -31,7 +31,7 @@ use gamepad::{Connection, Gamepads};
 use loader::LoadOptions;
 use options::{Options, ScriptStep, StartScreen, USAGE};
 use perf::FrameStats;
-use shell::{GamescopeUi, Shell};
+use shell::{CompositorUi, GamescopeUi, Shell};
 
 slint::include_modules!();
 
@@ -84,16 +84,22 @@ fn main() -> Result<(), Box<dyn Error>> {
     });
     let boot_started = Instant::now();
 
-    // Inside our own compositor (Epic 7) the control socket decides what is in front. In the
-    // gamescope session (Steam mode) the shell controls the windows itself and shows the quick
-    // menu as its own overlay window.
+    // Inside our own compositor (Epic 7) the control socket decides what is in front; the quick
+    // menu and toasts get their own windows, which the compositor stacks above the app (Story
+    // 7.6). In the gamescope session (Steam mode) the shell controls the windows itself and shows
+    // the quick menu as its own overlay window.
     let compositor = compositor::Compositor::connect();
+    let compositor_ui = match compositor {
+        Some(_) => Some(CompositorUi::new(OverlayWindow::new()?, NotificationWindow::new()?)),
+        None => None,
+    };
     let gamescope = match compositor.is_none().then(gamescope::Gamescope::connect).flatten() {
         Some(control) => Some(GamescopeUi::new(control, OverlayWindow::new()?, NotificationWindow::new()?)),
         None => None,
     };
-    let overlay = gamescope.as_ref().map(|g| g.overlay.as_weak());
-    let shell = Rc::new(RefCell::new(Shell::new(&ui, gamescope, compositor, settings, settings_path)));
+    let overlay =
+        gamescope.as_ref().map(|g| g.overlay.as_weak()).or_else(|| compositor_ui.as_ref().map(|c| c.overlay.as_weak()));
+    let shell = Rc::new(RefCell::new(Shell::new(&ui, gamescope, compositor, compositor_ui, settings, settings_path)));
     if let Some(overlay) = overlay.and_then(|o| o.upgrade()) {
         overlay.on_action({
             let ui = ui.as_weak();

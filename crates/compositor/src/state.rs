@@ -127,6 +127,10 @@ pub struct State {
     pub cursor_status: CursorImageStatus,
     /// Keys whose press the compositor handled itself (their release is not forwarded either)
     pub suppressed_keys: Vec<u32>,
+    /// The keyboard should go from the shell to an app, but keys are still held: it moves once
+    /// they are released, so the app does not get the release of a key the shell got pressed
+    /// (Story 7.5).
+    pub focus_deferred: bool,
 
     pub policy: Policy,
     pub control: Control,
@@ -228,6 +232,7 @@ impl State {
             pointer,
             cursor_status: CursorImageStatus::default_named(),
             suppressed_keys: Vec::new(),
+            focus_deferred: false,
             policy: Policy::default(),
             control,
             shell: None,
@@ -349,13 +354,27 @@ impl State {
         }
     }
 
-    /// Sends the policy's messages to the shell and applies stacking and keyboard focus.
+    /// Sends the policy's messages to the shell and applies stacking, keyboard and pointer focus.
     pub fn after_policy_change(&mut self, events: Vec<CompositorMessage>) {
         for event in &events {
             info!("policy: {event:?}");
             self.control.broadcast(event);
         }
         self.apply_policy();
+        self.refresh_pointer_focus();
+    }
+
+    fn focus_target(window: &Window) -> FocusTarget {
+        match window.underlying_surface() {
+            WindowSurface::Wayland(toplevel) => FocusTarget::Wayland(toplevel.wl_surface().clone()),
+            WindowSurface::X11(surface) => FocusTarget::X11(surface.clone()),
+        }
+    }
+
+    /// The policy role of the window behind a keyboard focus target.
+    fn focus_role(&self, target: &FocusTarget) -> Option<crate::policy::Role> {
+        let window = self.space.elements().find(|w| &Self::focus_target(w) == target)?;
+        self.policy.role(Self::window_id(window))
     }
 
     pub fn apply_policy(&mut self) {
@@ -380,12 +399,20 @@ impl State {
             }
         }
 
-        let target = focus.and_then(|id| self.find_window(id)).map(|window| match window.underlying_surface() {
-            WindowSurface::Wayland(toplevel) => FocusTarget::Wayland(toplevel.wl_surface().clone()),
-            WindowSurface::X11(surface) => FocusTarget::X11(surface.clone()),
-        });
+        let target = focus.and_then(|id| self.find_window(id)).map(|window| Self::focus_target(&window));
         let Some(keyboard) = self.seat.get_keyboard() else { return };
-        if keyboard.current_focus() != target {
+        let current = keyboard.current_focus();
+        if current != target {
+            // Back from the shell (quick menu closed with a key that is still held): wait for the
+            // release, otherwise the app would see it (`on_key` applies the policy again).
+            let from_shell = current.as_ref().and_then(|c| self.focus_role(c)) == Some(crate::policy::Role::Shell);
+            let to_shell = focus.and_then(|id| self.policy.role(id)) == Some(crate::policy::Role::Shell);
+            if from_shell && !to_shell && !keyboard.pressed_keys().is_empty() {
+                debug!("keyboard focus -> {focus:?} once all keys are released");
+                self.focus_deferred = true;
+                return;
+            }
+            self.focus_deferred = false;
             debug!("keyboard focus -> {:?}", focus);
             if let Some(FocusTarget::X11(surface)) = &target {
                 crate::xwayland::raise(self, surface);
@@ -403,7 +430,8 @@ impl State {
                 if version != protocol::VERSION {
                     warn!("shell speaks protocol {version}, compositor {}", protocol::VERSION);
                 }
-                self.control.send_to(client, &CompositorMessage::Welcome { version: protocol::VERSION });
+                let features = vec![protocol::FEATURE_OVERLAYS.to_owned(), protocol::FEATURE_GUIDE_KEY.to_owned()];
+                self.control.send_to(client, &CompositorMessage::Welcome { version: protocol::VERSION, features });
                 self.policy.set_shell_pid(pid, &ownership::read_process)
             }
             ShellMessage::Launched { app_id, .. } => {
@@ -412,7 +440,14 @@ impl State {
             }
             ShellMessage::Exited { app_id } => self.policy.exited(app_id),
             ShellMessage::Focus { target } => self.policy.set_target(target),
-            ShellMessage::Overlay { open } => self.policy.set_overlay(open),
+            ShellMessage::Overlay { open } => {
+                info!("overlay {}", if open { "open" } else { "closed" });
+                self.policy.set_overlay(open)
+            }
+            ShellMessage::WindowRole { title, role } => {
+                info!("shell window {title:?} has the role {role:?}");
+                self.policy.set_window_role(&title, role)
+            }
             ShellMessage::Screenshot { path } => {
                 self.screenshots.push(ScreenshotRequest { path: path.into(), reply: Some(client) });
                 Vec::new()
@@ -585,7 +620,8 @@ impl XdgShellHandler for State {
                 .and_then(|data| data.lock().unwrap().title.clone())
                 .unwrap_or_default()
         });
-        self.policy.set_title(Self::window_id(&window), &title);
+        let events = self.policy.set_title(Self::window_id(&window), &title);
+        self.after_policy_change(events);
     }
 
     fn parent_changed(&mut self, surface: ToplevelSurface) {
