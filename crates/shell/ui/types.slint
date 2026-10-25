@@ -1,6 +1,8 @@
 // Eingabeunabhängige Aktionen; Rust bildet sie auf `consoleui_core::Action` ab.
 export enum NavAction { up, down, left, right, confirm, back, menu }
 
+export enum NetworkState { offline, ethernet, wifi }
+
 export struct AppTile {
     title: string,
     subtitle: string,

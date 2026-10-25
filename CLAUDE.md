@@ -30,6 +30,17 @@ cargo clippy --workspace --all-targets -- -D warnings  # must pass (Definition o
 
 Quit the running shell with Ctrl+Q. Pressing Enter on a real entry really launches that game or app.
 
+Console session (see `docs/spike-gamescope.md` for why gamescope runs without `-e`):
+
+```bash
+CONSOLEUI_BIN=$PWD/target/release/consoleui CONSOLEUI_GAMESCOPE_ARGS="-W 1280 -H 720" session/consoleui-session   # nested test
+sudo session/install.sh   # after `cargo build --release`; installs to /usr/local/bin + wayland-sessions
+```
+
+Inside gamescope, children get `DISPLAY=:1` and an empty `WAYLAND_DISPLAY`, so the shell and everything
+it launches run through XWayland. Focus always goes to the newest window, so the shell never switches
+windows itself; it only detects when the launched app ends.
+
 ## Architecture
 
 Cargo workspace (edition 2024, `default-members` = the shell):
@@ -43,7 +54,11 @@ Cargo workspace (edition 2024, `default-members` = the shell):
     (own `.desktop` parser, category allow/deny lists, `icons.rs` lookup). Then `apply_history` +
     `sort_by_recent` (most recent first, then alphabetical).
   - `launch::spawn` starts detached processes; `History` persists to `$XDG_DATA_HOME/consoleui/history.json`.
-  - `Action` / `Carousel` handle input-agnostic navigation; `accent::from_rgba` derives tile colors from covers.
+  - `Action` / `Carousel` handle input-agnostic navigation; `input.rs` has the device-free gamepad logic
+    (`DirectionRepeat` for hold-to-repeat, `Stick` with hysteresis, `glyph_style` by device name).
+  - `running::RunningApp` decides when the launch overlay closes: process exit for commands,
+    `steam::running_app_id()` (reads `~/.steam/registry.vdf`) for Steam games, with a minimum hold time.
+  - `status.rs` reads network/battery from sysfs; `accent::from_rgba` derives tile colors from covers.
 - `crates/shell` (binary `consoleui`): Slint UI plus glue.
   - `ui/main.slint`: `AppWindow`, the home screen. All sizes scale from a 1920×1080 reference via the
     `s` factor; tiles are positioned absolutely and animated (`animate x, y, width, height`).
@@ -55,13 +70,15 @@ Cargo workspace (edition 2024, `default-members` = the shell):
     (`hero-a`/`hero-b` + `hero-front-a`) for crossfades; a launch moves the entry to index 0 under the
     fullscreen launch overlay.
   - `src/tiles.rs`: `AppEntry` → `AppTile` (loads cover, icon and logo, overrides the accent from the cover).
-  - `src/main.rs`: wiring, `NavAction` → `core::Action`, the clock and benchmark timers.
+  - `src/gamepad.rs`: gilrs polling → `Action`s (only devices with an SDL mapping).
+  - `src/main.rs`: wiring and timers: gamepad poll (8 ms), status/clock (1 s), app watcher (500 ms), bench.
+  - `ui/statusbar.slint`: the right side of the top bar; icons in `ui/icons/*.svg` are tinted with `colorize`.
   - `src/perf.rs`: frame stats from Slint's rendering notifier. `src/cover.rs`: procedural
     placeholder covers. `src/options.rs`: hand-rolled CLI parsing.
 
 Input flow: keyboard events are handled in the `FocusScope` in `main.slint`, which emits
-`action(NavAction)`. Rust updates state and pushes properties back (`focused`, `pulse`). Gamepad
-input (Story 3.1, `gilrs`) must feed the same `Action` path, not a separate one.
+`action(NavAction)`; gamepad events come from `Gamepads::poll`. Both end up in `Shell::apply(Action)`,
+and Rust pushes properties back (`focused`, `pulse`, `launching`, …). New input sources must use the same path.
 
 Note: `[profile.dev]` uses `opt-level = 1` and dependencies use `opt-level = 3`, so debug builds
 render smoothly.

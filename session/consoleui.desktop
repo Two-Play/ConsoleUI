@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=ConsoleUI
+Comment=Konsolen-Oberfläche für Spiele und Apps (gamescope)
+Exec=/usr/local/bin/consoleui-session
+DesktopNames=gamescope

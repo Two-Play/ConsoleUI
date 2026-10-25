@@ -3,15 +3,19 @@ use std::error::Error;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
+use consoleui_core::input::GlyphStyle;
+use consoleui_core::status::{self, Network};
 use consoleui_core::{Action, AppEntry, History, apply_history, discover_library, dummy_library, sort_by_recent};
 use slint::{RenderingState, Timer, TimerMode};
 
 mod cover;
+mod gamepad;
 mod options;
 mod perf;
 mod shell;
 mod tiles;
 
+use gamepad::Gamepads;
 use options::{Options, USAGE};
 use perf::FrameStats;
 use shell::Shell;
@@ -19,6 +23,10 @@ use shell::Shell;
 slint::include_modules!();
 
 const BENCH_STEP: Duration = Duration::from_millis(200);
+/// Abfrage-Intervall für Gamepads (gilrs liefert Events nur auf Nachfrage).
+const GAMEPAD_POLL: Duration = Duration::from_millis(8);
+/// Wie oft geprüft wird, ob die gestartete App noch läuft.
+const WATCH_INTERVAL: Duration = Duration::from_millis(500);
 
 fn main() -> Result<(), Box<dyn Error>> {
     let options = match Options::parse(std::env::args().skip(1)) {
@@ -61,16 +69,44 @@ fn main() -> Result<(), Box<dyn Error>> {
         })?;
     }
 
-    ui.set_clock(current_time().into());
+    let gamepads = Gamepads::new().map(|g| Rc::new(RefCell::new(g)));
+    let gamepad_timer = Timer::default();
+    if let Some(gamepads) = &gamepads {
+        gamepad_timer.start(TimerMode::Repeated, GAMEPAD_POLL, {
+            let ui = ui.as_weak();
+            let shell = shell.clone();
+            let gamepads = gamepads.clone();
+            move || {
+                let Some(ui) = ui.upgrade() else { return };
+                for action in gamepads.borrow_mut().poll(Instant::now()) {
+                    shell.borrow_mut().apply(&ui, action);
+                }
+            }
+        });
+    }
+
+    update_status(&ui, gamepads.as_deref());
     let tick = Timer::default();
     tick.start(TimerMode::Repeated, Duration::from_secs(1), {
         let ui = ui.as_weak();
         let stats = stats.clone();
+        let gamepads = gamepads.clone();
         move || {
             let Some(ui) = ui.upgrade() else { return };
-            ui.set_clock(current_time().into());
+            update_status(&ui, gamepads.as_deref());
             if ui.get_show_fps() {
                 ui.set_fps_text(perf::format_second(&stats.borrow_mut().take_current()).into());
+            }
+        }
+    });
+
+    let watch = Timer::default();
+    watch.start(TimerMode::Repeated, WATCH_INTERVAL, {
+        let ui = ui.as_weak();
+        let shell = shell.clone();
+        move || {
+            if let Some(ui) = ui.upgrade() {
+                shell.borrow_mut().watch_running(&ui);
             }
         }
     });
@@ -112,8 +148,29 @@ fn to_action(nav: NavAction) -> Action {
     }
 }
 
-fn current_time() -> String {
-    chrono::Local::now().format("%H:%M").to_string()
+/// Uhr, Netzwerk, Akku und Controller in der Top-Bar sowie die passenden Tastensymbole.
+fn update_status(ui: &AppWindow, gamepads: Option<&RefCell<Gamepads>>) {
+    ui.set_clock(chrono::Local::now().format("%H:%M").to_string().into());
+
+    let system = status::read();
+    ui.set_network(match system.network {
+        Network::Offline => NetworkState::Offline,
+        Network::Ethernet => NetworkState::Ethernet,
+        Network::Wifi(_) => NetworkState::Wifi,
+    });
+    ui.set_battery_percent(system.battery.map_or(-1, |b| b.percent.into()));
+    ui.set_battery_charging(system.battery.is_some_and(|b| b.charging));
+
+    let controller = gamepads.and_then(|g| g.borrow().status());
+    ui.set_controller_connected(controller.is_some());
+    ui.set_controller_battery(controller.as_ref().and_then(|c| c.battery).map_or(-1, i32::from));
+    let (confirm, back) = match controller.map(|c| c.style) {
+        Some(GlyphStyle::PlayStation) => ("✕", "○"),
+        Some(GlyphStyle::Xbox) => ("A", "B"),
+        None => ("⏎", "Esc"),
+    };
+    ui.set_confirm_glyph(confirm.into());
+    ui.set_back_glyph(back.into());
 }
 
 /// Scrollt einmal ganz nach rechts und zurück, gibt danach die Messwerte aus und beendet sich.

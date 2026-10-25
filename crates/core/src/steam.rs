@@ -64,6 +64,18 @@ fn to_entry(root: &Path, manifest: Manifest) -> AppEntry {
     }
 }
 
+/// App-ID des Spiels, das Steam gerade ausführt (aus `~/.steam/registry.vdf`).
+pub fn running_app_id() -> Option<u32> {
+    let path = xdg::home()?.join(".steam/registry.vdf");
+    running_app_id_from(&fs::read_to_string(path).ok()?)
+}
+
+fn running_app_id_from(registry: &str) -> Option<u32> {
+    let doc = vdf::parse(registry).ok()?;
+    let steam = ["Registry", "HKCU", "Software", "Valve", "Steam"].iter().try_fold(&doc, |v, key| v.get(key))?;
+    steam.get("RunningAppID")?.as_str()?.parse().ok().filter(|&id| id != 0)
+}
+
 fn library_paths(root: &Path) -> Vec<PathBuf> {
     let mut paths = vec![root.to_path_buf()];
     let doc = fs::read_to_string(root.join("steamapps/libraryfolders.vdf"))
@@ -172,6 +184,16 @@ mod tests {
             parse_manifest(r#""AppState" { "appid" "1" "name" "X" "StateFlags" "1026" "LastPlayed" "0" }"#).unwrap();
         assert!(!manifest.installed);
         assert_eq!(manifest.last_played, None);
+    }
+
+    #[test]
+    fn reads_running_app_id() {
+        let registry = |id: &str| {
+            format!(r#""Registry" {{ "HKCU" {{ "Software" {{ "Valve" {{ "Steam" {{ "RunningAppID" "{id}" }} }} }} }} }}"#)
+        };
+        assert_eq!(running_app_id_from(&registry("730")), Some(730));
+        assert_eq!(running_app_id_from(&registry("0")), None);
+        assert_eq!(running_app_id_from(r#""Registry" { }"#), None);
     }
 
     #[test]

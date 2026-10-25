@@ -1,8 +1,9 @@
 import { Theme } from "theme.slint";
-import { AppTile, NavAction } from "types.slint";
+import { AppTile, NavAction, NetworkState } from "types.slint";
 import { Tile } from "tile.slint";
+import { StatusBar } from "statusbar.slint";
 
-export { AppTile, NavAction }
+export { AppTile, NavAction, NetworkState }
 
 export component AppWindow inherits Window {
     title: "ConsoleUI";
@@ -24,12 +25,23 @@ export component AppWindow inherits Window {
     in property <image> hero-b;
     in property <bool> hero-front-a: true;
 
-    // Startbildschirm: Die fokussierte Kachel zoomt auf Vollbild und schließt sich nach `launch-hold`.
-    in-out property <bool> launching: false;
+    // Startbildschirm: Die fokussierte Kachel zoomt auf Vollbild. Rust schließt ihn wieder, wenn die
+    // App beendet ist (oder bei „Zurück“).
+    in property <bool> launching: false;
     in property <string> launch-title;
     in property <string> launch-status;
     in property <image> launch-image;
     in property <color> launch-accent;
+
+    // Top-Bar-Status
+    in property <NetworkState> network: NetworkState.offline;
+    in property <int> battery-percent: -1;
+    in property <bool> battery-charging;
+    in property <bool> controller-connected;
+    in property <int> controller-battery: -1;
+    // Tastensymbole passend zum Controller (Tastatur: ⏎ / Esc)
+    in property <string> confirm-glyph: "⏎";
+    in property <string> back-glyph: "Esc";
 
     callback action(NavAction);
     callback quit();
@@ -55,14 +67,6 @@ export component AppWindow inherits Window {
         running: root.pulse;
         triggered => {
             root.pulse = false;
-        }
-    }
-
-    Timer {
-        interval: Theme.launch-hold;
-        running: root.launching;
-        triggered => {
-            root.launching = false;
         }
     }
 
@@ -178,22 +182,16 @@ export component AppWindow inherits Window {
             font-weight: 600;
         }
 
-        clock-label := Text {
+        StatusBar {
             x: root.width - root.margin - self.width;
-            y: 52px * s;
-            text: root.clock;
-            color: Theme.text;
-            font-size: 26px * s;
-            font-weight: 600;
-        }
-
-        Rectangle {
-            width: 40px * s;
-            height: self.width;
-            x: clock-label.x - self.width - 24px * s;
-            y: clock-label.y + (clock-label.height - self.height) / 2;
-            border-radius: self.width / 2;
-            background: @linear-gradient(135deg, #7c5cff 0%, #00d4ff 100%);
+            y: 50px * s;
+            s: root.s;
+            clock: root.clock;
+            network: root.network;
+            battery-percent: root.battery-percent;
+            battery-charging: root.battery-charging;
+            controller-connected: root.controller-connected;
+            controller-battery: root.controller-battery;
         }
 
         // Kachelreihe: Die fokussierte Kachel bleibt links stehen, die Reihe gleitet darunter durch.
@@ -297,7 +295,7 @@ export component AppWindow inherits Window {
         Text {
             x: root.margin;
             y: root.height - 64px * s;
-            text: "◀ ▶  Navigieren        ⏎  Starten        Strg+Q  Beenden";
+            text: "◀ ▶  Navigieren        " + root.confirm-glyph + "  " + root.current.action-label + (root.controller-connected ? "" : "        Strg+Q  Beenden");
             color: Theme.text-dim;
             font-size: 18px * s;
         }
@@ -342,6 +340,12 @@ export component AppWindow inherits Window {
                     text: root.launch-status;
                     color: Theme.text-dim;
                     font-size: 26px * s;
+                }
+
+                Text {
+                    text: root.back-glyph + "  Zur Übersicht";
+                    color: Theme.text-dim;
+                    font-size: 18px * s;
                 }
             }
 

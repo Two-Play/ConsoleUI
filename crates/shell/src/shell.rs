@@ -3,9 +3,11 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-use consoleui_core::{Action, AppEntry, Carousel, History, launch};
+use consoleui_core::launch::{self, ProcessHandle};
+use consoleui_core::running::{Phase, RunningApp};
+use consoleui_core::{Action, AppEntry, Carousel, History, Launch, steam};
 use slint::{Image, Model, ModelRc, VecModel};
 
 use crate::{AppWindow, AppTile, tiles};
@@ -18,6 +20,8 @@ pub struct Shell {
     history_path: Option<PathBuf>,
     /// Hero-Bilder werden erst beim Fokussieren geladen und dann behalten.
     heroes: HashMap<String, Image>,
+    /// Die zuletzt gestartete App, solange der Startbildschirm offen ist.
+    running: Option<RunningApp>,
 }
 
 impl Shell {
@@ -35,6 +39,7 @@ impl Shell {
             history,
             history_path,
             heroes: HashMap::new(),
+            running: None,
         };
         shell.show_hero(ui);
         shell
@@ -46,6 +51,10 @@ impl Shell {
 
     pub fn apply(&mut self, ui: &AppWindow, action: Action) {
         if ui.get_launching() {
+            // „Zurück“ holt die Übersicht, die App läuft weiter.
+            if action == Action::Back {
+                self.close_launch(ui);
+            }
             return;
         }
         match action {
@@ -85,10 +94,16 @@ impl Shell {
         let hero = self.hero(index);
         let (Some(entry), Some(tile)) = (self.entries.get(index), self.tiles.row_data(index)) else { return };
 
+        let now = Instant::now();
         let started = launch::spawn(&entry.launch);
-        if let Err(err) = &started {
-            eprintln!("{} konnte nicht gestartet werden: {err}", entry.title);
-        }
+        self.running = Some(match (&started, &entry.launch) {
+            (Ok(_), Launch::Steam(app_id)) => RunningApp::steam(*app_id, now),
+            (Ok(handle), _) => RunningApp::process(handle.clone(), now),
+            (Err(err), _) => {
+                eprintln!("{} konnte nicht gestartet werden: {err}", entry.title);
+                RunningApp::process(ProcessHandle::finished(), now)
+            }
+        });
         ui.set_launch_title(tile.title.clone());
         ui.set_launch_image(hero.unwrap_or(tile.cover));
         ui.set_launch_accent(tile.accent);
@@ -99,6 +114,23 @@ impl Shell {
             self.record_launch(index);
             ui.set_focused(0);
         }
+    }
+
+    /// Prüft regelmäßig, ob die gestartete App noch läuft. In gamescope wird die Shell wieder
+    /// sichtbar, sobald das App-Fenster zu ist; dann fährt hier der Startbildschirm zurück.
+    pub fn watch_running(&mut self, ui: &AppWindow) {
+        let Some(app) = self.running.as_mut() else { return };
+        let steam_running = if app.is_steam() { steam::running_app_id() } else { None };
+        match app.phase(Instant::now(), steam_running) {
+            Phase::Starting => {}
+            Phase::Running => ui.set_launch_status("läuft".into()),
+            Phase::Finished => self.close_launch(ui),
+        }
+    }
+
+    fn close_launch(&mut self, ui: &AppWindow) {
+        self.running = None;
+        ui.set_launching(false);
     }
 
     /// Speichert den Start in der Historie und schiebt den Eintrag nach vorn. Das passiert unter

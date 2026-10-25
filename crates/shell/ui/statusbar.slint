@@ -1,0 +1,145 @@
+import { Theme } from "theme.slint";
+import { NetworkState } from "types.slint";
+
+component StatusIcon inherits Rectangle {
+    in property <image> source;
+    in property <length> size;
+    width: self.size;
+    height: self.size;
+
+    Image {
+        width: 100%;
+        height: 100%;
+        source: root.source;
+        colorize: Theme.text;
+    }
+}
+
+// Akku als gezeichnetes Symbol, damit der Füllstand stufenlos passt.
+component BatteryIcon inherits Rectangle {
+    in property <int> percent;
+    in property <bool> charging;
+    in property <float> s;
+    width: 34px * s;
+    height: 18px * s;
+
+    Rectangle {
+        width: parent.width - 3px * root.s;
+        height: 100%;
+        border-width: 2px * root.s;
+        border-color: Theme.text;
+        border-radius: 4px * root.s;
+
+        Rectangle {
+            x: 3px * root.s;
+            y: 3px * root.s;
+            height: parent.height - 6px * root.s;
+            width: (parent.width - 6px * root.s) * clamp(root.percent, 0, 100) / 100;
+            border-radius: 2px * root.s;
+            background: root.charging ? Theme.charging : root.percent <= 15 ? #ff5a5a : Theme.text;
+        }
+    }
+
+    Rectangle {
+        x: parent.width - 3px * root.s;
+        y: (parent.height - self.height) / 2;
+        width: 3px * root.s;
+        height: 8px * root.s;
+        border-radius: 1px * root.s;
+        background: Theme.text;
+    }
+}
+
+// Rechte Seite der Top-Bar: Controller, Netzwerk, Akku, Uhr.
+export component StatusBar inherits HorizontalLayout {
+    in property <float> s;
+    in property <string> clock;
+    in property <NetworkState> network;
+    in property <int> battery-percent;
+    in property <bool> battery-charging;
+    in property <bool> controller-connected;
+    in property <int> controller-battery;
+
+    property <length> icon: 28px * s;
+    property <length> row-height: 36px * s;
+
+    width: self.preferred-width;
+    height: root.row-height;
+    spacing: 22px * s;
+
+    if root.controller-connected: HorizontalLayout {
+        spacing: 6px * root.s;
+
+        Rectangle {
+            width: root.icon;
+
+            StatusIcon {
+                y: (parent.height - self.height) / 2;
+                size: root.icon;
+                source: @image-url("icons/gamepad.svg");
+            }
+        }
+
+        if root.controller-battery >= 0: Text {
+            text: root.controller-battery + "%";
+            color: Theme.text-dim;
+            font-size: 18px * root.s;
+            vertical-alignment: center;
+        }
+    }
+
+    Rectangle {
+        width: root.icon;
+
+        StatusIcon {
+            y: (parent.height - self.height) / 2;
+            size: root.icon;
+            source: root.network == NetworkState.ethernet ? @image-url("icons/ethernet.svg")
+                : root.network == NetworkState.wifi ? @image-url("icons/wifi.svg")
+                : @image-url("icons/offline.svg");
+            opacity: root.network == NetworkState.offline ? 0.6 : 1;
+        }
+    }
+
+    if root.battery-percent >= 0: HorizontalLayout {
+        spacing: 6px * root.s;
+
+        Rectangle {
+            width: 34px * root.s;
+
+            BatteryIcon {
+                y: (parent.height - self.height) / 2;
+                s: root.s;
+                percent: root.battery-percent;
+                charging: root.battery-charging;
+            }
+        }
+
+        Text {
+            text: root.battery-percent + "%";
+            color: Theme.text-dim;
+            font-size: 18px * root.s;
+            vertical-alignment: center;
+        }
+    }
+
+    Rectangle {
+        width: 36px * root.s;
+
+        Rectangle {
+            y: (parent.height - self.height) / 2;
+            width: parent.width;
+            height: self.width;
+            border-radius: self.width / 2;
+            background: @linear-gradient(135deg, #7c5cff 0%, #00d4ff 100%);
+        }
+    }
+
+    Text {
+        text: root.clock;
+        color: Theme.text;
+        font-size: 26px * root.s;
+        font-weight: 600;
+        vertical-alignment: center;
+    }
+}

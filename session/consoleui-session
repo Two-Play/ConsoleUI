@@ -1,0 +1,12 @@
+#!/bin/sh
+# ConsoleUI als Konsolen-Session: gamescope ohne Steam-Integration (siehe docs/spike-gamescope.md)
+# mit der Shell als Hauptprogramm. Endet die Shell (Strg+Q), endet auch die Session.
+#
+# Umgebungsvariablen:
+#   CONSOLEUI_BIN             Pfad zur Shell (Standard: /usr/local/bin/consoleui)
+#   CONSOLEUI_GAMESCOPE_ARGS  zusätzliche gamescope-Optionen, z. B. "-W 3840 -H 2160 --adaptive-sync"
+set -eu
+
+bin="${CONSOLEUI_BIN:-/usr/local/bin/consoleui}"
+# shellcheck disable=SC2086 # Die Optionen sollen bewusst in Wörter zerlegt werden.
+exec gamescope ${CONSOLEUI_GAMESCOPE_ARGS:-} -- "$bin" "$@"

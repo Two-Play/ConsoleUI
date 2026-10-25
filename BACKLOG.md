@@ -181,6 +181,28 @@ Deck o. Ä.) sollten wir später den Skia-Renderer vergleichen (Story 6.5).
 - Bekannt: Einige AppImage-Icons ohne Dateiendung lassen sich nicht laden. Die Kachel zeigt dann
   das Monogramm. Mit 69 Einträgen wird die Reihe lang, was für die Bibliothek (2.4) spricht.
 
+### Sprint 3 – „Couch-tauglich“ (umgesetzt: 3.1, 0.3, 4.1, 4.2, 4.3, 1.4, teilweise 3.3)
+
+- **Spike gamescope (0.3):** siehe [docs/spike-gamescope.md](docs/spike-gamescope.md). Ohne `-e`
+  bekommt das neueste Fenster den Fokus, nach dem Schließen ist die Shell automatisch zurück.
+- **Gamepad (3.1):** gilrs, alle 8 ms abgefragt. Steuerkreuz und linker Stick (mit Hysterese)
+  navigieren, mit Wiederholung beim Halten (350 ms, dann 120 → 70 ms). Kreuz/A bestätigt,
+  Kreis/B geht zurück, Options/PS öffnen das Menü (vorerst ohne Funktion). Geräte ohne
+  SDL-Mapping werden ignoriert, z. B. die Joystick-Schnittstelle der Keychron-Tastatur.
+- **Top-Bar (1.4):** Controller mit Akkustand, Netzwerk (Ethernet/WLAN/offline aus sysfs) und
+  Laptop-Akku (nur wenn vorhanden), dazu die Uhr. Alles wird jede Sekunde aktualisiert.
+- **Tastensymbole (3.3, Teil):** Bei PlayStation-Controllern ✕/○, bei Xbox und anderen A/B, mit
+  Tastatur ⏎/Esc. Es gibt noch keine eigenen Glyph-Grafiken.
+- **Rückkehr (4.3):** Der Startbildschirm bleibt offen, solange die App läuft. Desktop-Apps werden
+  über das Prozessende erkannt, Steam-Spiele über `RunningAppID` in `~/.steam/registry.vdf`, mit
+  90 s Timeout, falls das Spiel nie startet. Danach fährt die Shell animiert zurück. Mit
+  Kreis/Esc kommt man vorher zur Übersicht. Steam wird mit `-silent` gestartet.
+- **Session (4.1/4.2):** `session/consoleui-session`, `session/consoleui.desktop` und
+  `session/install.sh` (mit sudo ausführen). Verschachtelt in gamescope getestet. Der Start vom
+  TTY bzw. Login-Bildschirm ist noch nicht getestet.
+- Noch offen: das echte Bedienen mit dem DualSense und die Session auf echter Hardware
+  (DRM-Backend) testen.
+
 ## Risiken / offene Fragen
 
 - **gamescope-Fokussteuerung** ist kaum dokumentiert und auf XWayland bzw. Steam ausgelegt → deshalb Spike 0.3 früh einplanen. Falls das nicht klappt, wird Epic 7 wichtiger.
