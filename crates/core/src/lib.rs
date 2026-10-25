@@ -1,10 +1,11 @@
-//! Plattformunabhängige Logik der ConsoleUI-Shell, ohne UI-Abhängigkeiten.
+//! Platform-independent logic of the ConsoleUI shell, without UI dependencies.
 
 pub mod accent;
 pub mod bluetooth;
 mod collection;
 pub mod desktop;
 pub mod fakenet;
+pub mod game_options;
 mod grid;
 mod history;
 mod icons;

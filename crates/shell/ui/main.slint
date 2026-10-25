@@ -7,6 +7,7 @@ import { LibraryPage } from "library.slint";
 import { SearchPage } from "search.slint";
 import { QuickMenu } from "quickmenu.slint";
 import { ContextMenu } from "contextmenu.slint";
+import { GameOptionsPanel } from "gameoptions.slint";
 import { OverlayWindow } from "overlay.slint";
 import { NotificationWindow } from "notification.slint";
 import { SettingsPage } from "settings.slint";
@@ -83,11 +84,18 @@ export component AppWindow inherits Window {
     in property <[QuickItem]> quick-items;
     in property <int> quick-focused;
 
-    // Kontextmenü (Options/Tab) für den fokussierten Eintrag
+    // Context menu (Options/Tab) for the focused entry
     in property <bool> context-open;
     in property <string> context-title;
     in property <[ContextItem]> context-items;
     in property <int> context-focused;
+
+    // Nested gamescope options of an entry (Story 7.10), opened from the context menu
+    in property <bool> game-options-open;
+    in property <string> game-options-title;
+    in property <[SettingRow]> game-options-rows;
+    in property <int> game-options-focused;
+    in property <string> game-options-footer;
 
     // Rückfrage, z. B. vor dem Beenden einer laufenden App
     in property <bool> confirm-open;
@@ -436,7 +444,7 @@ export component AppWindow inherits Window {
             s: root.s;
         }
 
-        // Unter der Hinweisleiste, damit deren Hinweise zum Menü lesbar bleiben
+        // Below the hint bar so that its hints for the menu stay readable
         ContextMenu {
             width: 100%;
             height: 100%;
@@ -444,6 +452,17 @@ export component AppWindow inherits Window {
             title: root.context-title;
             items: root.context-items;
             focused: root.context-focused;
+            s: root.s;
+        }
+
+        GameOptionsPanel {
+            width: 100%;
+            height: 100%;
+            open: root.game-options-open;
+            title: root.game-options-title;
+            rows: root.game-options-rows;
+            focused: root.game-options-focused;
+            footer: root.game-options-footer;
             s: root.s;
         }
 

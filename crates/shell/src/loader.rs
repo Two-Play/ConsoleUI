@@ -1,16 +1,17 @@
-//! Lädt die Bibliothek im Hintergrund, während die Boot-Animation läuft: Steam- und
-//! Desktop-Erkennung, Cover und Logos dekodieren (parallel), Akzentfarben berechnen.
-//! Slint-`Image`s entstehen erst im UI-Thread; hierher gehören nur `SharedPixelBuffer`.
+//! Loads the library in the background while the boot animation runs: Steam and desktop
+//! discovery, decoding covers and logos (in parallel), computing accent colors.
+//! Slint `Image`s are only created on the UI thread; only `SharedPixelBuffer`s belong here.
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 
+use consoleui_core::game_options::GameOptionsStore;
 use consoleui_core::{
     AppEntry, Collection, History, Launch, accent, apply_history, discover_library, dummy_library, sort_by_recent,
 };
 use slint::{Rgba8Pixel, SharedPixelBuffer};
 
-/// Größer werden Cover in den Kacheln nie (auch nicht in 4K); kleinere Texturen laden schneller.
+/// Covers never get larger than this in the tiles (not even in 4K); smaller textures load faster.
 const COVER_MAX: (u32, u32) = (480, 720);
 
 pub struct LoadOptions {
@@ -29,9 +30,12 @@ pub struct Library {
     pub entries: Vec<LoadedEntry>,
     pub history: History,
     pub history_path: Option<PathBuf>,
-    /// Angeheftete und ausgeblendete Einträge
+    /// Pinned and hidden entries
     pub collection: Collection,
     pub collection_path: Option<PathBuf>,
+    /// Nested gamescope options per entry (Story 7.10)
+    pub game_options: GameOptionsStore,
+    pub game_options_path: Option<PathBuf>,
 }
 
 pub fn spawn(options: LoadOptions) -> mpsc::Receiver<Library> {
@@ -48,13 +52,23 @@ fn load(options: &LoadOptions) -> Library {
         let history = history_path.as_deref().map(History::load).unwrap_or_default();
         let collection_path = Collection::default_path();
         let collection = collection_path.as_deref().map(Collection::load).unwrap_or_default();
+        let game_options_path = GameOptionsStore::default_path();
+        let game_options = game_options_path.as_deref().map(GameOptionsStore::load).unwrap_or_default();
         let mut entries = discover_library();
         if !entries.is_empty() {
             apply_history(&mut entries, &history);
             sort_by_recent(&mut entries);
-            return Library { entries: decode_all(entries), history, history_path, collection, collection_path };
+            return Library {
+                entries: decode_all(entries),
+                history,
+                history_path,
+                collection,
+                collection_path,
+                game_options,
+                game_options_path,
+            };
         }
-        eprintln!("Keine Spiele oder Apps gefunden, zeige Dummy-Einträge.");
+        eprintln!("No games or apps found, showing dummy entries.");
     }
     let mut entries = dummy_library(options.tiles);
     if let Some(command) = &options.dummy_launch {
@@ -63,17 +77,19 @@ fn load(options: &LoadOptions) -> Library {
             entry.launch = Launch::Command(argv.clone());
         }
     }
-    // Dummy-Einträge speichern weder Historie noch Sammlung (ihre IDs gibt es nicht wirklich).
+    // Dummy entries save neither history, collection nor game options (their IDs are not real).
     Library {
         entries: decode_all(entries),
         history: History::default(),
         history_path: None,
         collection: Collection::default(),
         collection_path: None,
+        game_options: GameOptionsStore::default(),
+        game_options_path: None,
     }
 }
 
-/// Dekodiert die Bilder auf mehreren Threads; die Reihenfolge bleibt erhalten.
+/// Decodes the images on several threads; the order is kept.
 fn decode_all(entries: Vec<AppEntry>) -> Vec<LoadedEntry> {
     let threads = std::thread::available_parallelism().map_or(4, |n| n.get()).min(8);
     let chunk = entries.len().div_ceil(threads).max(1);
@@ -101,7 +117,7 @@ fn decode(mut entry: AppEntry) -> LoadedEntry {
 }
 
 fn read(path: &Path, max: Option<(u32, u32)>) -> Option<SharedPixelBuffer<Rgba8Pixel>> {
-    let image = image::open(path).map_err(|err| eprintln!("Bild {} nicht lesbar: {err}", path.display())).ok()?;
+    let image = image::open(path).map_err(|err| eprintln!("Image {} not readable: {err}", path.display())).ok()?;
     let image = match max {
         Some((w, h)) if image.width() > w || image.height() > h => image.thumbnail(w, h),
         _ => image,

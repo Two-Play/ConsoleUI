@@ -1,4 +1,4 @@
-//! Kontextmenü (Options/Tab) für den fokussierten Eintrag in Home und Bibliothek (Story 2.7).
+//! Context menu (Options/Tab) for the focused entry in home and library (Story 2.7).
 
 use consoleui_core::{Action, LibrarySort};
 
@@ -9,15 +9,17 @@ pub enum ContextAction {
     Pin,
     Unpin,
     Hide,
-    /// Ausgeblendeten Eintrag wieder anzeigen
+    /// Show a hidden entry again
     Show,
-    /// Laufende App beenden (mit der üblichen Rückfrage)
+    /// Open the nested gamescope options of the entry (Story 7.10)
+    GameOptions,
+    /// Quit the running app (with the usual confirmation)
     Quit,
-    /// Sortierung der Bibliothek umschalten; das Menü bleibt dabei offen.
+    /// Switch the library sort; the menu stays open.
     Sort,
 }
 
-/// Was der Eintrag gerade ist; daraus ergeben sich die Menüpunkte.
+/// What the entry currently is; the menu items follow from it.
 pub struct EntryState {
     pub id: String,
     pub title: String,
@@ -27,14 +29,14 @@ pub struct EntryState {
 }
 
 pub struct ContextMenu {
-    /// Eintrags-ID, auf die sich das Menü bezieht (`None`: leere Bibliothek, nur Sortierung)
+    /// Entry ID the menu refers to (`None`: empty library, only the sort)
     entry_id: Option<String>,
     title: String,
     actions: Vec<ContextAction>,
     focused: usize,
 }
 
-/// Was nach einer Eingabe im Kontextmenü passieren soll
+/// What should happen after an input in the context menu
 pub enum ContextOutcome {
     Stay,
     Close,
@@ -42,7 +44,7 @@ pub enum ContextOutcome {
 }
 
 impl ContextMenu {
-    /// `library`: in der Bibliothek gehört die Sortierung mit ins Menü.
+    /// `library`: in the library the sort is part of the menu.
     pub fn new(entry: Option<EntryState>, library: bool) -> Self {
         let mut actions = Vec::new();
         if let Some(entry) = &entry {
@@ -52,6 +54,7 @@ impl ContextMenu {
                 actions.push(if entry.pinned { ContextAction::Unpin } else { ContextAction::Pin });
                 actions.push(ContextAction::Hide);
             }
+            actions.push(ContextAction::GameOptions);
             if entry.running {
                 actions.push(ContextAction::Quit);
             }
@@ -99,6 +102,7 @@ impl ContextMenu {
                     ContextAction::Unpin => ("⚲", "Lösen".to_string()),
                     ContextAction::Hide => ("◌", "Ausblenden".to_string()),
                     ContextAction::Show => ("●", "Wieder anzeigen".to_string()),
+                    ContextAction::GameOptions => ("▣", "Gamescope options…".to_string()),
                     ContextAction::Quit => ("■", "Beenden".to_string()),
                     ContextAction::Sort => ("⇅", format!("Sortierung: {}", sort.label())),
                 };
@@ -119,9 +123,9 @@ mod tests {
     #[test]
     fn items_depend_on_entry_state() {
         use ContextAction::*;
-        assert_eq!(ContextMenu::new(entry(false, false, false), false).actions, [Pin, Hide]);
-        assert_eq!(ContextMenu::new(entry(true, false, true), true).actions, [Unpin, Hide, Quit, Sort]);
-        assert_eq!(ContextMenu::new(entry(false, true, false), true).actions, [Show, Sort]);
+        assert_eq!(ContextMenu::new(entry(false, false, false), false).actions, [Pin, Hide, GameOptions]);
+        assert_eq!(ContextMenu::new(entry(true, false, true), true).actions, [Unpin, Hide, GameOptions, Quit, Sort]);
+        assert_eq!(ContextMenu::new(entry(false, true, false), true).actions, [Show, GameOptions, Sort]);
         assert_eq!(ContextMenu::new(None, true).actions, [Sort]);
         assert!(ContextMenu::new(None, false).is_empty());
     }
@@ -134,7 +138,7 @@ mod tests {
         for _ in 0..5 {
             menu.apply(Action::Down);
         }
-        assert_eq!(menu.focused(), 2);
+        assert_eq!(menu.focused(), 3);
         assert!(matches!(menu.apply(Action::Confirm), ContextOutcome::Run(ContextAction::Quit)));
         assert!(matches!(menu.apply(Action::Back), ContextOutcome::Close));
     }

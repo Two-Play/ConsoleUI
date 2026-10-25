@@ -1,0 +1,115 @@
+import { Theme } from "theme.slint";
+import { SettingRow } from "types.slint";
+
+// Nested gamescope options of one entry (Story 7.10): a card in the middle like the context menu,
+// the rows like the cards of the settings page (◀ ▶ changes the value of the focused row).
+// The command preview is at the bottom; the button hints are in the hint bar.
+export component GameOptionsPanel inherits Rectangle {
+    in property <bool> open;
+    in property <string> title;
+    in property <[SettingRow]> rows;
+    in property <int> focused;
+    in property <string> footer;
+    in property <float> s: 1;
+
+    property <length> row-height: 84px * root.s;
+    property <length> row-gap: 10px * root.s;
+    property <length> pad: 32px * root.s;
+    property <length> header: 92px * root.s;
+
+    Rectangle {
+        width: 100%;
+        height: 100%;
+        background: #000000b3;
+        opacity: root.open ? 1 : 0;
+        animate opacity { duration: Theme.page-duration; }
+    }
+
+    if root.open: panel := Rectangle {
+        width: min(860px * root.s, root.width - 40px * root.s);
+        height: 2 * root.pad + root.header + root.rows.length * (root.row-height + root.row-gap) + 40px * root.s;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        border-radius: 24px * root.s;
+        background: #191b24;
+        border-width: 1px;
+        border-color: #ffffff22;
+        animate height { duration: Theme.focus-duration; easing: ease-out-quart; }
+
+        Text {
+            x: root.pad + 6px * root.s;
+            y: root.pad;
+            width: parent.width - 2 * root.pad;
+            text: root.title;
+            color: Theme.text-dim;
+            font-size: 20px * root.s;
+            font-weight: 600;
+            letter-spacing: 2px * root.s;
+            overflow: elide;
+        }
+
+        Text {
+            x: root.pad + 6px * root.s;
+            y: root.pad + 32px * root.s;
+            text: "Gamescope";
+            color: Theme.text;
+            font-size: 34px * root.s;
+            font-weight: 800;
+        }
+
+        for row[i] in root.rows: card := Rectangle {
+            property <bool> is-focused: i == root.focused;
+            x: root.pad;
+            y: root.pad + root.header + i * (root.row-height + root.row-gap);
+            width: parent.width - 2 * root.pad;
+            height: root.row-height;
+            border-radius: 18px * root.s;
+            background: self.is-focused ? Theme.accent : Theme.surface;
+            animate background { duration: Theme.focus-duration; }
+
+            VerticalLayout {
+                x: 28px * root.s;
+                y: (parent.height - self.height) / 2;
+                width: parent.width - 56px * root.s - value.width;
+                height: self.preferred-height;
+                spacing: 4px * root.s;
+
+                Text {
+                    text: row.label;
+                    color: card.is-focused ? Theme.base : Theme.text;
+                    font-size: 23px * root.s;
+                    font-weight: 700;
+                    overflow: elide;
+                }
+
+                Text {
+                    text: row.description;
+                    color: card.is-focused ? Theme.base.with-alpha(0.7) : Theme.text-dim;
+                    font-size: 16px * root.s;
+                    wrap: word-wrap;
+                }
+            }
+
+            value := Text {
+                x: parent.width - self.width - 28px * root.s;
+                height: 100%;
+                text: row.value == "" ? "" : (card.is-focused ? "◀  " : "") + row.value + (card.is-focused ? "  ▶" : "");
+                color: card.is-focused ? Theme.base : Theme.text;
+                font-size: 21px * root.s;
+                font-weight: 600;
+                vertical-alignment: center;
+            }
+        }
+
+        Text {
+            x: root.pad + 6px * root.s;
+            y: parent.height - root.pad - 22px * root.s;
+            width: parent.width - 2 * root.pad;
+            text: root.footer;
+            color: Theme.text-dim;
+            font-size: 16px * root.s;
+            font-family: "monospace";
+            overflow: elide;
+        }
+    }
+}
