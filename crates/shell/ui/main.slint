@@ -10,6 +10,7 @@ import { OverlayWindow } from "overlay.slint";
 import { SettingsPage } from "settings.slint";
 import { BootScreen } from "boot.slint";
 import { Toast } from "toast.slint";
+import { HeroLayer } from "hero.slint";
 
 export { AppTile, ControllerStyle, GlyphButton, Hint, KeyCap, NavAction, NetworkState, QuickItem, Screen, SettingRow, OverlayWindow, Theme }
 
@@ -60,6 +61,8 @@ export component AppWindow inherits Window {
     in property <image> hero-a;
     in property <image> hero-b;
     in property <bool> hero-front-a: true;
+    // Horizontale Fokusposition -1 … 1 für die Parallaxe des Hintergrunds
+    in property <float> hero-parallax;
 
     // Startbildschirm: Die fokussierte Kachel zoomt auf Vollbild. Rust schließt ihn wieder, wenn die
     // App beendet ist (oder bei „Zurück“).
@@ -234,29 +237,21 @@ export component AppWindow inherits Window {
             background: @radial-gradient(circle, root.glow.with-alpha(0.45) 0%, transparent 65%);
         }
 
-        // Hero-Artwork mit Überblendung
-        Image {
+        // Hero-Artwork mit Überblendung und Parallaxe
+        HeroLayer {
             width: 100%;
             height: 100%;
             source: root.hero-a;
-            image-fit: cover;
-            opacity: root.hero-front-a ? 1 : 0;
-            animate opacity {
-                duration: Theme.background-duration;
-                easing: ease-in-out;
-            }
+            front: root.hero-front-a;
+            parallax: root.hero-parallax;
         }
 
-        Image {
+        HeroLayer {
             width: 100%;
             height: 100%;
             source: root.hero-b;
-            image-fit: cover;
-            opacity: root.hero-front-a ? 0 : 1;
-            animate opacity {
-                duration: Theme.background-duration;
-                easing: ease-in-out;
-            }
+            front: !root.hero-front-a;
+            parallax: root.hero-parallax;
         }
 
         // Abdunkeln von links und unten, damit Text auf jedem Artwork lesbar bleibt; in Bibliothek

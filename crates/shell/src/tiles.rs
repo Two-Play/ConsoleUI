@@ -3,25 +3,45 @@
 use std::path::Path;
 
 use chrono::{DateTime, Local, NaiveDate};
+use consoleui_core::image_format::{ImageFormat, sniff};
 use consoleui_core::{AppEntry, AppKind, last_used_label};
-use slint::{Color, Image};
+use slint::{Color, Image, SharedPixelBuffer};
 
 use crate::loader::LoadedEntry;
 use crate::{AppTile, cover};
 
 const COVER_SIZE: u32 = 384;
 
-pub fn load(path: &Path) -> Option<Image> {
-    Image::load_from_path(path)
-        .map_err(|err| eprintln!("Bild {} konnte nicht geladen werden: {err:?}", path.display()))
-        .ok()
+/// Lädt ein Icon. Slint erkennt das Format nur an der Endung; ohne Endung (z. B.
+/// `~/AppImages/.icons/name`) oder wenn Slint scheitert, wird es am Dateiinhalt bestimmt.
+pub fn load_icon(path: &Path) -> Option<Image> {
+    if path.extension().is_some()
+        && let Ok(image) = Image::load_from_path(path)
+    {
+        return Some(image);
+    }
+    let data = std::fs::read(path)
+        .map_err(|err| eprintln!("Bild {} konnte nicht gelesen werden: {err}", path.display()))
+        .ok()?;
+    let image = match sniff(&data) {
+        Some(ImageFormat::Svg) => Image::load_from_svg_data(&data).ok(),
+        Some(ImageFormat::Png | ImageFormat::Jpeg) => image::load_from_memory(&data).ok().map(|img| {
+            let rgba = img.into_rgba8();
+            Image::from_rgba8(SharedPixelBuffer::clone_from_slice(rgba.as_raw(), rgba.width(), rgba.height()))
+        }),
+        None => None,
+    };
+    if image.is_none() {
+        eprintln!("Bild {}: Format unbekannt oder Datei beschädigt", path.display());
+    }
+    image
 }
 
 /// Cover und Logo sind schon im Hintergrund dekodiert; Icons (meist SVG) lädt Slint hier selbst.
 pub fn to_tile(loaded: &LoadedEntry, index: usize, today: NaiveDate) -> AppTile {
     let entry = &loaded.entry;
     let real_cover = loaded.cover.clone().map(Image::from_rgba8);
-    let icon = if real_cover.is_none() { entry.artwork.icon.as_deref().and_then(load) } else { None };
+    let icon = if real_cover.is_none() { entry.artwork.icon.as_deref().and_then(load_icon) } else { None };
     let logo = loaded.logo.clone().map(Image::from_rgba8);
     let kind = match entry.kind {
         AppKind::Game => "SPIEL",

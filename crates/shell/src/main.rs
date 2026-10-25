@@ -14,6 +14,7 @@ mod cover;
 mod gamepad;
 mod gamescope;
 mod grab;
+mod hero;
 mod loader;
 mod options;
 mod perf;
@@ -369,6 +370,8 @@ fn start_bench(ui: &AppWindow, shell: Rc<RefCell<Shell>>, stats: Rc<RefCell<Fram
     let steps = 2 * len.saturating_sub(1);
     let mut step = 0;
     let mut started: Option<Instant> = None;
+    // Längste Verarbeitung einer Eingabe im UI-Thread (dort darf nichts Teures passieren)
+    let mut worst_step = Duration::ZERO;
     let ui = ui.as_weak();
 
     let timer = Timer::default();
@@ -379,12 +382,14 @@ fn start_bench(ui: &AppWindow, shell: Rc<RefCell<Shell>>, stats: Rc<RefCell<Fram
             Instant::now()
         });
         if step >= steps {
-            perf::print_bench_summary(len, steps, started.elapsed(), stats.borrow().total());
+            perf::print_bench_summary(len, steps, started.elapsed(), stats.borrow().total(), worst_step);
             let _ = slint::quit_event_loop();
             return;
         }
         let action = if step + 1 < len { Action::Right } else { Action::Left };
+        let begin = Instant::now();
         shell.borrow_mut().apply(&ui, action);
+        worst_step = worst_step.max(begin.elapsed());
         step += 1;
     });
     timer
