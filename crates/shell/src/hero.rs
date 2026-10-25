@@ -5,6 +5,9 @@
 //! UI thread collects the results while something is pending and fades the image in once it is
 //! ready. Until then the previous image stays (no detour via an empty background). Neighbours
 //! of the focused tile are prefetched; the cache is limited.
+//!
+//! Each hero also gets a small, strongly blurred copy: frosted panels (`ui/glass.slint`) show it
+//! through, since Slint itself cannot blur what lies behind an element.
 
 use std::cell::RefCell;
 use std::collections::{HashSet, VecDeque};
@@ -15,7 +18,7 @@ use std::time::Duration;
 
 use slint::{ComponentHandle, Image, Rgba8Pixel, SharedPixelBuffer};
 
-use crate::AppWindow;
+use crate::{AppWindow, Glass};
 
 /// No hero is decoded wider than this (the background is darkened anyway).
 const MAX_SIZE: (u32, u32) = (1920, 1080);
@@ -24,13 +27,30 @@ const CACHE_SIZE: usize = 12;
 const WORKERS: usize = 2;
 /// Poll interval while jobs are open; afterwards no timer runs.
 const POLL: Duration = Duration::from_millis(15);
+/// Size and blur radius (in its pixels) of the blurred copy; Slint scales it up smoothly. At
+/// 1920 px window width one pixel is ten, so the blur is about 25 px.
+const BLUR_SIZE: (u32, u32) = (192, 108);
+const BLUR_SIGMA: f32 = 2.5;
 
 struct Job {
     id: String,
     path: PathBuf,
 }
 
-type Done = (String, Option<SharedPixelBuffer<Rgba8Pixel>>);
+/// A decoded hero and its blurred copy
+struct Decoded {
+    hero: SharedPixelBuffer<Rgba8Pixel>,
+    blurred: SharedPixelBuffer<Rgba8Pixel>,
+}
+
+type Done = (String, Option<Decoded>);
+
+/// A hero ready to show, with its blurred copy
+#[derive(Clone, Default)]
+struct Hero {
+    image: Image,
+    blurred: Image,
+}
 
 #[derive(Default)]
 struct Queue {
@@ -49,7 +69,7 @@ struct State {
     shared: Arc<Shared>,
     results: mpsc::Receiver<Done>,
     /// Most recently used at the end
-    cache: VecDeque<(String, Image)>,
+    cache: VecDeque<(String, Hero)>,
     failed: HashSet<String>,
     /// Entry whose hero should be visible
     wanted: Option<String>,
@@ -100,10 +120,10 @@ impl Heroes {
         let mut jobs = Vec::new();
         match (id, path) {
             (Some(id), Some(path)) => {
-                if let Some(image) = state.take_cached(id) {
-                    state.display(id, image);
+                if let Some(hero) = state.take_cached(id) {
+                    state.display(id, hero);
                 } else if state.failed.contains(id) {
-                    state.display(id, Image::default());
+                    state.display(id, Hero::default());
                 } else {
                     jobs.push(Job { id: id.to_string(), path: path.to_path_buf() });
                 }
@@ -123,12 +143,12 @@ impl Heroes {
 
     /// Already decoded hero (for the launch screen), without waiting for the workers.
     pub fn cached(&self, id: &str) -> Option<Image> {
-        self.state.borrow().cache.iter().find(|(c, _)| c == id).map(|(_, image)| image.clone())
+        self.state.borrow().cache.iter().find(|(c, _)| c == id).map(|(_, hero)| hero.image.clone())
     }
 }
 
 impl State {
-    fn take_cached(&mut self, id: &str) -> Option<Image> {
+    fn take_cached(&mut self, id: &str) -> Option<Hero> {
         let pos = self.cache.iter().position(|(c, _)| c == id)?;
         let entry = self.cache.remove(pos)?;
         let image = entry.1.clone();
@@ -136,9 +156,9 @@ impl State {
         Some(image)
     }
 
-    fn insert(&mut self, id: String, image: Image) {
+    fn insert(&mut self, id: String, hero: Hero) {
         self.cache.retain(|(c, _)| *c != id);
-        self.cache.push_back((id, image));
+        self.cache.push_back((id, hero));
         while self.cache.len() > CACHE_SIZE {
             self.cache.pop_front();
         }
@@ -161,31 +181,32 @@ impl State {
     }
 
     /// Puts the image into the currently invisible layer and crossfades.
-    fn display(&mut self, id: &str, image: Image) {
+    fn display(&mut self, id: &str, hero: Hero) {
         if self.shown.as_deref() == Some(id) {
             return;
         }
         self.shown = Some(id.to_string());
-        self.flip(image);
+        self.flip(hero);
     }
 
     /// Fades over to the empty background (accent gradient only).
     fn display_none(&mut self) {
         // `shown == None` means: there is already no image in front.
         if self.shown.take().is_some() {
-            self.flip(Image::default());
+            self.flip(Hero::default());
         }
     }
 
-    fn flip(&self, image: Image) {
+    fn flip(&self, hero: Hero) {
         let Some(ui) = self.ui.upgrade() else { return };
         let front_a = !ui.get_hero_front_a();
         if front_a {
-            ui.set_hero_a(image);
+            ui.set_hero_a(hero.image);
         } else {
-            ui.set_hero_b(image);
+            ui.set_hero_b(hero.image);
         }
         ui.set_hero_front_a(front_a);
+        ui.global::<Glass>().set_image(hero.blurred);
     }
 
     /// Collects finished images; `true` while jobs are still open.
@@ -194,16 +215,17 @@ impl State {
         let busy = self.busy();
         while let Ok((id, pixels)) = self.results.try_recv() {
             match pixels {
-                Some(pixels) => {
-                    let image = Image::from_rgba8(pixels);
-                    self.insert(id.clone(), image.clone());
+                Some(decoded) => {
+                    let hero =
+                        Hero { image: Image::from_rgba8(decoded.hero), blurred: Image::from_rgba8(decoded.blurred) };
+                    self.insert(id.clone(), hero.clone());
                     if self.wanted.as_deref() == Some(id.as_str()) {
-                        self.display(&id, image);
+                        self.display(&id, hero);
                     }
                 }
                 None => {
                     if self.wanted.as_deref() == Some(id.as_str()) {
-                        self.display(&id, Image::default());
+                        self.display(&id, Hero::default());
                     }
                     self.failed.insert(id);
                 }
@@ -256,10 +278,14 @@ fn worker(shared: &Shared, results: &mpsc::Sender<Done>) {
     }
 }
 
-fn decode(path: &Path) -> Option<SharedPixelBuffer<Rgba8Pixel>> {
+fn decode(path: &Path) -> Option<Decoded> {
     let image = image::open(path).map_err(|err| eprintln!("Cannot read hero {}: {err}", path.display())).ok()?;
     let (w, h) = MAX_SIZE;
     let image = if image.width() > w || image.height() > h { image.thumbnail(w, h) } else { image };
+    let blurred = image::imageops::blur(&image.thumbnail(BLUR_SIZE.0, BLUR_SIZE.1).into_rgba8(), BLUR_SIGMA);
     let rgba = image.into_rgba8();
-    Some(SharedPixelBuffer::clone_from_slice(rgba.as_raw(), rgba.width(), rgba.height()))
+    Some(Decoded {
+        hero: SharedPixelBuffer::clone_from_slice(rgba.as_raw(), rgba.width(), rgba.height()),
+        blurred: SharedPixelBuffer::clone_from_slice(blurred.as_raw(), blurred.width(), blurred.height()),
+    })
 }

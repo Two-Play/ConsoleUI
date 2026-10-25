@@ -17,7 +17,7 @@ use consoleui_core::osk::{KeyboardEvent, OnScreenKeyboard};
 use consoleui_core::ownership::{self, FIRST_DESKTOP_APP_ID, Owner, SHELL_APP_ID};
 use consoleui_core::profile_picker::{PickerOutcome, ProfilePicker};
 use consoleui_core::profiles::{self, ProfilePaths, Profiles};
-use consoleui_core::protocol::{CompositorMessage, Rect, ShellMessage, Transition};
+use consoleui_core::protocol::{BlurRegion, CompositorMessage, Rect, ShellMessage, Transition, WindowRole};
 use consoleui_core::running::{MIN_HOLD, Phase, RunningApp};
 use consoleui_core::settings::{BackgroundChoice, GlyphChoice, Setting, Settings};
 use consoleui_core::sound::Sound;
@@ -40,7 +40,7 @@ use crate::network::Network;
 use crate::profiles::{self as profile_view, ProfileStart};
 use crate::quick::{ForegroundApp, QuickAction, QuickMenu, QuickOutcome};
 use crate::{
-    AppTile, AppWindow, ControllerStyle, GlyphButton, Hint, KeyCap, NotificationWindow, OverlayWindow, Screen,
+    AppTile, AppWindow, ControllerStyle, Glass, GlyphButton, Hint, KeyCap, NotificationWindow, OverlayWindow, Screen,
     SettingRow, Theme, tiles,
 };
 
@@ -154,6 +154,12 @@ pub struct Shell {
     failed_launch: Option<Instant>,
     /// Our compositor zooms the app in over the launch screen (Story 7.7); it closes afterwards.
     close_launch_at: Option<Instant>,
+    /// The launch screen is still opening: the launched app (`foreground`) is handed to gamescope
+    /// or our compositor once a frame was rendered after this time (the screen is fully open), so
+    /// it never shows up over a half-open launch screen.
+    front_due: Option<Instant>,
+    /// A frame was rendered after `front_due`
+    launch_shown: bool,
     /// Entry ID whose quitting is waiting for confirmation
     confirm_quit: Option<String>,
     quick: Option<QuickMenu>,
@@ -219,6 +225,9 @@ struct Feedback {
 /// How long the launch screen stays under an app our compositor zooms in (a bit longer than the
 /// compositor's transition)
 const LAUNCH_HANDOVER: Duration = Duration::from_millis(700);
+/// The launched app comes to the front at the latest this long after the launch screen's
+/// animation ended, even if no frame of the open screen was reported
+const FRONT_FALLBACK: Duration = Duration::from_millis(300);
 
 /// Initial animation durations in milliseconds (as in `theme.slint`)
 const DURATIONS: [i64; 5] = [220, 500, 120, 450, 200];
@@ -282,6 +291,8 @@ impl Shell {
             foreground: None,
             failed_launch: None,
             close_launch_at: None,
+            front_due: None,
+            launch_shown: false,
             confirm_quit: None,
             quick: None,
             gamescope,
@@ -487,6 +498,51 @@ impl Shell {
     /// The overlay and notification windows of our compositor, if it places them (Story 7.6).
     fn compositor_ui(&self) -> Option<&CompositorUi> {
         self.compositor_ui.as_ref().filter(|_| self.compositor.as_ref().is_some_and(Compositor::overlays))
+    }
+
+    /// Tells our compositor where the open quick menu and the shown toast are, so it blurs what is
+    /// below them (Story 7.13). Called whenever they open or close and from the compositor poll
+    /// (toasts are hidden by timers, a window's size arrives later).
+    fn sync_blur(&mut self) {
+        let Some(windows) = self.compositor_ui() else { return };
+        let Some(blur) = self.compositor.as_ref().map(Compositor::blur) else { return };
+        windows.overlay.global::<Glass>().set_backdrop(blur);
+        windows.notification.global::<Glass>().set_backdrop(blur);
+        if !blur {
+            return;
+        }
+        let region = |x: f32, y: f32, width: f32, height: f32, radius: f32| BlurRegion {
+            rect: Rect {
+                x: x.round() as i32,
+                y: y.round() as i32,
+                width: width.round() as i32,
+                height: height.round() as i32,
+            },
+            radius: radius.round() as i32,
+        };
+        let overlay = &windows.overlay;
+        let mut menu = Vec::new();
+        if overlay.get_open() && overlay.window().is_visible() {
+            let size = overlay.window().size().to_logical(overlay.window().scale_factor());
+            let height = overlay.get_panel_height();
+            menu.push(region(0.0, size.height - height, size.width, height, 0.0));
+        }
+        let menu_fade = overlay.get_blur_fade().clamp(0, 2000) as u32;
+        let notification = &windows.notification;
+        let mut toast = Vec::new();
+        if notification.get_shown() && notification.window().is_visible() {
+            toast.push(region(
+                notification.get_toast_x(),
+                notification.get_toast_y(),
+                notification.get_toast_width(),
+                notification.get_toast_height(),
+                notification.get_toast_radius(),
+            ));
+        }
+        let toast_fade = notification.get_blur_fade().clamp(0, 2000) as u32;
+        let Some(compositor) = &mut self.compositor else { return };
+        compositor.set_blur(WindowRole::Overlay, menu, menu_fade);
+        compositor.set_blur(WindowRole::Notification, toast, toast_fade);
     }
 
     /// The window for toasts over running apps (gamescope or our compositor).
@@ -1459,6 +1515,8 @@ impl Shell {
                 // Opened as a layer before the compositor's `Welcome` arrived
                 ui.set_quick_open(false);
             }
+            // The blur fades out with the closing menu; opening is picked up by the next poll.
+            self.sync_blur();
             return;
         }
         let Some(gamescope) = &mut self.gamescope else {
@@ -1546,8 +1604,15 @@ impl Shell {
                 self.home.focus(0);
                 self.refresh(ui);
                 self.focus_entry(&id);
-                let card_ms = if self.settings.animations { DURATIONS[3] as u32 } else { 0 };
-                self.set_foreground(Some(app_id), self.transition(tile_rect, card_ms));
+                if self.settings.animations && (self.gamescope.is_some() || self.compositor.is_some()) {
+                    // The app comes to the front once the launch screen is fully open; our
+                    // compositor then zooms it in from (nearly) fullscreen.
+                    self.foreground = Some(app_id);
+                    self.front_due = Some(now + Duration::from_millis(DURATIONS[3] as u64));
+                    self.launch_shown = false;
+                } else {
+                    self.set_foreground(Some(app_id), self.transition(tile_rect));
+                }
             }
             Err(err) => {
                 eprintln!("Cannot start {}: {err}", entry.title);
@@ -1565,7 +1630,7 @@ impl Shell {
     /// gamescope this is not possible; then the launch screen shows that it is running.
     fn bring_to_front(&mut self, ui: &AppWindow, app_id: u32, tile: Option<Rect>) {
         if self.gamescope.is_some() || self.compositor.is_some() {
-            self.set_foreground(Some(app_id), self.transition(tile, 0));
+            self.set_foreground(Some(app_id), self.transition(tile));
             return;
         }
         let Some(index) = self
@@ -1588,7 +1653,7 @@ impl Shell {
     fn show_shell(&mut self, ui: &AppWindow) {
         ui.set_launching(false);
         self.close_launch_at = None;
-        let transition = self.transition(self.tile_rect(ui), 0);
+        let transition = self.transition(self.tile_rect(ui));
         self.set_foreground(None, transition);
     }
 
@@ -1600,12 +1665,13 @@ impl Shell {
     }
 
     /// How our compositor animates the next front change (Story 7.7); `None` with animations off.
-    fn transition(&self, tile: Option<Rect>, card_ms: u32) -> Option<Transition> {
-        self.settings.animations.then_some(Transition { tile, card_ms })
+    fn transition(&self, tile: Option<Rect>) -> Option<Transition> {
+        self.settings.animations.then_some(Transition { tile, card_ms: 0 })
     }
 
     fn set_foreground(&mut self, app_id: Option<u32>, transition: Option<Transition>) {
         self.foreground = app_id;
+        self.front_due = None;
         if let Some(compositor) = &mut self.compositor {
             compositor.focus(app_id, transition);
         }
@@ -1681,7 +1747,24 @@ impl Shell {
 
     /// Messages from our compositor: which launched apps show a window (the launch screen closes
     /// as soon as the app in front has one).
+    /// After each rendered frame of the main window: notes when the launch screen is fully open.
+    pub fn frame_rendered(&mut self) {
+        if self.front_due.is_some_and(|due| Instant::now() >= due) {
+            self.launch_shown = true;
+        }
+    }
+
     pub fn poll_compositor(&mut self, ui: &AppWindow) {
+        // The next poll after the open launch screen was drawn (it has reached the screen by
+        // then); without frame notifications a little later.
+        if self.front_due.is_some_and(|due| self.launch_shown || Instant::now() >= due + FRONT_FALLBACK) {
+            let app_id = self.foreground;
+            self.set_foreground(app_id, self.transition(None));
+            // In gamescope the app is visible at once if it already has a window.
+            if self.gamescope.is_some() && self.running.iter().any(|r| Some(r.app_id) == app_id && r.has_window) {
+                ui.set_launching(false);
+            }
+        }
         if self.close_launch_at.is_some_and(|at| Instant::now() >= at) {
             self.close_launch_at = None;
             ui.set_launching(false);
@@ -1696,8 +1779,11 @@ impl Shell {
                         running.has_window = true;
                         if self.foreground == Some(app_id) && ui.get_launching() {
                             if compositor.transitions() && self.settings.animations {
-                                // The app zooms in above the launch screen first (Story 7.7).
-                                self.close_launch_at = Some(Instant::now() + LAUNCH_HANDOVER);
+                                // The app zooms in above the launch screen first (Story 7.7), once
+                                // that is fully open.
+                                let due = self.front_due.map(|due| due + FRONT_FALLBACK);
+                                let front = due.unwrap_or_else(Instant::now).max(Instant::now());
+                                self.close_launch_at = Some(front + LAUNCH_HANDOVER);
                             } else {
                                 ui.set_launching(false);
                             }
@@ -1718,6 +1804,7 @@ impl Shell {
         if keymap_changed {
             self.update_settings_rows(ui);
         }
+        self.sync_blur();
         if guide {
             self.apply(ui, Action::Guide);
         }
@@ -1764,7 +1851,7 @@ impl Shell {
             if let Some(running) = self.running.iter_mut().find(|r| r.app_id == app_id) {
                 running.has_window = true;
                 // The game is visible now; the launch screen below it is no longer needed.
-                if self.foreground == Some(app_id) {
+                if self.foreground == Some(app_id) && self.front_due.is_none() {
                     ui.set_launching(false);
                 }
             }

@@ -1,0 +1,60 @@
+import { Theme } from "theme.slint";
+
+// What frosted panels show through: a pre-blurred copy of the hero (from the hero workers in
+// Rust), above the accent gradient of the window background. Slint has no backdrop blur, so the
+// panels see the blurred background artwork but not the tiles in front of it. Only the main
+// window sets it. In the overlay and notification windows above a game our compositor blurs
+// what is below the panels instead (`backdrop`, Story 7.13); elsewhere they stay a plain dark glass.
+export global Glass {
+    // Set by the main window; without it the panels are an almost opaque dark glass.
+    in-out property <bool> active;
+    // The compositor blurs what is below the window's panels (Story 7.13)
+    in-out property <bool> backdrop;
+    in-out property <image> image;
+    in-out property <color> glow: transparent;
+    // Size of the window the panels are in
+    in-out property <length> view-width: 1920px;
+    in-out property <length> view-height: 1080px;
+}
+
+// Background of a panel: the blurred background lined up with the window, frosted with `tint`,
+// with a light upper edge. Children are drawn on top.
+export component GlassPanel inherits Rectangle {
+    // Frosting (its alpha is set here: the more opaque, the less of the background shows)
+    in property <color> tint: #191b24;
+    // A thin light border all around
+    in property <bool> edge: true;
+    clip: true;
+
+    if Glass.active: Rectangle {
+        x: -root.absolute-position.x;
+        y: -root.absolute-position.y;
+        width: Glass.view-width;
+        height: Glass.view-height;
+        background: @linear-gradient(160deg, Glass.glow.darker(0.4) 0%, Theme.base 70%);
+
+        Image {
+            width: 100%;
+            height: 100%;
+            source: Glass.image;
+            image-fit: cover;
+        }
+    }
+
+    Rectangle {
+        background: root.tint.with-alpha(Glass.active ? 0.62 : Glass.backdrop ? 0.5 : 0.95);
+    }
+
+    // Light falling on the upper edge
+    Rectangle {
+        background: @linear-gradient(180deg, #ffffff17 0%, #ffffff00 45%);
+    }
+
+    if root.edge: Rectangle {
+        border-radius: root.border-radius;
+        border-width: 1px;
+        border-color: #ffffff26;
+    }
+
+    @children
+}

@@ -6,6 +6,8 @@
 //! - **Close** (app → shell): the app's windows shrink into the tile and fade out above the
 //!   shell, which settles from a slight zoom and brightens. If the app has no window any more (it
 //!   quit), only the shell part runs.
+//! - The zooming app image has rounded corners like the tiles and the launch screen: those of the
+//!   tile at the small end, none at fullscreen (drawn by `rounded.rs`).
 //!
 //! The shell asks for a transition with [`ShellMessage::Focus`](consoleui_core::protocol); a
 //! front change without a request is instant, except the shell coming back after an app closed
@@ -22,6 +24,10 @@ use crate::policy::Role;
 pub const OPEN: Duration = Duration::from_millis(520);
 /// Duration of the return to the shell
 pub const CLOSE: Duration = Duration::from_millis(440);
+/// Corner radius relative to the shorter side, as on the shell's tiles (`tile.slint`)
+const TILE_ROUNDING: f64 = 0.12;
+/// Largest corner radius relative to the output height (for big clip rectangles)
+const MAX_ROUNDING: f64 = 0.04;
 
 /// A rectangle in output coordinates (logical pixels).
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -58,27 +64,30 @@ impl Area {
 }
 
 /// How the windows of one group are drawn in a frame: scaled by `scale` around the output origin,
-/// then moved by `offset`, cut to `clip` (if any) and drawn with `alpha`.
+/// then moved by `offset`, cut to `clip` (if any) with corners of `radius` and drawn with `alpha`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Effect {
     pub scale: f64,
     pub offset: (f64, f64),
     pub clip: Option<Area>,
+    pub radius: f64,
     pub alpha: f32,
 }
 
 impl Effect {
     /// The output-sized image scaled uniformly so it covers `clip`, centered on it, cut to it.
-    fn cover(clip: Area, output: (f64, f64), alpha: f64) -> Self {
+    /// `rounding` 0…1: how far the corners are rounded (1: like a tile of the clip's size).
+    fn cover(clip: Area, output: (f64, f64), alpha: f64, rounding: f64) -> Self {
         let scale = (clip.w / output.0).max(clip.h / output.1);
         let offset = (clip.x + (clip.w - output.0 * scale) / 2.0, clip.y + (clip.h - output.1 * scale) / 2.0);
-        Self { scale, offset, clip: Some(clip), alpha: alpha as f32 }
+        let radius = (TILE_ROUNDING * clip.w.min(clip.h)).min(MAX_ROUNDING * output.1) * rounding.clamp(0.0, 1.0);
+        Self { scale, offset, clip: Some(clip), radius, alpha: alpha as f32 }
     }
 
     /// The whole output scaled by `scale` around its center.
     fn zoom(scale: f64, output: (f64, f64), alpha: f64) -> Self {
         let offset = (output.0 * (1.0 - scale) / 2.0, output.1 * (1.0 - scale) / 2.0);
-        Self { scale, offset, clip: None, alpha: alpha as f32 }
+        Self { scale, offset, clip: None, radius: 0.0, alpha: alpha as f32 }
     }
 }
 
@@ -183,12 +192,14 @@ impl Transitions {
         let t = self.progress(&active, now);
         match (active.kind, role) {
             (Kind::Open { app_id, from }, Role::App(id)) if id == app_id => {
-                let clip = from.lerp(Area::full(output), ease_out_quart(t));
-                Some(Effect::cover(clip, output, smoothstep(t / 0.3)))
+                let e = ease_out_quart(t);
+                let clip = from.lerp(Area::full(output), e);
+                Some(Effect::cover(clip, output, smoothstep(t / 0.3), 1.0 - e))
             }
             (Kind::Close { app_id: Some(app_id), to }, Role::App(id)) if id == app_id => {
-                let clip = Area::full(output).lerp(to, ease_in_out_cubic(t));
-                Some(Effect::cover(clip, output, 1.0 - smoothstep((t - 0.55) / 0.45)))
+                let e = ease_in_out_cubic(t);
+                let clip = Area::full(output).lerp(to, e);
+                Some(Effect::cover(clip, output, 1.0 - smoothstep((t - 0.55) / 0.45), e))
             }
             (Kind::Close { app_id, .. }, Role::Shell) => {
                 let scale = 1.05 - 0.05 * ease_out_cubic(t);
@@ -303,6 +314,8 @@ mod tests {
         assert!(close(start.scale, 300.0 / 1080.0));
         assert!(close(start.offset.0 + 1920.0 * start.scale / 2.0, 250.0));
         assert!(close(start.offset.1, 500.0));
+        // Corners like the tile's
+        assert!(close(start.radius, 36.0));
         // The shell underneath and other apps stay as they are.
         assert_eq!(transitions.effect(Role::Shell, ms(100), OUTPUT), None);
         assert_eq!(transitions.effect(Role::App(4), ms(100), OUTPUT), None);
@@ -310,6 +323,7 @@ mod tests {
         let end = transitions.effect(Role::App(3), ms(100) + OPEN, OUTPUT).unwrap();
         assert!(close(end.scale, 1.0) && close(end.offset.0, 0.0) && close(end.offset.1, 0.0));
         assert_eq!(end.alpha, 1.0);
+        assert_eq!(end.radius, 0.0);
         assert!(!transitions.tick(ms(100) + OPEN));
         assert_eq!(transitions.effect(Role::App(3), ms(100) + OPEN, OUTPUT), None);
     }
@@ -341,10 +355,11 @@ mod tests {
         assert!(!transitions.hidden(Role::App(3)) && !transitions.hidden(Role::Shell));
 
         let start = transitions.effect(Role::App(3), ms(0), OUTPUT).unwrap();
-        assert!(close(start.scale, 1.0) && start.alpha == 1.0);
+        assert!(close(start.scale, 1.0) && start.alpha == 1.0 && start.radius == 0.0);
         let end = transitions.effect(Role::App(3), CLOSE, OUTPUT).unwrap();
         assert_eq!(end.clip, Some(Area { x: 100.0, y: 500.0, w: 300.0, h: 300.0 }));
         assert_eq!(end.alpha, 0.0);
+        assert!(close(end.radius, 36.0));
 
         let shell = transitions.effect(Role::Shell, ms(0), OUTPUT).unwrap();
         assert!(close(shell.scale, 1.05) && shell.alpha > 0.3 && shell.alpha < 0.4);

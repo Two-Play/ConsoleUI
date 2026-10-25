@@ -194,7 +194,13 @@ Cargo workspace (edition 2024, `default-members` = the shell):
   handlers (dmabuf, drm-syncobj, presentation-time, relative-pointer, pointer-constraints, …).
   `transition.rs` (Story 7.7) is the Smithay-free logic of the animated front changes (zoom out of
   the tile, shrink back into it), `State::frame_windows` applies it per window and `render.rs` draws
-  the resulting `Effect` with rescale/relocate/crop elements.
+  the resulting `Effect` with rescale/relocate/crop elements; `rounded.rs` draws the zooming app's
+  surfaces with a custom GLES texture shader for the rounded corners. `blur.rs` (Story 7.13) blurs
+  what is below the overlay/notification windows' panels (`ShellMessage::Blur`): the windows below are
+  rendered at half size into offscreen textures, blurred with dual Kawase shaders and drawn under the
+  window, cached while nothing below changes; `backdrop.rs` is its Smithay-free part (regions, fades,
+  captured area). Smithay makes render targets current lazily, so offscreen passes may run while the
+  output is bound.
   `policy.rs` is the Smithay-free, unit-tested window policy (owner shell/app/unknown, front, stacking,
   keyboard focus; every toplevel is fullscreen, an app comes to the front once its window shows
   content). `xwayland.rs` runs `X11Wm` and maps windows to apps via `_NET_WM_PID` or the X-Resource
@@ -211,7 +217,8 @@ Cargo workspace (edition 2024, `default-members` = the shell):
     `OVERLAY_TITLE`/`NOTIFICATION_TITLE` must match the `.slint` files) and used only if the compositor's
     `Welcome.features` lists `overlay_windows`. The policy stacks them above the app in front (`Layer`),
     gives keyboard and pointer only to shell windows while `Overlay` is open, and hands the keyboard
-    back to the app only after all keys are released. F1, Super+Escape and `XF86HomePage` are reserved
+    back to the app only after all keys are released. `Shell::sync_blur` announces the open quick menu
+    bar and the shown toast for the compositor's backdrop blur (feature `backdrop_blur`). F1, Super+Escape and `XF86HomePage` are reserved
     by the compositor and reach the shell as `Guide`. Gamepads stay with the shell's `EVIOCGRAB`
     (`grab.rs`; games reading controllers via hidraw are not covered). Slint on Wayland needs
     `window().request_redraw()` after `show()` for a new toplevel to map.
@@ -219,6 +226,8 @@ Cargo workspace (edition 2024, `default-members` = the shell):
     `s` factor; tiles are positioned absolutely and animated (`animate x, y, width, height`).
   - `ui/theme.slint`: the `Theme` global with design tokens (colors, durations). Use it instead of
     hard-coded values.
+  - `ui/glass.slint`: `GlassPanel`, the frosted background of menus, dialogs and toasts; it shows the
+    blurred hero copy from `hero.rs` (global `Glass`, set only by the main window).
   - `ui/types.slint`: `NavAction` enum and `AppTile` struct shared with Rust.
   - `src/shell.rs`: `Shell` owns entries plus a parallel `tiles` vector, all `running` apps (each with a
     gamescope app ID, a stop handle and an `Owner`), the `foreground` app, the three tile models (home =

@@ -1,5 +1,6 @@
 import { Theme } from "theme.slint";
 import { SettingRow } from "types.slint";
+import { GlassPanel } from "glass.slint";
 
 // Nested gamescope options of one entry (Story 7.10): a card in the middle like the context menu,
 // the rows like the cards of the settings page (◀ ▶ changes the value of the focused row).
@@ -25,15 +26,12 @@ export component GameOptionsPanel inherits Rectangle {
         animate opacity { duration: Theme.page-duration; }
     }
 
-    if root.open: panel := Rectangle {
+    if root.open: panel := GlassPanel {
         width: min(860px * root.s, root.width - 40px * root.s);
         height: 2 * root.pad + root.header + root.rows.length * (root.row-height + root.row-gap) + 40px * root.s;
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
         border-radius: 24px * root.s;
-        background: #191b24;
-        border-width: 1px;
-        border-color: #ffffff22;
         animate height { duration: Theme.focus-duration; easing: ease-out-quart; }
 
         Text {

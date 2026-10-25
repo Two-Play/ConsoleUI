@@ -1,5 +1,6 @@
 import { Theme } from "theme.slint";
 import { ContextItem } from "types.slint";
+import { GlassPanel } from "glass.slint";
 
 // Context menu for the focused entry: a small card in the centre like the quit confirmation,
 // with rows like the cards of the quick menu. The button hints are in the hint bar.
@@ -21,15 +22,12 @@ export component ContextMenu inherits Rectangle {
         animate opacity { duration: Theme.page-duration; }
     }
 
-    if root.open: panel := Rectangle {
+    if root.open: panel := GlassPanel {
         width: 520px * root.s;
         height: 2 * root.pad + 52px * root.s + root.items.length * (root.row-height + 8px * root.s);
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
         border-radius: 24px * root.s;
-        background: #191b24;
-        border-width: 1px;
-        border-color: #ffffff22;
 
         Text {
             x: root.pad + 6px * root.s;

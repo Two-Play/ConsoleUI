@@ -6,7 +6,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use tracing::info;
 
+mod backdrop;
 mod backend;
+mod blur;
 mod child;
 mod control;
 mod drm;
@@ -15,6 +17,7 @@ mod input;
 mod options;
 mod policy;
 mod render;
+mod rounded;
 mod state;
 mod transition;
 mod winit;
