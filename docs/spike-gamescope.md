@@ -96,4 +96,7 @@ verschachtelt mit `-e -W 960 -H 540` und `glxgears`.
 - Nebenbefund (nicht neu): Nach dem Schließen der Steuerzentrale steht `GAMESCOPE_FOCUSED_APP`
   leer und `XGetInputFocus` zeigt auf ein gamescope-internes Fenster statt aufs Spiel. Das war auch
   ohne Hinweisfenster so.
+  **Behoben:** `Shell::restore_keyboard_focus` gibt den Fokus per `XSetInputFocus` an das Fenster
+  der App vorne zurück, falls er nicht in einem ihrer Fenster oder Unterfenster liegt
+  (`Gamescope::focus_app`). Gemessen: spätestens 1 s nach dem Schließen ist er wieder beim Spiel.
 

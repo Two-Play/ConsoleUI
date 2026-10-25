@@ -1168,12 +1168,20 @@ impl Shell {
     }
 
     /// Ist die Shell vorne, hat aber keinen Tastaturfokus (passiert nach dem Overlay), holt sie ihn sich.
+    /// Ebenso für die App vorne, deren Fenster den Fokus nach dem Overlay sonst nicht zurückbekommt.
     fn restore_keyboard_focus(&self, ui: &AppWindow) {
         let Some(gamescope) = &self.gamescope else { return };
-        if self.quick.is_none() && self.shell_in_front(ui) && !ui.get_window_active()
-            && let Some(window) = x11_window_id(ui.window())
-        {
-            gamescope.control.focus(window);
+        if self.quick.is_some() {
+            return;
+        }
+        if self.shell_in_front(ui) {
+            if !ui.get_window_active()
+                && let Some(window) = x11_window_id(ui.window())
+            {
+                gamescope.control.focus(window);
+            }
+        } else if let Some(app_id) = self.foreground {
+            gamescope.control.focus_app(app_id);
         }
     }
 

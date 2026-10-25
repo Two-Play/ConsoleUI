@@ -73,6 +73,30 @@ impl Gamescope {
         })());
     }
 
+    /// Gibt der App den Tastaturfokus zurück, falls er nicht in einem ihrer Fenster (oder deren
+    /// Unterfenstern) liegt. Nach dem Schließen des Overlays landet er sonst bei einem internen
+    /// Fenster von gamescope, und das Spiel bekommt keine Tastatureingaben mehr.
+    pub fn focus_app(&self, app_id: u32) {
+        let windows: Vec<Window> =
+            self.known.iter().filter(|&(_, &id)| id == app_id).map(|(&window, _)| window).collect();
+        let Some(&first) = windows.first() else { return };
+        let result = (|| -> Result<(), Box<dyn Error>> {
+            let mut current = self.conn.get_input_focus()?.reply()?.focus;
+            // Vom fokussierten Fenster bis zur Wurzel hochgehen: Liegt eines der App-Fenster auf dem
+            // Weg, ist alles in Ordnung (Spiele fokussieren oft ein Unterfenster).
+            while current != self.root && current > 1 {
+                if windows.contains(&current) {
+                    return Ok(());
+                }
+                current = self.conn.query_tree(current)?.reply()?.parent;
+            }
+            self.conn.set_input_focus(InputFocus::POINTER_ROOT, first, CURRENT_TIME)?;
+            self.conn.flush()?;
+            Ok(())
+        })();
+        report(result);
+    }
+
     /// Fenster als Overlay vorbereiten. gamescope liest die Atome beim Mappen, deshalb muss das
     /// Fenster danach (neu) angezeigt werden.
     pub fn prepare_overlay(&mut self, window: Window) {

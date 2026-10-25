@@ -388,6 +388,13 @@ Deck o. Ä.) sollten wir später den Skia-Renderer vergleichen (Story 6.5).
   das Fenster ein Overlay ohne Eingabe, also zu sehen, aber es könnte das Quick-Menü verdecken.
   Nicht auf echter Hardware getestet.
 
+### Nachtrag – Fehler „Spiel bekommt nach der Steuerzentrale keine Tastatureingaben“
+
+- Gefunden beim Test der Hinweise: Nach dem Schließen des Overlays gibt gamescope den
+  Tastaturfokus auch der App vorne nicht zurück (wie schon bei der Shell).
+- Lösung: `Gamescope::focus_app` setzt ihn auf das Fenster der App, falls er nicht in einem
+  ihrer Fenster oder Unterfenster liegt (läuft alle 500 ms mit `restore_keyboard_focus`).
+
 ## Risiken / offene Fragen
 
 - **gamescope-Fokussteuerung** ist kaum dokumentiert und auf XWayland bzw. Steam ausgelegt → deshalb Spike 0.3 früh einplanen. Falls das nicht klappt, wird Epic 7 wichtiger.
