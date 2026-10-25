@@ -3,7 +3,7 @@ export enum NavAction { up, down, left, right, confirm, back, menu, search, seco
 
 export enum NetworkState { offline, ethernet, wifi }
 
-export enum Screen { home, library, search }
+export enum Screen { home, library, settings, search }
 
 // Welche Taste ein Hinweis zeigt; das Symbol hängt vom ControllerStyle ab.
 export enum GlyphButton { dpad, updown, confirm, back, north, west, menu, guide, l1, r1, quit }
@@ -54,4 +54,11 @@ export struct QuickItem {
     adjustable: bool,
     // 0–100 für den Balken, sonst -1
     level: int,
+}
+
+// Zeile der Einstellungsseite
+export struct SettingRow {
+    label: string,
+    description: string,
+    value: string,
 }

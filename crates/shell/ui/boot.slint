@@ -1,0 +1,56 @@
+import { Theme } from "theme.slint";
+
+// Startbildschirm beim Hochfahren: Logo mit pulsierendem Lichtschein und Ladepunkten. Blendet aus,
+// sobald die Bibliothek geladen ist.
+export component BootScreen inherits Rectangle {
+    in property <bool> active: true;
+    in property <float> s: 1;
+
+    // Läuft nur, solange der Bildschirm zu sehen ist, damit danach keine Frames mehr anfallen.
+    property <duration> tick: self.visible ? animation-tick() : 0ms;
+    property <float> wave: (sin(root.tick / 900ms * 360deg) + 1) / 2;
+
+    background: Theme.base;
+    opacity: root.active ? 1 : 0;
+    visible: self.opacity > 0.01;
+    animate opacity {
+        duration: 600ms;
+        easing: ease-in-out;
+    }
+
+    // Lichtschein hinter dem Logo
+    Rectangle {
+        width: 900px * root.s;
+        height: self.width;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        background: @radial-gradient(circle, #6a5cff66 0%, transparent 60%);
+        opacity: 0.45 + 0.55 * root.wave;
+    }
+
+    logo := Text {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2 - 20px * root.s;
+        text: "ConsoleUI";
+        color: Theme.text;
+        font-size: (root.active ? 96px : 120px) * root.s;
+        font-weight: 800;
+        letter-spacing: 4px * root.s;
+        animate font-size {
+            duration: 600ms;
+            easing: ease-in-out;
+        }
+    }
+
+    // Drei Ladepunkte, zeitversetzt
+    for i in 3: Rectangle {
+        property <float> phase: (sin((root.tick / 700ms - i * 0.18) * 360deg) + 1) / 2;
+        width: 12px * root.s;
+        height: self.width;
+        border-radius: self.width / 2;
+        x: (parent.width - 3 * self.width - 2 * 16px * root.s) / 2 + i * (self.width + 16px * root.s);
+        y: logo.y + logo.height + 48px * root.s;
+        background: Theme.accent;
+        opacity: 0.25 + 0.75 * self.phase;
+    }
+}

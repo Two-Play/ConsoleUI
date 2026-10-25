@@ -32,7 +32,10 @@ cargo clippy --workspace --all-targets -- -D warnings  # must pass (Definition o
 
 Quit the running shell with Ctrl+Q. Pressing Enter on a real entry really launches that game or app.
 Use `--snapshot` to check UI changes visually instead of screenshotting the desktop: a screen capture
-can pick up the user's other windows.
+can pick up the user's other windows. Set `XDG_CONFIG_HOME` to a scratch directory when scripted actions
+touch the settings page (otherwise they overwrite the user's `~/.config/consoleui/settings.json`), and
+keep in mind that UI sounds really play through the speakers unless `"sounds": false` is set there.
+Snapshot, `--actions` and `--bench` start only after the boot screen is gone (library loaded + 1.2 s).
 
 Console session (see `docs/spike-gamescope.md`; gamescope runs in Steam mode `-e` and the shell acts as Steam):
 
@@ -80,6 +83,8 @@ Cargo workspace (edition 2024, `default-members` = the shell):
     (`DirectionRepeat` for hold-to-repeat, `Stick` with hysteresis, `glyph_style` by device name).
   - `running::RunningApp` decides when the launch overlay closes: process exit for commands,
     `steam::running_app_id()` (reads `~/.steam/registry.vdf`) for Steam games, with a minimum hold time.
+  - `settings.rs` (persisted `Settings`, the rows of the settings page), `sound.rs` (synthesized UI sounds
+    as raw PCM), `input::evdev` (key codes/axis normalization for the exclusive grab).
   - `status.rs` reads network/battery from sysfs; `system.rs` wraps `wpctl` (volume) and
     `systemctl suspend|reboot|poweroff`; `accent::from_rgba` derives tile colors from covers.
 - `crates/shell` (binary `consoleui`): Slint UI plus glue.
@@ -97,6 +102,13 @@ Cargo workspace (edition 2024, `default-members` = the shell):
     image layers (`hero-a`/`hero-b` + `hero-front-a`) for crossfades; a launch moves the entry to index 0
     under the fullscreen launch overlay.
   - `src/tiles.rs`: `AppEntry` → `AppTile` (loads cover, icon and logo, overrides the accent from the cover).
+  - `src/loader.rs`: background thread that discovers the library and decodes covers/logos with the
+    `image` crate into `SharedPixelBuffer`s (Slint `Image`s are created on the UI thread in `tiles.rs`);
+    `main.rs` polls the channel, calls `Shell::set_library` and then hides the boot screen.
+  - `src/audio.rs`: persistent `pw-cat --raw` process fed by a writer thread. `Shell::apply` compares a
+    `Feedback` snapshot before/after each action to pick the sound.
+  - `src/grab.rs`: while the quick menu is open, `EVIOCGRAB` on the controller's evdev nodes (matched by
+    gilrs `os_name`) and read them directly so the game in front gets no input.
   - `src/gamepad.rs`: gilrs polling → `Action`s (only devices with an SDL mapping); PS/Guide → `Action::Guide`.
   - `src/gamescope.rs`: X11 control of gamescope (tagging windows, baselayer, preparing the overlay window).
   - `src/quick.rs`: quick menu ("Steuerzentrale") items and input handling. In gamescope it is shown in
@@ -107,6 +119,9 @@ Cargo workspace (edition 2024, `default-members` = the shell):
   - `ui/home.slint`, `ui/library.slint`, `ui/search.slint`: one component per `Screen`, all stacked in
     `main.slint` and cross-faded. Each exposes `focus-x/-y/-size` so the launch overlay starts on the right
     tile. `library.slint` computes `columns` from the window width; Rust reads it for grid navigation.
+  - `ui/theme.slint`: `Theme.accent` and all durations are `in-out` and set from Rust (`Shell::apply_settings`),
+    for the main window and the overlay window separately (globals are per component instance).
+  - `ui/settings.slint`, `ui/boot.slint`, `ui/toast.slint`: settings page, boot screen, toast.
   - `ui/glyph.slint`: `ButtonGlyph` (button symbol per `ControllerStyle`) and `HintBar`; Rust fills `hints`.
   - `src/perf.rs`: frame stats from Slint's rendering notifier. `src/cover.rs`: procedural
     placeholder covers. `src/options.rs`: hand-rolled CLI parsing.

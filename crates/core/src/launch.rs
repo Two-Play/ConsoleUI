@@ -14,7 +14,8 @@ use crate::ownership::Owner;
 enum Stopper {
     None,
     /// Transiente systemd-Scope-Unit: erwischt auch Kindprozesse, die sich vom Starter lösen.
-    Scope(String),
+    /// Die PID dient als Rückfall, solange systemd die Unit noch nicht registriert hat.
+    Scope { unit: String, pid: u32 },
     /// Fallback ohne systemd: die eigene Prozessgruppe.
     ProcessGroup(u32),
 }
@@ -40,7 +41,7 @@ impl ProcessHandle {
     pub fn owner(&self) -> Option<Owner> {
         match &self.stopper {
             Stopper::None => None,
-            Stopper::Scope(unit) => Some(Owner::Scope(unit.clone())),
+            Stopper::Scope { unit, .. } => Some(Owner::Scope(unit.clone())),
             Stopper::ProcessGroup(pid) => Some(Owner::Process(*pid)),
         }
     }
@@ -50,13 +51,20 @@ impl ProcessHandle {
         if self.has_exited() {
             return Ok(());
         }
-        let status = match &self.stopper {
-            Stopper::None => return Ok(()),
-            Stopper::Scope(unit) => Command::new("systemctl").args(["--user", "stop", unit]).status()?,
-            Stopper::ProcessGroup(pgid) => Command::new("kill").args(["-TERM", "--", &format!("-{pgid}")]).status()?,
-        };
-        if status.success() { Ok(()) } else { Err(io::Error::other(format!("Beenden fehlgeschlagen ({status})"))) }
+        match &self.stopper {
+            Stopper::None => Ok(()),
+            Stopper::Scope { unit, pid } => {
+                let stopped = Command::new("systemctl").args(["--user", "stop", unit]).status()?.success();
+                if stopped { Ok(()) } else { kill_group(*pid) }
+            }
+            Stopper::ProcessGroup(pgid) => kill_group(*pgid),
+        }
     }
+}
+
+fn kill_group(pgid: u32) -> io::Result<()> {
+    let status = Command::new("kill").args(["-TERM", "--", &format!("-{pgid}")]).status()?;
+    if status.success() { Ok(()) } else { Err(io::Error::other(format!("Beenden fehlgeschlagen ({status})"))) }
 }
 
 /// Baut den Startbefehl. Mit `scope_unit` läuft die App über `systemd-run --scope` in einer eigenen
@@ -109,7 +117,7 @@ pub fn spawn(launch: &Launch) -> io::Result<ProcessHandle> {
         .process_group(0)
         .spawn()?;
     let stopper = match scope {
-        Some(unit) => Stopper::Scope(unit),
+        Some(unit) => Stopper::Scope { unit, pid: child.id() },
         None if matches!(launch, Launch::Command(_)) => Stopper::ProcessGroup(child.id()),
         None => Stopper::None,
     };

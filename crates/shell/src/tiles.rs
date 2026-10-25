@@ -1,11 +1,12 @@
-//! Wandelt `AppEntry` in die `AppTile`-Struktur der UI um und lädt dabei die Bilder.
+//! Wandelt geladene Einträge in die `AppTile`-Struktur der UI um.
 
 use std::path::Path;
 
 use chrono::{DateTime, Local, NaiveDate};
-use consoleui_core::{AppEntry, AppKind, accent, last_used_label};
+use consoleui_core::{AppEntry, AppKind, last_used_label};
 use slint::{Color, Image};
 
+use crate::loader::LoadedEntry;
 use crate::{AppTile, cover};
 
 const COVER_SIZE: u32 = 384;
@@ -16,17 +17,12 @@ pub fn load(path: &Path) -> Option<Image> {
         .ok()
 }
 
-/// Lädt Cover, Icon und Logo. Bei echtem Cover wird die Akzentfarbe des Eintrags daraus abgeleitet.
-pub fn to_tile(entry: &mut AppEntry, index: usize, today: NaiveDate) -> AppTile {
-    let real_cover = entry.artwork.cover.as_deref().and_then(load);
-    if let Some((primary, secondary)) =
-        real_cover.as_ref().and_then(Image::to_rgba8).and_then(|px| accent::from_rgba(px.as_bytes()))
-    {
-        entry.accent = primary;
-        entry.accent2 = secondary;
-    }
+/// Cover und Logo sind schon im Hintergrund dekodiert; Icons (meist SVG) lädt Slint hier selbst.
+pub fn to_tile(loaded: &LoadedEntry, index: usize, today: NaiveDate) -> AppTile {
+    let entry = &loaded.entry;
+    let real_cover = loaded.cover.clone().map(Image::from_rgba8);
     let icon = if real_cover.is_none() { entry.artwork.icon.as_deref().and_then(load) } else { None };
-    let logo = entry.artwork.logo.as_deref().and_then(load);
+    let logo = loaded.logo.clone().map(Image::from_rgba8);
     let kind = match entry.kind {
         AppKind::Game => "SPIEL",
         AppKind::App => "APP",

@@ -1,0 +1,56 @@
+import { Theme } from "theme.slint";
+
+// Kurzer Hinweis oben rechts, z. B. „Controller verbunden“. Gleitet herein und blendet aus.
+export component Toast inherits Rectangle {
+    in property <bool> shown;
+    in property <string> symbol;
+    in property <string> title;
+    in property <string> text;
+    in property <float> s: 1;
+
+    width: 440px * root.s;
+    height: 86px * root.s;
+    border-radius: 18px * root.s;
+    background: #191b24f2;
+    border-width: 1px;
+    border-color: #ffffff22;
+    drop-shadow-blur: 30px * root.s;
+    drop-shadow-color: #00000099;
+    opacity: root.shown ? 1 : 0;
+    animate opacity { duration: Theme.page-duration * 1.5; }
+
+    HorizontalLayout {
+        padding-left: 22px * root.s;
+        padding-right: 22px * root.s;
+        spacing: 18px * root.s;
+
+        Text {
+            horizontal-stretch: 0;
+            text: root.symbol;
+            color: Theme.accent;
+            font-size: 30px * root.s;
+            vertical-alignment: center;
+        }
+
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px * root.s;
+
+            Text {
+                text: root.title;
+                color: Theme.text;
+                font-size: 20px * root.s;
+                font-weight: 700;
+                overflow: elide;
+            }
+
+            if root.text != "": Text {
+                text: root.text;
+                color: Theme.text-dim;
+                font-size: 16px * root.s;
+                overflow: elide;
+            }
+        }
+    }
+}

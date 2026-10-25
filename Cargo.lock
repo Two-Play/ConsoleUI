@@ -759,6 +759,8 @@ dependencies = [
  "chrono",
  "consoleui-core",
  "gilrs",
+ "image",
+ "libc",
  "png",
  "raw-window-handle",
  "slint",

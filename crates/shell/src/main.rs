@@ -4,22 +4,25 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use consoleui_core::input::GlyphStyle;
+use consoleui_core::settings::{GlyphChoice, Settings};
 use consoleui_core::status::{self, Network};
-use consoleui_core::{
-    Action, AppEntry, History, Launch, apply_history, discover_library, dummy_library, sort_by_recent,
-};
+use consoleui_core::Action;
 use slint::{RenderingState, Rgba8Pixel, SharedPixelBuffer, Timer, TimerMode};
 
+mod audio;
 mod cover;
 mod gamepad;
 mod gamescope;
+mod grab;
+mod loader;
 mod options;
 mod perf;
 mod quick;
 mod shell;
 mod tiles;
 
-use gamepad::Gamepads;
+use gamepad::{Connection, Gamepads};
+use loader::LoadOptions;
 use options::{Options, ScriptStep, StartScreen, USAGE};
 use perf::FrameStats;
 use shell::{GamescopeUi, Shell};
@@ -31,6 +34,9 @@ const BENCH_STEP: Duration = Duration::from_millis(200);
 const GAMEPAD_POLL: Duration = Duration::from_millis(8);
 const SNAPSHOT_DELAY: Duration = Duration::from_millis(1500);
 const SCRIPT_START_DELAY: Duration = Duration::from_millis(800);
+/// Die Boot-Animation steht mindestens so lange, auch wenn die Bibliothek schneller geladen ist.
+const MIN_BOOT: Duration = Duration::from_millis(1200);
+const LOADER_POLL: Duration = Duration::from_millis(30);
 /// Wie oft geprüft wird, ob die gestartete App noch läuft.
 const WATCH_INTERVAL: Duration = Duration::from_millis(500);
 
@@ -50,7 +56,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     let ui = AppWindow::new()?;
     ui.set_show_fps(options.show_fps || options.bench);
 
-    let (entries, history, history_path) = load_library(&options);
+    // Die Bibliothek lädt im Hintergrund, während die Boot-Animation läuft.
+    let library = loader::spawn(LoadOptions {
+        dummy: options.dummy,
+        tiles: options.tiles,
+        dummy_launch: options.dummy_launch.clone(),
+    });
+    let boot_started = Instant::now();
+
     // In der gamescope-Session (Steam-Modus) steuert die Shell die Fenster selbst und zeigt das
     // Quick-Menü als eigenes Overlay-Fenster.
     let gamescope = match gamescope::Gamescope::connect() {
@@ -58,7 +71,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         None => None,
     };
     let overlay = gamescope.as_ref().map(|g| g.overlay.as_weak());
-    let shell = Rc::new(RefCell::new(Shell::new(&ui, entries, history, history_path, gamescope)));
+    let settings_path = Settings::default_path();
+    let settings = settings_path.as_deref().map(Settings::load).unwrap_or_default();
+    let shell = Rc::new(RefCell::new(Shell::new(&ui, gamescope, settings, settings_path)));
     if let Some(overlay) = overlay.and_then(|o| o.upgrade()) {
         overlay.on_action({
             let ui = ui.as_weak();
@@ -114,9 +129,28 @@ fn main() -> Result<(), Box<dyn Error>> {
             let ui = ui.as_weak();
             let shell = shell.clone();
             let gamepads = gamepads.clone();
+            let mut grab: Option<grab::Grab> = None;
             move || {
                 let Some(ui) = ui.upgrade() else { return };
-                let actions = gamepads.borrow_mut().poll(Instant::now());
+                // Steuerzentrale offen: Controller exklusiv lesen, damit das Spiel nichts mitbekommt.
+                let exclusive = shell.borrow().wants_exclusive_input();
+                if exclusive && grab.is_none() {
+                    grab = Some(grab::Grab::acquire(&gamepads.borrow().names()));
+                } else if !exclusive && grab.take().is_some() {
+                    gamepads.borrow_mut().reset();
+                }
+                let now = Instant::now();
+                let actions = match grab.as_mut().filter(|g| !g.is_empty()) {
+                    Some(grab) => grab.poll(now),
+                    None => gamepads.borrow_mut().poll(now),
+                };
+                for connection in gamepads.borrow_mut().take_connections() {
+                    let (title, name) = match connection {
+                        Connection::Connected(name) => ("Controller verbunden", name),
+                        Connection::Disconnected(name) => ("Controller getrennt", name),
+                    };
+                    shell.borrow_mut().toast(&ui, "◉", title, &name);
+                }
                 for action in actions {
                     // gilrs liest die Geräte direkt; ohne Fensterfokus gehören die Eingaben dem
                     // Spiel, bis auf die PS-Taste und das offene Quick-Menü.
@@ -139,6 +173,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         move || {
             let Some(ui) = ui.upgrade() else { return };
             update_status(&ui, gamepads.as_deref(), &shell.borrow());
+            let battery = gamepads.as_ref().and_then(|g| g.borrow().status()).and_then(|c| c.battery);
+            shell.borrow_mut().check_controller_battery(&ui, battery);
             if ui.get_show_fps() {
                 ui.set_fps_text(perf::format_second(&stats.borrow_mut().take_current()).into());
             }
@@ -156,35 +192,39 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    let _bench = options.bench.then(|| start_bench(&ui, shell.clone(), stats.clone()));
-
-    let screen = match options.start {
-        StartScreen::Home => Screen::Home,
-        StartScreen::Library => Screen::Library,
-        StartScreen::Search => Screen::Search,
-    };
-    shell.borrow_mut().open(&ui, screen);
-    if let Some(query) = &options.query {
-        shell.borrow_mut().type_text(&ui, query);
-    }
-    let _script = (!options.actions.is_empty()).then(|| run_script(&ui, shell.clone(), options.actions.clone()));
-
-    let snapshot_timer = Timer::default();
-    if let Some(path) = options.snapshot.clone() {
-        // Etwas warten, bis Seitenwechsel und Hero-Überblendung fertig sind.
-        snapshot_timer.start(TimerMode::SingleShot, SNAPSHOT_DELAY, {
-            let ui = ui.as_weak();
-            move || {
-                if let Some(ui) = ui.upgrade() {
-                    match ui.window().take_snapshot().map_err(Box::<dyn Error>::from).and_then(|px| save_png(&path, &px)) {
-                        Ok(()) => println!("Snapshot gespeichert: {}", path.display()),
-                        Err(err) => eprintln!("Snapshot fehlgeschlagen: {err}"),
-                    }
-                }
-                let _ = slint::quit_event_loop();
+    // Sobald die Bibliothek da ist: übernehmen, Boot-Animation ausblenden und erst dann
+    // Benchmark, Skript und Snapshot starten (sie sollen die fertige Oberfläche sehen).
+    let after_boot: Rc<RefCell<Vec<Timer>>> = Rc::default();
+    let loader_timer = Timer::default();
+    loader_timer.start(TimerMode::Repeated, LOADER_POLL, {
+        let ui = ui.as_weak();
+        let shell = shell.clone();
+        let stats = stats.clone();
+        let after_boot = after_boot.clone();
+        let mut tasks = Some(ReadyTasks::from(&options));
+        move || {
+            // Nur einmal: danach ist `tasks` leer und der Timer tut nichts mehr.
+            if tasks.is_none() {
+                return;
             }
-        });
-    }
+            let Ok(library) = library.try_recv() else { return };
+            let (Some(ready), Some(ui)) = (tasks.take(), ui.upgrade()) else { return };
+            shell.borrow_mut().set_library(&ui, library);
+            shell.borrow_mut().open(&ui, ready.screen);
+            if let Some(query) = &ready.query {
+                shell.borrow_mut().type_text(&ui, query);
+            }
+            let ui = ui.as_weak();
+            let shell = shell.clone();
+            let stats = stats.clone();
+            let after_boot = after_boot.clone();
+            Timer::single_shot(MIN_BOOT.saturating_sub(boot_started.elapsed()), move || {
+                let Some(ui) = ui.upgrade() else { return };
+                ui.set_booting(false);
+                after_boot.borrow_mut().extend(ready.start(&ui, shell, stats));
+            });
+        }
+    });
 
     if !options.windowed {
         ui.window().set_fullscreen(true);
@@ -193,27 +233,60 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-/// Echte Bibliothek, sortiert nach letzter Nutzung. Ist nichts installiert, gibt es Dummy-Einträge.
-fn load_library(options: &Options) -> (Vec<AppEntry>, History, Option<std::path::PathBuf>) {
-    if !options.dummy {
-        let history_path = History::default_path();
-        let history = history_path.as_deref().map(History::load).unwrap_or_default();
-        let mut entries = discover_library();
-        if !entries.is_empty() {
-            apply_history(&mut entries, &history);
-            sort_by_recent(&mut entries);
-            return (entries, history, history_path);
+/// Was nach dem Booten passieren soll (aus den Kommandozeilen-Optionen)
+struct ReadyTasks {
+    screen: Screen,
+    query: Option<String>,
+    bench: bool,
+    actions: Vec<ScriptStep>,
+    snapshot: Option<std::path::PathBuf>,
+}
+
+impl From<&Options> for ReadyTasks {
+    fn from(options: &Options) -> Self {
+        let screen = match options.start {
+            StartScreen::Home => Screen::Home,
+            StartScreen::Library => Screen::Library,
+            StartScreen::Settings => Screen::Settings,
+            StartScreen::Search => Screen::Search,
+        };
+        Self {
+            screen,
+            query: options.query.clone(),
+            bench: options.bench,
+            actions: options.actions.clone(),
+            snapshot: options.snapshot.clone(),
         }
-        eprintln!("Keine Spiele oder Apps gefunden, zeige Dummy-Einträge.");
     }
-    let mut entries = dummy_library(options.tiles);
-    if let Some(command) = &options.dummy_launch {
-        let argv: Vec<String> = command.split_whitespace().map(str::to_string).collect();
-        for entry in &mut entries {
-            entry.launch = Launch::Command(argv.clone());
+}
+
+impl ReadyTasks {
+    /// Startet Benchmark, Skript und Snapshot; die Timer müssen am Leben bleiben.
+    fn start(self, ui: &AppWindow, shell: Rc<RefCell<Shell>>, stats: Rc<RefCell<FrameStats>>) -> Vec<Timer> {
+        let mut timers = Vec::new();
+        if self.bench {
+            timers.push(start_bench(ui, shell.clone(), stats));
         }
+        if !self.actions.is_empty() {
+            timers.push(run_script(ui, shell, self.actions));
+        }
+        if let Some(path) = self.snapshot {
+            let timer = Timer::default();
+            let ui = ui.as_weak();
+            // Etwas warten, bis Seitenwechsel und Hero-Überblendung fertig sind.
+            timer.start(TimerMode::SingleShot, SNAPSHOT_DELAY, move || {
+                if let Some(ui) = ui.upgrade() {
+                    match ui.window().take_snapshot().map_err(Box::<dyn Error>::from).and_then(|px| save_png(&path, &px)) {
+                        Ok(()) => println!("Snapshot gespeichert: {}", path.display()),
+                        Err(err) => eprintln!("Snapshot fehlgeschlagen: {err}"),
+                    }
+                }
+                let _ = slint::quit_event_loop();
+            });
+            timers.push(timer);
+        }
+        timers
     }
-    (entries, History::default(), None)
 }
 
 /// Spielt `--actions` ab (für Tests ohne echte Eingabe). Die Aktionen gehen direkt an die Shell,
@@ -281,10 +354,10 @@ fn update_status(ui: &AppWindow, gamepads: Option<&RefCell<Gamepads>>, shell: &S
     let controller = gamepads.and_then(|g| g.borrow().status());
     ui.set_controller_connected(controller.is_some());
     ui.set_controller_battery(controller.as_ref().and_then(|c| c.battery).map_or(-1, i32::from));
-    let style = match controller.map(|c| c.style) {
-        Some(GlyphStyle::PlayStation) => ControllerStyle::Playstation,
-        Some(GlyphStyle::Xbox) => ControllerStyle::Xbox,
-        None => ControllerStyle::Keyboard,
+    let style = match (shell.glyph_choice(), controller.map(|c| c.style)) {
+        (GlyphChoice::PlayStation, _) | (GlyphChoice::Auto, Some(GlyphStyle::PlayStation)) => ControllerStyle::Playstation,
+        (GlyphChoice::Xbox, _) | (GlyphChoice::Auto, Some(GlyphStyle::Xbox)) => ControllerStyle::Xbox,
+        (GlyphChoice::Auto, None) => ControllerStyle::Keyboard,
     };
     if ui.get_controller_style() != style {
         ui.set_controller_style(style);

@@ -40,7 +40,7 @@ export component SearchPage inherits Rectangle {
         border-radius: self.height / 2;
         background: Theme.surface;
         border-width: 2px;
-        border-color: root.keyboard-active ? Theme.text : transparent;
+        border-color: root.keyboard-active ? Theme.accent : transparent;
 
         Text {
             x: 28px * root.s;
@@ -61,7 +61,7 @@ export component SearchPage inherits Rectangle {
         width: key.width * root.unit - root.key-gap;
         height: root.unit - root.key-gap;
         border-radius: 10px * root.s;
-        background: self.is-focused ? Theme.text : Theme.surface;
+        background: self.is-focused ? Theme.accent : Theme.surface;
         animate background { duration: 90ms; }
 
         Text {

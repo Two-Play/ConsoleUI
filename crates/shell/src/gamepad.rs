@@ -12,8 +12,15 @@ pub struct ControllerStatus {
     pub battery: Option<u8>,
 }
 
+/// Verbindung eines Controllers, für Hinweise
+pub enum Connection {
+    Connected(String),
+    Disconnected(String),
+}
+
 pub struct Gamepads {
     gilrs: Gilrs,
+    connections: Vec<Connection>,
     repeat: DirectionRepeat,
     left_stick: Stick,
     /// Manche Treiber melden das Steuerkreuz als Achsen statt als Tasten.
@@ -25,6 +32,7 @@ impl Gamepads {
         match Gilrs::new() {
             Ok(gilrs) => Some(Self {
                 gilrs,
+                connections: Vec::new(),
                 repeat: DirectionRepeat::default(),
                 left_stick: Stick::default(),
                 dpad_axes: Stick::default(),
@@ -41,6 +49,15 @@ impl Gamepads {
         let mut actions = Vec::new();
         while let Some(Event { id, event, .. }) = self.gilrs.next_event() {
             let gamepad = self.gilrs.gamepad(id);
+            if mapping_known(&gamepad) {
+                match event {
+                    EventType::Connected => self.connections.push(Connection::Connected(gamepad.name().to_string())),
+                    EventType::Disconnected => {
+                        self.connections.push(Connection::Disconnected(gamepad.name().to_string()));
+                    }
+                    _ => {}
+                }
+            }
             if !is_supported(&gamepad) {
                 continue;
             }
@@ -72,6 +89,24 @@ impl Gamepads {
         actions
     }
 
+    /// Verbindungsereignisse seit dem letzten Aufruf
+    pub fn take_connections(&mut self) -> Vec<Connection> {
+        std::mem::take(&mut self.connections)
+    }
+
+    /// Gerätenamen aller verbundenen Controller, wie der Kernel sie meldet (für den exklusiven Zugriff).
+    pub fn names(&self) -> Vec<String> {
+        self.gilrs.gamepads().map(|(_, g)| g).filter(is_supported).map(|g| g.os_name().to_string()).collect()
+    }
+
+    /// Nach exklusivem Zugriff: gilrs hat das Loslassen nicht gesehen, also nichts mehr als gehalten werten.
+    pub fn reset(&mut self) {
+        self.repeat = DirectionRepeat::default();
+        self.left_stick = Stick::default();
+        self.dpad_axes = Stick::default();
+        while self.gilrs.next_event().is_some() {}
+    }
+
     /// Erster verbundener Controller, für die Top-Bar und die Tastensymbole.
     pub fn status(&self) -> Option<ControllerStatus> {
         self.gilrs.gamepads().map(|(_, gamepad)| gamepad).find(is_supported).map(|gamepad| ControllerStatus {
@@ -97,7 +132,11 @@ fn apply_change(repeat: &mut DirectionRepeat, change: StickChange, now: Instant,
 /// Nur Geräte mit bekanntem Mapping; so meldet sich z. B. die Joystick-Schnittstelle mancher
 /// Tastaturen nicht als Controller.
 fn is_supported(gamepad: &Gamepad) -> bool {
-    gamepad.is_connected() && gamepad.mapping_source() != MappingSource::None
+    gamepad.is_connected() && mapping_known(gamepad)
+}
+
+fn mapping_known(gamepad: &Gamepad) -> bool {
+    gamepad.mapping_source() != MappingSource::None
 }
 
 /// Kreuz/A bestätigt, Kreis/B geht zurück, Dreieck/Y sucht, Quadrat/X filtert, L1/R1 wechseln

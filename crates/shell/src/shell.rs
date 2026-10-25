@@ -1,6 +1,7 @@
 //! Zustand der Shell: Einträge, Bildschirme, Fokus, Historie, laufende Apps und die Verbindung
 //! zur UI (Hauptfenster, in gamescope zusätzlich Overlay-Fenster und Fenstersteuerung).
 
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -10,6 +11,8 @@ use consoleui_core::launch::{self, ProcessHandle};
 use consoleui_core::osk::{KeyboardEvent, OnScreenKeyboard};
 use consoleui_core::ownership::{self, FIRST_DESKTOP_APP_ID, Owner, SHELL_APP_ID};
 use consoleui_core::running::{MIN_HOLD, Phase, RunningApp};
+use consoleui_core::settings::{GlyphChoice, Setting, Settings};
+use consoleui_core::sound::Sound;
 use consoleui_core::system;
 use consoleui_core::{
     Action, AppEntry, AppKind, Carousel, Grid, History, Launch, LibraryFilter, LibrarySort, library_view, search,
@@ -17,9 +20,11 @@ use consoleui_core::{
 };
 use slint::{ComponentHandle, Image, ModelRc, VecModel};
 
+use crate::audio::Audio;
 use crate::gamescope::{Gamescope, x11_window_id};
+use crate::loader::Library;
 use crate::quick::{ForegroundApp, QuickAction, QuickMenu, QuickOutcome};
-use crate::{AppTile, AppWindow, ControllerStyle, GlyphButton, Hint, KeyCap, OverlayWindow, Screen, tiles};
+use crate::{AppTile, AppWindow, ControllerStyle, GlyphButton, Hint, KeyCap, OverlayWindow, Screen, SettingRow, Theme, tiles};
 
 /// So viele zuletzt genutzte Einträge zeigt die Home-Reihe vor der Bibliothekskachel.
 const HOME_COUNT: usize = 12;
@@ -105,19 +110,44 @@ pub struct Shell {
     confirm_quit: Option<String>,
     quick: Option<QuickMenu>,
     gamescope: Option<GamescopeUi>,
+
+    settings: Settings,
+    settings_path: Option<PathBuf>,
+    settings_row: usize,
+    audio: Option<Audio>,
+    /// Zählt Hinweise hoch, damit ein älterer Ausblend-Timer keinen neueren Hinweis schließt
+    toast_generation: Rc<Cell<u64>>,
+    /// Warnung „Controller-Akku schwach“ schon gezeigt
+    battery_warned: bool,
 }
 
+/// So lange bleibt ein Hinweis stehen
+const TOAST_DURATION: Duration = Duration::from_millis(3500);
+/// Unter diesem Akkustand warnt die Shell einmal
+const LOW_BATTERY: u8 = 15;
+
+/// Was sich durch eine Eingabe geändert hat, um den passenden Klang zu wählen
+#[derive(PartialEq)]
+struct Feedback {
+    screen: Screen,
+    quick_open: bool,
+    launching: bool,
+    focus: [usize; 7],
+    query_len: usize,
+    settings: Settings,
+}
+
+/// Startwerte der Animationsdauern in Millisekunden (wie in `theme.slint`)
+const DURATIONS: [i64; 5] = [220, 500, 120, 450, 200];
+
 impl Shell {
+    /// Startet ohne Einträge; die Bibliothek kommt per [`Shell::set_library`], sobald sie geladen ist.
     pub fn new(
         ui: &AppWindow,
-        mut entries: Vec<AppEntry>,
-        history: History,
-        history_path: Option<PathBuf>,
         gamescope: Option<GamescopeUi>,
+        settings: Settings,
+        settings_path: Option<PathBuf>,
     ) -> Self {
-        let today = tiles::today();
-        let tile_list = entries.iter_mut().enumerate().map(|(i, entry)| tiles::to_tile(entry, i, today)).collect();
-
         let keyboard = OnScreenKeyboard::default();
         let keys: Vec<KeyCap> = keyboard
             .keys()
@@ -139,9 +169,9 @@ impl Shell {
         }
 
         let mut shell = Self {
-            library_tile: tiles::library_tile(entries.len()),
-            entries,
-            tiles: tile_list,
+            library_tile: tiles::library_tile(0),
+            entries: Vec::new(),
+            tiles: Vec::new(),
             home_model,
             library_model,
             results_model,
@@ -157,8 +187,8 @@ impl Shell {
             keyboard,
             search_area: SearchArea::Keyboard,
             search_origin: Screen::Home,
-            history,
-            history_path,
+            history: History::default(),
+            history_path: None,
             heroes: HashMap::new(),
             hero_entry: None,
             running: Vec::new(),
@@ -168,9 +198,64 @@ impl Shell {
             confirm_quit: None,
             quick: None,
             gamescope,
+            settings,
+            settings_path,
+            settings_row: 0,
+            audio: Audio::start(),
+            toast_generation: Rc::default(),
+            battery_warned: false,
         };
+        shell.apply_settings(ui);
         shell.refresh(ui);
         shell
+    }
+
+    /// Übernimmt die im Hintergrund geladene Bibliothek.
+    pub fn set_library(&mut self, ui: &AppWindow, library: Library) {
+        let today = tiles::today();
+        self.tiles = library.entries.iter().enumerate().map(|(i, loaded)| tiles::to_tile(loaded, i, today)).collect();
+        self.entries = library.entries.into_iter().map(|loaded| loaded.entry).collect();
+        self.library_tile = tiles::library_tile(self.entries.len());
+        self.history = library.history;
+        self.history_path = library.history_path;
+        self.hero_entry = None;
+        self.refresh(ui);
+    }
+
+    /// Zeigt einen Hinweis oben rechts; ein neuer ersetzt den alten.
+    pub fn toast(&mut self, ui: &AppWindow, symbol: &str, title: &str, text: &str) {
+        let generation = self.toast_generation.get() + 1;
+        self.toast_generation.set(generation);
+        ui.set_toast_symbol(symbol.into());
+        ui.set_toast_title(title.into());
+        ui.set_toast_text(text.into());
+        ui.set_toast_shown(true);
+        let weak = ui.as_weak();
+        let current = self.toast_generation.clone();
+        slint::Timer::single_shot(TOAST_DURATION, move || {
+            if let Some(ui) = weak.upgrade()
+                && current.get() == generation
+            {
+                ui.set_toast_shown(false);
+            }
+        });
+    }
+
+    /// Warnt einmal, wenn der Controller-Akku knapp wird; lädt er wieder, wird neu gewarnt.
+    pub fn check_controller_battery(&mut self, ui: &AppWindow, percent: Option<u8>) {
+        match percent {
+            Some(p) if p <= LOW_BATTERY && !self.battery_warned => {
+                self.battery_warned = true;
+                self.toast(ui, "▁", "Controller-Akku schwach", &format!("Noch {p} %"));
+            }
+            Some(p) if p > LOW_BATTERY + 5 => self.battery_warned = false,
+            _ => {}
+        }
+    }
+
+    /// Gewünschte Tastensymbole aus den Einstellungen (`Auto`: nach dem Controller).
+    pub fn glyph_choice(&self) -> GlyphChoice {
+        self.settings.glyphs
     }
 
     /// Startbildschirm setzen (Entwickler-Option `--start`).
@@ -187,6 +272,11 @@ impl Shell {
         self.tiles.len().min(HOME_COUNT) + 1
     }
 
+    /// Solange die Steuerzentrale offen ist, liest die Shell die Controller exklusiv.
+    pub fn wants_exclusive_input(&self) -> bool {
+        self.quick.is_some()
+    }
+
     /// Eingaben, die auch ohne Fensterfokus gelten: alles im offenen Quick-Menü und in gamescope
     /// die PS-/Guide-Taste (dort liegt das Spiel vorne und hat den Fokus).
     pub fn accepts_unfocused(&self, action: Action) -> bool {
@@ -194,6 +284,54 @@ impl Shell {
     }
 
     pub fn apply(&mut self, ui: &AppWindow, action: Action) {
+        let before = self.feedback(ui);
+        self.apply_action(ui, action);
+        let after = self.feedback(ui);
+        self.play_feedback(action, &before, &after);
+    }
+
+    fn feedback(&self, ui: &AppWindow) -> Feedback {
+        Feedback {
+            screen: self.screen,
+            quick_open: self.quick.is_some(),
+            launching: ui.get_launching(),
+            focus: [
+                self.home.focused(),
+                self.grid.focused(),
+                self.result_row.focused(),
+                self.keyboard.focused(),
+                self.settings_row,
+                self.quick.as_ref().map_or(0, QuickMenu::focused),
+                usize::from(self.search_area == SearchArea::Results),
+            ],
+            query_len: self.query.len(),
+            settings: self.settings,
+        }
+    }
+
+    fn play_feedback(&mut self, action: Action, before: &Feedback, after: &Feedback) {
+        if before == after {
+            return;
+        }
+        let sound = if after.quick_open != before.quick_open {
+            if after.quick_open { Sound::Open } else { Sound::Back }
+        } else if after.launching && !before.launching {
+            Sound::Confirm
+        } else if after.screen != before.screen || after.launching != before.launching {
+            if action == Action::Back { Sound::Back } else { Sound::Open }
+        } else if action == Action::Confirm && after.focus == before.focus {
+            Sound::Confirm
+        } else {
+            Sound::Move
+        };
+        if self.settings.sounds
+            && let Some(audio) = &mut self.audio
+        {
+            audio.play(sound);
+        }
+    }
+
+    fn apply_action(&mut self, ui: &AppWindow, action: Action) {
         if self.quick.is_some() {
             self.apply_quick(ui, action);
             return;
@@ -223,9 +361,12 @@ impl Shell {
         match (self.screen, action) {
             (Screen::Home, Action::NextTab) => self.screen = Screen::Library,
             (Screen::Library, Action::PrevTab) => self.screen = Screen::Home,
-            (Screen::Home | Screen::Library, Action::Search) => self.open_search(ui),
+            (Screen::Library, Action::NextTab) => self.screen = Screen::Settings,
+            (Screen::Settings, Action::PrevTab) => self.screen = Screen::Library,
+            (Screen::Home | Screen::Library | Screen::Settings, Action::Search) => self.open_search(ui),
             (Screen::Home, _) => self.apply_home(ui, action),
             (Screen::Library, _) => self.apply_library(ui, action),
+            (Screen::Settings, _) => self.apply_settings_page(ui, action),
             (Screen::Search, _) => self.apply_search(ui, action),
         }
         self.sync(ui);
@@ -273,6 +414,59 @@ impl Shell {
                 self.grid.apply(action, ui.get_library_columns().max(1) as usize);
             }
         }
+    }
+
+    fn apply_settings_page(&mut self, ui: &AppWindow, action: Action) {
+        let setting = Setting::ALL[self.settings_row];
+        match action {
+            Action::Up => self.settings_row = self.settings_row.saturating_sub(1),
+            Action::Down => self.settings_row = (self.settings_row + 1).min(Setting::ALL.len() - 1),
+            Action::Left | Action::Right | Action::Confirm => {
+                self.settings.change(setting, action != Action::Left);
+                if let Some(path) = &self.settings_path
+                    && let Err(err) = self.settings.save(path)
+                {
+                    eprintln!("Einstellungen konnten nicht gespeichert werden ({}): {err}", path.display());
+                }
+                self.apply_settings(ui);
+            }
+            Action::Back => self.screen = Screen::Home,
+            _ => {}
+        }
+    }
+
+    /// Überträgt Einstellungen in die UI: Akzentfarbe, Animationsdauern, Einstellungszeilen.
+    fn apply_settings(&self, ui: &AppWindow) {
+        let [r, g, b] = self.settings.accent.rgb();
+        let accent = slint::Color::from_rgb_u8(r, g, b);
+        let durations = if self.settings.animations { DURATIONS } else { [0; 5] };
+        let apply_theme = |theme: Theme| {
+            theme.set_accent(accent);
+            theme.set_focus_duration(durations[0]);
+            theme.set_background_duration(durations[1]);
+            theme.set_pulse_duration(durations[2].max(1));
+            theme.set_launch_duration(durations[3]);
+            theme.set_page_duration(durations[4]);
+        };
+        apply_theme(ui.global::<Theme>());
+        if let Some(gamescope) = &self.gamescope {
+            apply_theme(gamescope.overlay.global::<Theme>());
+        }
+
+        let rows: Vec<SettingRow> = Setting::ALL
+            .iter()
+            .map(|&setting| SettingRow {
+                label: setting.label().into(),
+                description: setting.description().into(),
+                value: self.settings.value_label(setting).into(),
+            })
+            .collect();
+        ui.set_settings_rows(ModelRc::new(VecModel::from(rows)));
+        let footer = match &self.settings_path {
+            Some(path) => format!("Wird automatisch gespeichert: {}", path.display()),
+            None => "Einstellungen werden nicht gespeichert".into(),
+        };
+        ui.set_settings_footer(footer.into());
     }
 
     fn apply_search(&mut self, ui: &AppWindow, action: Action) {
@@ -356,6 +550,7 @@ impl Shell {
             Screen::Home => self.home_entry(),
             Screen::Library => self.library.get(self.grid.focused()).copied(),
             Screen::Search => self.results.get(self.result_row.focused()).copied(),
+            Screen::Settings => None,
         }
     }
 
@@ -407,6 +602,7 @@ impl Shell {
         ui.set_library_focused(self.grid.focused() as i32);
         ui.set_result_focused(self.result_row.focused() as i32);
         ui.set_key_focused(self.keyboard.focused() as i32);
+        ui.set_settings_focused(self.settings_row as i32);
         ui.set_keyboard_active(self.search_area == SearchArea::Keyboard);
         self.show_hero(ui);
         self.update_hints(ui);
@@ -475,6 +671,12 @@ impl Shell {
                 hints.push(hint(GlyphButton::West, "Filter"));
                 hints.push(hint(GlyphButton::Menu, "Sortierung"));
                 hints.push(hint(GlyphButton::North, "Suchen"));
+                hints.push(hint(GlyphButton::Back, "Zurück"));
+            }
+            Screen::Settings => {
+                hints.push(hint(GlyphButton::Updown, "Auswählen"));
+                hints.push(hint(GlyphButton::Dpad, "Ändern"));
+                hints.push(hint(GlyphButton::L1, "Bibliothek"));
                 hints.push(hint(GlyphButton::Back, "Zurück"));
             }
             Screen::Search if self.search_area == SearchArea::Keyboard => {
@@ -626,6 +828,8 @@ impl Shell {
                 ui.set_launch_status("konnte nicht gestartet werden".into());
                 ui.set_launching(true);
                 self.failed_launch = Some(now);
+                let title = entry.title.clone();
+                self.toast(ui, "⚠", "Start fehlgeschlagen", &title);
             }
         }
     }

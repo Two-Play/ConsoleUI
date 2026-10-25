@@ -266,6 +266,34 @@ Deck o. Ä.) sollten wir später den Skia-Renderer vergleichen (Story 6.5).
   weiterhin mit, denn gilrs und das Spiel lesen dasselbe Gerät. Abhilfe wäre ein exklusiver Zugriff
   (`EVIOCGRAB`) oder ein virtueller Controller, ähnlich wie bei Steam Input.
 
+### Sprint 6 – „Polish“ (umgesetzt: 6.1, 6.5 teilweise, 5.5, 5.6, 1.6, exklusiver Controller)
+
+- **Einstellungen (5.5):** dritter Tab „Einstellungen“ mit Akzentfarbe (Weiß, Blau, Violett,
+  Grün, Orange, Rot), Animationen an/aus (alle Dauern 0), Klängen an/aus und Tastensymbolen
+  (automatisch/PlayStation/Xbox). ▲▼ wählt, ◀▶ ändert. Gespeichert wird sofort in
+  `~/.config/consoleui/settings.json`, fehlende Felder bekommen Standardwerte. Die Akzentfarbe
+  färbt Fokusrahmen, Buttons, Tasten und Karten.
+- **Klänge (1.6):** werden zur Laufzeit erzeugt (Sinus mit Oberton und Hüllkurve, keine Dateien)
+  und über einen dauerhaften `pw-cat --raw` abgespielt. Ein eigener Thread schreibt, die Queue ist
+  klein, dicht folgende Fokusklänge fallen weg. Welcher Klang kommt, ergibt sich aus der Änderung:
+  Fokus, Seite, Steuerzentrale, Start oder Bestätigen.
+- **Boot-Animation (6.1) und Laden im Hintergrund (6.5):** Logo mit pulsierendem Lichtschein und
+  Ladepunkten, mindestens 1,2 s. Währenddessen laufen Erkennung und Bilddekodierung (`image`-Crate,
+  mehrere Threads, Cover auf höchstens 480×720 verkleinert, Akzentfarbe) im Hintergrund.
+  Benchmark, Skript und Snapshot starten erst danach.
+- **Hinweise (5.6):** Toast oben rechts bei „Controller verbunden/getrennt“, „Start
+  fehlgeschlagen“ und schwachem Controller-Akku (≤ 15 %, einmal pro Entladung).
+- **Exklusiver Controller:** Solange die Steuerzentrale offen ist, sperrt die Shell die
+  evdev-Geräte des Controllers per `EVIOCGRAB` und liest sie selbst (Steuerkreuz, Stick, ✕, ○,
+  Options, PS). Das Spiel bekommt dann nichts mit. Getestet: Ein zweiter Grab-Versuch scheitert
+  mit EBUSY, solange das Menü offen ist, vorher und nachher ist das Gerät frei.
+- Messwert: Ø 112 fps, Renderzeit Ø 5,8 ms, max 15 ms (Home, echte Bibliothek).
+- **Nicht getestet:** die Bedienung mit echtem Controller während des Grabs, das Hören der
+  Klänge, Toasts bei echtem Ein- und Ausstecken.
+- **Grenzen:** Spiele, die den Controller über hidraw lesen (Steam Input, manche SDL-Spiele),
+  sehen ihn trotz Grab. Toasts erscheinen nur, wenn die Shell sichtbar ist, nicht über einem
+  laufenden Spiel.
+
 ## Risiken / offene Fragen
 
 - **gamescope-Fokussteuerung** ist kaum dokumentiert und auf XWayland bzw. Steam ausgelegt → deshalb Spike 0.3 früh einplanen. Falls das nicht klappt, wird Epic 7 wichtiger.

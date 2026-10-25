@@ -13,7 +13,7 @@ Verwendung: consoleui [OPTIONEN]
   -h, --help      Diese Hilfe anzeigen
 
 Für die Entwicklung:
-  --start <SEITE>     Mit home, library oder search starten
+  --start <SEITE>     Mit home, library, settings oder search starten
   --query <TEXT>      In der Suche diesen Text vorbelegen (mit --start search)
   --snapshot <DATEI>  Nach kurzer Zeit ein PNG des Fensters speichern und beenden
   --actions <LISTE>   Eingaben simulieren, z. B. \"right,confirm,wait:3000,guide\"
@@ -26,6 +26,7 @@ pub enum StartScreen {
     #[default]
     Home,
     Library,
+    Settings,
     Search,
 }
 
@@ -89,6 +90,7 @@ impl Options {
                     options.start = match value(&mut args, "--start")?.as_str() {
                         "home" => StartScreen::Home,
                         "library" => StartScreen::Library,
+                        "settings" => StartScreen::Settings,
                         "search" => StartScreen::Search,
                         other => return Err(format!("Unbekannte Seite: {other}")),
                     }

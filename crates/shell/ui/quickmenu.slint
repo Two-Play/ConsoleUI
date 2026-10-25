@@ -60,7 +60,7 @@ export component QuickMenu inherits Rectangle {
             width: root.card;
             height: root.card * 0.82;
             border-radius: 18px * root.s;
-            background: item.armed ? #ff5a5a : self.is-focused ? Theme.text : Theme.surface;
+            background: item.armed ? #ff5a5a : self.is-focused ? Theme.accent : Theme.surface;
             animate y, background { duration: Theme.focus-duration; easing: ease-out-quart; }
 
             Text {

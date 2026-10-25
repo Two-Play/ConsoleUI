@@ -1,5 +1,5 @@
 import { Theme } from "theme.slint";
-import { AppTile, ControllerStyle, GlyphButton, Hint, KeyCap, NavAction, NetworkState, QuickItem, Screen } from "types.slint";
+import { AppTile, ControllerStyle, GlyphButton, Hint, KeyCap, NavAction, NetworkState, QuickItem, Screen, SettingRow } from "types.slint";
 import { StatusBar } from "statusbar.slint";
 import { ButtonGlyph, HintBar } from "glyph.slint";
 import { HomePage } from "home.slint";
@@ -7,8 +7,11 @@ import { LibraryPage } from "library.slint";
 import { SearchPage } from "search.slint";
 import { QuickMenu } from "quickmenu.slint";
 import { OverlayWindow } from "overlay.slint";
+import { SettingsPage } from "settings.slint";
+import { BootScreen } from "boot.slint";
+import { Toast } from "toast.slint";
 
-export { AppTile, ControllerStyle, GlyphButton, Hint, KeyCap, NavAction, NetworkState, QuickItem, Screen, OverlayWindow }
+export { AppTile, ControllerStyle, GlyphButton, Hint, KeyCap, NavAction, NetworkState, QuickItem, Screen, SettingRow, OverlayWindow, Theme }
 
 export component AppWindow inherits Window {
     title: "ConsoleUI";
@@ -18,6 +21,14 @@ export component AppWindow inherits Window {
     forward-focus: keys;
 
     in property <Screen> screen: Screen.home;
+    // Hinweis oben rechts
+    in property <bool> toast-shown;
+    in property <string> toast-symbol;
+    in property <string> toast-title;
+    in property <string> toast-text;
+
+    // Boot-Animation, bis die Bibliothek geladen ist
+    in property <bool> booting: true;
 
     in property <[AppTile]> home-tiles;
     in property <int> home-focused;
@@ -27,6 +38,10 @@ export component AppWindow inherits Window {
     in property <string> filter-label;
     in property <string> sort-label;
     out property <int> library-columns: library.columns;
+
+    in property <[SettingRow]> settings-rows;
+    in property <int> settings-focused;
+    in property <string> settings-footer;
 
     in property <string> search-query;
     in property <[KeyCap]> keys;
@@ -89,7 +104,8 @@ export component AppWindow inherits Window {
 
     property <AppTile> current: root.screen == Screen.home ? root.home-tiles[root.home-focused]
         : root.screen == Screen.library ? root.library-tiles[root.library-focused]
-        : root.results[root.result-focused];
+        : root.screen == Screen.search ? root.results[root.result-focused]
+        : root.home-tiles[0];
     property <color> glow: root.current.accent;
     animate glow {
         duration: Theme.background-duration;
@@ -278,7 +294,7 @@ export component AppWindow inherits Window {
                 button: GlyphButton.l1;
                 style: root.controller-style;
                 s: root.s;
-                opacity: root.screen == Screen.library ? 1 : 0.35;
+                opacity: root.screen == Screen.library || root.screen == Screen.settings ? 1 : 0.35;
             }
 
             Text {
@@ -297,12 +313,20 @@ export component AppWindow inherits Window {
                 vertical-alignment: center;
             }
 
+            Text {
+                text: "Einstellungen";
+                color: root.screen == Screen.settings ? Theme.text : Theme.text-dim;
+                font-size: 26px * s;
+                font-weight: root.screen == Screen.settings ? 700 : 600;
+                vertical-alignment: center;
+            }
+
             ButtonGlyph {
                 y: (parent.height - self.height) / 2;
                 button: GlyphButton.r1;
                 style: root.controller-style;
                 s: root.s;
-                opacity: root.screen == Screen.home ? 1 : 0.35;
+                opacity: root.screen == Screen.home || root.screen == Screen.library ? 1 : 0.35;
             }
         }
 
@@ -332,6 +356,22 @@ export component AppWindow inherits Window {
             tiles: root.home-tiles;
             focused: root.home-focused;
             pulse: root.pulse && root.screen == Screen.home;
+            s: root.s;
+        }
+
+        SettingsPage {
+            width: root.width;
+            height: root.height;
+            x: root.screen == Screen.settings ? 0 : 60px * s;
+            opacity: root.screen == Screen.settings ? 1 : 0;
+            visible: self.opacity > 0.01;
+            animate x, opacity {
+                duration: Theme.page-duration;
+                easing: ease-out-quart;
+            }
+            rows: root.settings-rows;
+            focused: root.settings-focused;
+            footer: root.settings-footer;
             s: root.s;
         }
 
@@ -515,6 +555,27 @@ export component AppWindow inherits Window {
             items: root.quick-items;
             focused: root.quick-focused;
             style: root.controller-style;
+            s: root.s;
+        }
+
+        Toast {
+            x: root.width - root.margin - self.width + (root.toast-shown ? 0 : 60px * s);
+            y: 110px * s;
+            animate x {
+                duration: Theme.launch-duration;
+                easing: ease-out-quart;
+            }
+            shown: root.toast-shown;
+            symbol: root.toast-symbol;
+            title: root.toast-title;
+            text: root.toast-text;
+            s: root.s;
+        }
+
+        BootScreen {
+            width: 100%;
+            height: 100%;
+            active: root.booting;
             s: root.s;
         }
 

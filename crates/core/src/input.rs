@@ -124,6 +124,52 @@ fn axis_value(action: Action, x: f32, y: f32) -> f32 {
     }
 }
 
+/// Linux-evdev-Tastencodes (`linux/input-event-codes.h`), die in der Steuerzentrale gebraucht werden,
+/// wenn die Shell den Controller exklusiv liest.
+pub mod evdev {
+    pub const EV_KEY: u16 = 0x01;
+    pub const EV_ABS: u16 = 0x03;
+    pub const ABS_X: u16 = 0x00;
+    pub const ABS_Y: u16 = 0x01;
+    pub const ABS_HAT0X: u16 = 0x10;
+    pub const ABS_HAT0Y: u16 = 0x11;
+    const BTN_SOUTH: u16 = 0x130;
+    const BTN_EAST: u16 = 0x131;
+    const BTN_START: u16 = 0x13b;
+    const BTN_MODE: u16 = 0x13c;
+    const BTN_DPAD_UP: u16 = 0x220;
+    const BTN_DPAD_DOWN: u16 = 0x221;
+    const BTN_DPAD_LEFT: u16 = 0x222;
+    const BTN_DPAD_RIGHT: u16 = 0x223;
+
+    use crate::nav::Action;
+
+    /// Nur Steuerkreuz, Bestätigen, Zurück, Menü und PS/Guide; mehr braucht die Steuerzentrale nicht.
+    pub fn key_action(code: u16) -> Option<Action> {
+        Some(match code {
+            BTN_SOUTH => Action::Confirm,
+            BTN_EAST => Action::Back,
+            BTN_START => Action::Menu,
+            BTN_MODE => Action::Guide,
+            BTN_DPAD_UP => Action::Up,
+            BTN_DPAD_DOWN => Action::Down,
+            BTN_DPAD_LEFT => Action::Left,
+            BTN_DPAD_RIGHT => Action::Right,
+            _ => return None,
+        })
+    }
+
+    /// Achswert auf −1…1 abbilden (`min`/`max` aus `EVIOCGABS`).
+    pub fn normalize(value: i32, min: i32, max: i32) -> f32 {
+        if max <= min {
+            return 0.0;
+        }
+        let center = (min as f32 + max as f32) / 2.0;
+        let half = (max as f32 - min as f32) / 2.0;
+        ((value as f32 - center) / half).clamp(-1.0, 1.0)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -177,6 +223,19 @@ mod tests {
         r.press(Action::Down, t0);
         assert!(r.poll(t0 + ms(5000)).is_some());
         assert_eq!(r.poll(t0 + ms(5001)), None);
+    }
+
+    #[test]
+    fn evdev_mapping_and_axes() {
+        assert_eq!(evdev::key_action(0x130), Some(Action::Confirm));
+        assert_eq!(evdev::key_action(0x13c), Some(Action::Guide));
+        assert_eq!(evdev::key_action(0x222), Some(Action::Left));
+        assert_eq!(evdev::key_action(0x133), None);
+        // DualSense-Sticks: 0…255, Xbox: −32768…32767
+        assert_eq!(evdev::normalize(255, 0, 255), 1.0);
+        assert!(evdev::normalize(128, 0, 255).abs() < 0.01);
+        assert_eq!(evdev::normalize(-32768, -32768, 32767), -1.0);
+        assert_eq!(evdev::normalize(5, 0, 0), 0.0);
     }
 
     #[test]
