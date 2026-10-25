@@ -1,9 +1,9 @@
 //! Keyboard and mouse input. The keyboard goes to the window the policy focuses (clicks do not
 //! move it: on a console the shell decides what is in front); the pointer goes to the topmost
 //! surface under it that the policy lets have pointer input (while the quick menu is open only
-//! the shell's, Story 7.5). Super+Escape and the Home key (`XF86HomePage`) are the keyboard's
-//! Guide button: they go to the shell as `Guide` over the control socket, never to the focused
-//! window. Gamepads are not handled here: the shell reads them with gilrs (and grabs them while
+//! the shell's, Story 7.5). F1 (the shell's own Guide key), Super+Escape and the Home key
+//! (`XF86HomePage`) are the keyboard's Guide button while a shell is connected: they go to the
+//! shell as `Guide` over the control socket, never to the focused window (so games never see F1). Gamepads are not handled here: the shell reads them with gilrs (and grabs them while
 //! the quick menu is open, `crates/shell/src/grab.rs`).
 //!
 //! Pointer handling with constraints follows anvil (`anvil/src/input_handler.rs`, MIT,
@@ -36,7 +36,8 @@ fn shortcut(modifiers: &ModifiersState, keysym: Keysym, shell_connected: bool) -
     if modifiers.ctrl && modifiers.alt && keysym == Keysym::BackSpace {
         return Some(KeyAction::Quit);
     }
-    if shell_connected && (keysym == Keysym::XF86_HomePage || (modifiers.logo && keysym == Keysym::Escape)) {
+    let guide = matches!(keysym, Keysym::F1 | Keysym::XF86_HomePage) || (modifiers.logo && keysym == Keysym::Escape);
+    if shell_connected && guide {
         return Some(KeyAction::Guide);
     }
     let raw = keysym.raw();
