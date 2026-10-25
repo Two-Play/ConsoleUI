@@ -24,7 +24,7 @@ component Chip inherits HorizontalLayout {
     }
 }
 
-// Bibliothek: alle Einträge als Raster, mit Filter und Sortierung.
+// Library: all entries as a grid, with filter and sort order.
 export component LibraryPage inherits Rectangle {
     in property <[AppTile]> tiles;
     in property <int> focused;
@@ -39,13 +39,13 @@ export component LibraryPage inherits Rectangle {
     property <length> gap: 32px * root.s;
     property <length> row-height: root.tile + 60px * root.s;
     property <length> grid-y: 250px * root.s;
-    // Platz über der ersten Zeile, damit Glow und Rahmen der Fokus-Kachel nicht abgeschnitten werden
+    // Space above the first row so the glow and frame of the focused tile are not cut off
     property <length> grid-pad: 24px * root.s;
 
-    // Die UI bestimmt die Spaltenzahl, Rust liest sie für die Navigation.
+    // The UI decides the number of columns; Rust reads it for the navigation.
     out property <int> columns: max(1, floor((root.width - 2 * root.margin + root.gap) / (root.tile + root.gap)));
     property <int> focused-row: floor(root.focused / root.columns);
-    // Die Fokuszeile bleibt die zweite sichtbare Zeile.
+    // The focused row stays the second visible row.
     property <length> scroll: max(0, root.focused-row - 1) * root.row-height;
     animate scroll {
         duration: Theme.focus-duration;
@@ -59,7 +59,7 @@ export component LibraryPage inherits Rectangle {
     Text {
         x: root.margin;
         y: 120px * root.s;
-        text: "Bibliothek";
+        text: @tr("Library");
         color: Theme.text;
         font-size: 44px * root.s;
         font-weight: 800;
@@ -73,7 +73,7 @@ export component LibraryPage inherits Rectangle {
         alignment: start;
 
         Text {
-            text: root.tiles.length + (root.tiles.length == 1 ? " Eintrag" : " Einträge");
+            text: @tr("{n} item" | "{n} items" % root.tiles.length);
             color: Theme.text-dim;
             font-size: 20px * root.s;
             vertical-alignment: center;
@@ -82,14 +82,14 @@ export component LibraryPage inherits Rectangle {
         Chip {
             button: GlyphButton.west;
             style: root.style;
-            label: "Filter: " + root.filter-label;
+            label: @tr("Filter: {}", root.filter-label);
             s: root.s;
         }
 
         Chip {
             button: GlyphButton.menu;
             style: root.style;
-            label: "Sortierung: " + root.sort-label;
+            label: @tr("Sort: {}", root.sort-label);
             s: root.s;
         }
     }
@@ -102,7 +102,7 @@ export component LibraryPage inherits Rectangle {
         if root.tiles.length == 0: Text {
             x: root.margin;
             y: root.grid-pad;
-            text: "Keine Einträge für diesen Filter.";
+            text: @tr("Nothing here for this filter.");
             color: Theme.text-dim;
             font-size: 24px * root.s;
         }

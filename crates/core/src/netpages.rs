@@ -1,11 +1,12 @@
-//! Zustand und Bedienung der Unterseiten „WLAN“ und „Bluetooth“ der Einstellungen
-//! (Stories 5.3/5.4): Fokus, Passwort-Eingabe mit der Bildschirmtastatur, Rückfrage vor dem
-//! Entfernen, laufende Aufträge und die Anzeige als einfache Zeilen. Ohne UI und ohne D-Bus;
-//! die Aufträge führt der Backend-Thread aus ([`crate::network`]).
+//! State and input of the "Wi-Fi" and "Bluetooth" sub-pages of the settings (Stories 5.3/5.4):
+//! focus, password entry with the on-screen keyboard, confirmation before removing, running
+//! requests and the display as plain rows. Without UI and without D-Bus; the backend thread runs
+//! the requests ([`crate::network`]).
 
 use std::time::{Duration, Instant};
 
 use crate::bluetooth::{BluetoothState, BtDevice, DeviceKind};
+use crate::i18n::{tr, trf};
 use crate::nav::Action;
 use crate::network::{Notice, Request, Response};
 use crate::osk::{KeyboardEvent, OnScreenKeyboard};
@@ -17,15 +18,15 @@ pub enum Page {
     Bluetooth,
 }
 
-/// So oft wird neu gelesen, solange die Einstellungen zu sehen sind
+/// How often the state is read again while the settings are visible
 const REFRESH: Duration = Duration::from_secs(3);
-/// … und während einer Suche oder eines laufenden Auftrags
+/// … and during a search or a running request
 const REFRESH_FAST: Duration = Duration::from_secs(1);
 
-/// Eine Zeile der Seite
+/// A row of the page
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Item {
-    /// WLAN bzw. Bluetooth ein/aus
+    /// Wi-Fi or Bluetooth on/off
     Toggle,
     Network(String),
     Device(String),
@@ -38,30 +39,30 @@ struct Password {
     visible: bool,
 }
 
-/// Anzeige einer Zeile
+/// Display of a row
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RowView {
     pub symbol: String,
     pub title: String,
     pub detail: String,
-    /// Rechts in der Zeile, z. B. „An“
+    /// On the right of the row, e.g. "On"
     pub value: String,
-    /// WLAN-Balken 1–4, sonst 0
+    /// Wi-Fi bars 1–4, otherwise 0
     pub bars: u8,
     pub secured: bool,
     pub gamepad: bool,
-    /// Verbunden
+    /// Connected
     pub active: bool,
     pub busy: bool,
-    /// Wartet auf den zweiten Druck zum Entfernen
+    /// Waits for the second press to remove
     pub armed: bool,
 }
 
-/// Anzeige der Passwort-Eingabe
+/// Display of the password entry
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PasswordView {
     pub ssid: String,
-    /// Maskiert, außer „anzeigen“ ist an
+    /// Masked unless "show" is on
     pub text: String,
     pub visible: bool,
     pub labels: Vec<String>,
@@ -74,7 +75,7 @@ pub struct PageView {
     pub status: String,
     pub rows: Vec<RowView>,
     pub focused: usize,
-    /// Text unter den Zeilen, wenn es nichts aufzulisten gibt
+    /// Text below the rows when there is nothing to list
     pub empty_title: String,
     pub empty_text: String,
 }
@@ -83,13 +84,13 @@ pub struct PageView {
 pub struct NetPages {
     page: Option<Page>,
     focus: usize,
-    /// `None`: noch nicht gelesen
+    /// `None`: not read yet
     wifi: Option<Result<WifiState, String>>,
     bluetooth: Option<Result<BluetoothState, String>>,
-    /// Laufende Aufträge (ohne `Refresh`)
+    /// Running requests (without `Refresh`)
     busy: Vec<Request>,
     password: Option<Password>,
-    /// Adresse des Geräts, das beim nächsten Druck entfernt wird
+    /// Address of the device that the next press removes
     armed: Option<String>,
     last_refresh: Option<Instant>,
 }
@@ -107,7 +108,7 @@ impl NetPages {
         self.password.is_some()
     }
 
-    /// Öffnet eine Unterseite; der Zustand wird gleich neu gelesen.
+    /// Opens a sub-page; the state is read again right away.
     pub fn open(&mut self, page: Page) -> Vec<Request> {
         self.page = Some(page);
         self.focus = 0;
@@ -117,7 +118,7 @@ impl NetPages {
         vec![Request::Refresh]
     }
 
-    /// Kurzer Zustand für die Zeilen der Einstellungsseite
+    /// Short state for the rows of the settings page
     pub fn summary(&self, page: Page) -> String {
         let summary = match page {
             Page::Wifi => self.wifi.as_ref().map(|s| s.as_ref().map(WifiState::summary)),
@@ -126,11 +127,11 @@ impl NetPages {
         match summary {
             None => "…".into(),
             Some(Ok(text)) => text,
-            Some(Err(_)) => "Nicht verfügbar".into(),
+            Some(Err(_)) => tr("Unavailable").into(),
         }
     }
 
-    /// Ob jetzt neu gelesen werden soll (`visible`: die Einstellungen sind zu sehen).
+    /// Whether to read the state again now (`visible`: the settings are visible).
     pub fn refresh_due(&mut self, now: Instant, visible: bool) -> bool {
         if !visible {
             return false;
@@ -144,7 +145,7 @@ impl NetPages {
         true
     }
 
-    /// Übernimmt eine Antwort des Backends; gibt einen Hinweis zurück, falls einer fällig ist.
+    /// Takes a response of the backend; returns a notice if one is due.
     pub fn handle(&mut self, response: Response) -> Option<Notice> {
         let focused = self.items().get(self.focus).cloned();
         let notice = match response {
@@ -163,7 +164,7 @@ impl NetPages {
                 request.notice(&result)
             }
         };
-        // Der Fokus bleibt auf derselben Zeile, auch wenn sich die Reihenfolge ändert.
+        // The focus stays on the same row, even when the order changes.
         let items = self.items();
         if let Some(pos) = focused.and_then(|item| items.iter().position(|i| *i == item)) {
             self.focus = pos;
@@ -206,7 +207,7 @@ impl NetPages {
         self.busy.iter().find(|r| r.target() == Some(target))
     }
 
-    /// Merkt sich laufende Aufträge (für „Verbinde …“ und das schnellere Neulesen).
+    /// Remembers running requests (for "Connecting …" and the faster refresh).
     fn send(&mut self, request: Request) -> Vec<Request> {
         if request != Request::Refresh {
             self.busy.push(request.clone());
@@ -214,7 +215,7 @@ impl NetPages {
         vec![request]
     }
 
-    /// Eingabe auf der Unterseite. „Zurück“ schließt sie (danach ist [`Self::is_open`] falsch).
+    /// Input on the sub-page. "Back" closes it (afterwards [`Self::is_open`] is false).
     pub fn apply(&mut self, action: Action) -> Vec<Request> {
         if self.password.is_some() {
             return self.apply_password(action);
@@ -327,7 +328,7 @@ impl NetPages {
                 KeyboardEvent::Backspace => {
                     password.text.pop();
                 }
-                // Unten aus der Tastatur heraus soll nicht versehentlich verbinden.
+                // Leaving the keyboard at the bottom must not connect by accident.
                 KeyboardEvent::Done if action == Action::Confirm && !password.text.is_empty() => {
                     let Some(password) = self.password.take() else { return Vec::new() };
                     return self.send(Request::WifiConnect { ssid: password.ssid, password: Some(password.text) });
@@ -338,7 +339,7 @@ impl NetPages {
         Vec::new()
     }
 
-    /// Eingabe über die echte Tastatur in der Passwort-Eingabe
+    /// Input from the real keyboard in the password entry
     pub fn type_text(&mut self, text: &str) -> bool {
         let Some(password) = self.password.as_mut() else { return false };
         password.text.push_str(text);
@@ -351,7 +352,7 @@ impl NetPages {
         true
     }
 
-    /// Momentaufnahme für die Klangauswahl (ändert sich, wenn sich etwas Sichtbares ändert)
+    /// Snapshot for picking the sound (changes when something visible changes)
     pub fn feedback(&self) -> [usize; 5] {
         let page = match self.page {
             None => 0,
@@ -365,59 +366,60 @@ impl NetPages {
         [page, self.focus, key, len, open]
     }
 
-    // --- Hinweise --------------------------------------------------------------------------
+    // --- Hints -----------------------------------------------------------------------------
 
-    /// Beschriftung von ✕ für die fokussierte Zeile
+    /// Label of ✕ for the focused row
     pub fn confirm_label(&self) -> Option<&'static str> {
         if self.password.is_some() {
-            return Some("Eingeben");
+            return Some(tr("Type"));
         }
         match self.focused_item()? {
             Item::Toggle => Some(match self.page? {
-                Page::Wifi if self.wifi_state().is_some_and(|s| s.enabled) => "Ausschalten",
-                Page::Bluetooth if self.bt_state().is_some_and(BluetoothState::powered) => "Ausschalten",
-                _ => "Einschalten",
+                Page::Wifi if self.wifi_state().is_some_and(|s| s.enabled) => tr("Turn off"),
+                Page::Bluetooth if self.bt_state().is_some_and(BluetoothState::powered) => tr("Turn off"),
+                _ => tr("Turn on"),
             }),
             Item::Network(_) => {
-                Some(if self.focused_network()?.connected { "Trennen" } else { "Verbinden" })
+                Some(if self.focused_network()?.connected { tr("Disconnect") } else { tr("Connect") })
             }
             Item::Device(_) => {
                 let device = self.focused_device()?;
                 Some(if device.connected {
-                    "Trennen"
+                    tr("Disconnect")
                 } else if device.paired {
-                    "Verbinden"
+                    tr("Connect")
                 } else {
-                    "Koppeln"
+                    tr("Pair")
                 })
             }
         }
     }
 
-    /// Beschriftung von □ (WLAN neu suchen, Bluetooth-Suche)
+    /// Label of □ (scan Wi-Fi again, Bluetooth search)
     pub fn secondary_label(&self) -> Option<&'static str> {
         if self.password.is_some() {
-            return Some("Löschen");
+            return Some(tr("Delete"));
         }
         match self.page? {
-            Page::Wifi => self.wifi_state().filter(|s| s.adapter && s.enabled).map(|_| "Neu suchen"),
+            Page::Wifi => self.wifi_state().filter(|s| s.adapter && s.enabled).map(|_| tr("Scan again")),
             Page::Bluetooth => {
                 let state = self.bt_state().filter(|s| s.powered())?;
-                Some(if state.discovering() { "Suche beenden" } else { "Geräte suchen" })
+                Some(if state.discovering() { tr("Stop search") } else { tr("Find devices") })
             }
         }
     }
 
-    /// Beschriftung von ≡ (Gerät entfernen, Passwort anzeigen)
+    /// Label of ≡ (remove device, show password)
     pub fn menu_label(&self) -> Option<&'static str> {
         if let Some(password) = &self.password {
-            return Some(if password.visible { "Verbergen" } else { "Anzeigen" });
+            return Some(if password.visible { tr("Hide password") } else { tr("Show password") });
         }
         let device = self.focused_device().filter(|d| d.paired)?;
-        Some(if self.armed.as_deref() == Some(device.address.as_str()) { "Wirklich entfernen" } else { "Entfernen" })
+        let armed = self.armed.as_deref() == Some(device.address.as_str());
+        Some(if armed { tr("Really remove") } else { tr("Remove") })
     }
 
-    // --- Anzeige ---------------------------------------------------------------------------
+    // --- Display ---------------------------------------------------------------------------
 
     pub fn password_view(&self) -> Option<PasswordView> {
         let password = self.password.as_ref()?;
@@ -448,49 +450,48 @@ impl NetPages {
             symbol: "⏻".into(),
             title: title.into(),
             detail,
-            value: if on { "An" } else { "Aus" }.into(),
+            value: if on { tr("On") } else { tr("Off") }.into(),
             busy: self.busy.iter().any(|r| matches!(r, Request::WifiEnable(_) | Request::BtPower(_))),
             ..RowView::default()
         }
     }
 
     fn wifi_view(&self) -> PageView {
-        let mut view = PageView { title: "WLAN".into(), focused: self.focus, ..PageView::default() };
+        let mut view = PageView { title: tr("Wi-Fi").into(), focused: self.focus, ..PageView::default() };
         let state = match &self.wifi {
             None => {
-                view.empty_title = "Wird geladen …".into();
+                view.empty_title = tr("Loading …").into();
                 return view;
             }
             Some(Err(err)) => {
-                view.empty_title = "NetworkManager nicht erreichbar".into();
+                view.empty_title = tr("Can't reach NetworkManager").into();
                 view.empty_text = err.clone();
                 return view;
             }
             Some(Ok(state)) => state,
         };
         if !state.adapter {
-            view.empty_title = "Kein WLAN-Adapter".into();
-            view.empty_text =
-                "Dieses Gerät hat keinen WLAN-Adapter. Eine Verbindung per Kabel funktioniert weiterhin.".into();
+            view.empty_title = tr("No Wi-Fi adapter").into();
+            view.empty_text = tr("This device has no Wi-Fi adapter. A wired connection still works.").into();
             return view;
         }
         view.status = match state.connected() {
-            Some(network) => format!("Verbunden mit {}", network.ssid),
-            None if state.enabled => "Nicht verbunden".into(),
-            None => "WLAN ist ausgeschaltet".into(),
+            Some(network) => trf("Connected to {}", &[&network.ssid]),
+            None if state.enabled => tr("Not connected").into(),
+            None => tr("Wi-Fi is off").into(),
         };
         if self.busy.contains(&Request::WifiScan) {
-            view.status.push_str(" · Suche …");
+            view.status = trf("{} · Searching …", &[&view.status]);
         }
-        view.rows.push(self.toggle_row("WLAN", "Funk ein- oder ausschalten".into(), state.enabled));
+        view.rows.push(self.toggle_row(tr("Wi-Fi"), tr("Turn the radio on or off").into(), state.enabled));
         for network in &state.networks {
             let busy = self.busy_for(&network.ssid);
             let detail = match busy {
                 Some(request) => request.busy_label(),
-                None if network.connected => "Verbunden",
-                None if network.known => "Gespeichert",
-                None if network.secured => "Gesichert",
-                None => "Offen",
+                None if network.connected => tr("Connected"),
+                None if network.known => tr("Saved"),
+                None if network.secured => tr("Secured"),
+                None => tr("Unsecured"),
             };
             view.rows.push(RowView {
                 title: network.ssid.clone(),
@@ -503,55 +504,55 @@ impl NetPages {
             });
         }
         if !state.enabled {
-            view.empty_title = "WLAN ist ausgeschaltet".into();
-            view.empty_text = "Schalte es oben ein, um Netzwerke zu sehen.".into();
+            view.empty_title = tr("Wi-Fi is off").into();
+            view.empty_text = tr("Turn it on above to see networks.").into();
         } else if state.networks.is_empty() {
-            view.empty_title = "Keine Netzwerke gefunden".into();
-            view.empty_text = "Suche neu oder geh näher an den Router.".into();
+            view.empty_title = tr("No networks found").into();
+            view.empty_text = tr("Scan again or move closer to the router.").into();
         }
         view
     }
 
     fn bluetooth_view(&self) -> PageView {
-        let mut view = PageView { title: "Bluetooth".into(), focused: self.focus, ..PageView::default() };
+        let mut view = PageView { title: tr("Bluetooth").into(), focused: self.focus, ..PageView::default() };
         let state = match &self.bluetooth {
             None => {
-                view.empty_title = "Wird geladen …".into();
+                view.empty_title = tr("Loading …").into();
                 return view;
             }
             Some(Err(err)) => {
-                view.empty_title = "Bluetooth nicht erreichbar".into();
+                view.empty_title = tr("Can't reach Bluetooth").into();
                 view.empty_text = err.clone();
                 return view;
             }
             Some(Ok(state)) => state,
         };
         let Some(adapter) = &state.adapter else {
-            view.empty_title = "Kein Bluetooth-Adapter".into();
-            view.empty_text = "Es wurde kein Bluetooth-Adapter gefunden.".into();
+            view.empty_title = tr("No Bluetooth adapter").into();
+            view.empty_text = tr("No Bluetooth adapter was found.").into();
             return view;
         };
         view.status = if !adapter.powered {
-            "Bluetooth ist ausgeschaltet".into()
+            tr("Bluetooth is off").into()
         } else if adapter.discovering {
-            "Suche nach Geräten …".into()
+            tr("Searching for devices …").into()
         } else {
             state.summary()
         };
-        view.rows.push(self.toggle_row("Bluetooth", format!("Adapter {}", adapter.name), adapter.powered));
+        view.rows.push(self.toggle_row(tr("Bluetooth"), trf("Adapter {}", &[&adapter.name]), adapter.powered));
         for device in &state.devices {
             let busy = self.busy_for(&device.address);
             let armed = self.armed.as_deref() == Some(device.address.as_str());
             let detail = match busy {
                 Some(request) => request.busy_label().to_string(),
-                None if armed => "Zum Entfernen nochmal drücken".into(),
+                None if armed => tr("Press again to remove").into(),
                 None => {
                     let state = if device.connected {
-                        "Verbunden"
+                        tr("Connected")
                     } else if device.paired {
-                        "Gekoppelt"
+                        tr("Paired")
                     } else {
-                        "Nicht gekoppelt"
+                        tr("Not paired")
                     };
                     format!("{} · {state}", device.kind.label())
                 }
@@ -568,13 +569,13 @@ impl NetPages {
             });
         }
         if !adapter.powered {
-            view.empty_title = "Bluetooth ist ausgeschaltet".into();
-            view.empty_text = "Schalte es oben ein, um Controller zu koppeln.".into();
+            view.empty_title = tr("Bluetooth is off").into();
+            view.empty_text = tr("Turn it on above to pair controllers.").into();
         } else if state.devices.is_empty() {
-            view.empty_title = "Keine Geräte".into();
-            view.empty_text = "Starte die Suche und versetze den Controller in den Kopplungsmodus \
-                               (DualSense: PS + Create gedrückt halten, Xbox: Pairing-Taste)."
-                .into();
+            view.empty_title = tr("No devices").into();
+            view.empty_text = tr("Start a search and put the controller in pairing mode \
+                                  (DualSense: hold PS + Create, Xbox: pairing button).")
+            .into();
         }
         view
     }
@@ -586,7 +587,7 @@ mod tests {
     use crate::fakenet::FakeBackend;
     use crate::network::Backend;
 
-    /// Seite mit dem Zustand der Simulation
+    /// Page with the state of the simulation
     fn pages(page: Page) -> (NetPages, FakeBackend) {
         let mut fake = FakeBackend::new(Duration::ZERO);
         let mut pages = NetPages::default();
@@ -596,7 +597,7 @@ mod tests {
         (pages, fake)
     }
 
-    /// Führt die Aufträge aus und gibt die Antworten an die Seite weiter, wie der Backend-Thread.
+    /// Runs the requests and hands the responses to the page, like the backend thread.
     fn run(pages: &mut NetPages, fake: &mut FakeBackend, requests: Vec<Request>) -> Vec<Notice> {
         let mut notices = Vec::new();
         for request in requests {
@@ -612,38 +613,38 @@ mod tests {
     fn wifi_page_lists_networks_and_disconnects() {
         let (mut pages, mut fake) = pages(Page::Wifi);
         let view = pages.view();
-        assert_eq!(view.status, "Verbunden mit Zuhause");
-        assert_eq!(view.rows[0].value, "An");
+        assert_eq!(view.status, "Connected to Zuhause");
+        assert_eq!(view.rows[0].value, "On");
         assert_eq!(view.rows[1].title, "Zuhause");
         assert!(view.rows[1].active && view.rows[1].secured);
-        assert_eq!(pages.confirm_label(), Some("Ausschalten"));
+        assert_eq!(pages.confirm_label(), Some("Turn off"));
         pages.apply(Action::Down);
-        assert_eq!(pages.confirm_label(), Some("Trennen"));
+        assert_eq!(pages.confirm_label(), Some("Disconnect"));
         let requests = pages.apply(Action::Confirm);
         assert_eq!(requests, [Request::WifiDisconnect { ssid: "Zuhause".into() }]);
         assert!(pages.view().rows[1].busy);
         let notices = run(&mut pages, &mut fake, requests);
-        assert_eq!(notices[0].title, "WLAN getrennt");
-        assert_eq!(pages.view().status, "Nicht verbunden");
-        // Der Fokus folgt dem Netz, auch wenn es weiter nach unten rutscht
-        assert_eq!(pages.confirm_label(), Some("Verbinden"));
+        assert_eq!(notices[0].title, "Wi-Fi disconnected");
+        assert_eq!(pages.view().status, "Not connected");
+        // The focus follows the network, even when it moves further down
+        assert_eq!(pages.confirm_label(), Some("Connect"));
     }
 
     #[test]
     fn wifi_password_entry_with_keyboard() {
         let (mut pages, mut fake) = pages(Page::Wifi);
-        // „FRITZ!Box“ ist gesichert und unbekannt (Zeile 3)
+        // "FRITZ!Box" is secured and unknown (row 3)
         pages.apply(Action::Down);
         pages.apply(Action::Down);
         pages.apply(Action::Down);
         assert!(pages.apply(Action::Confirm).is_empty());
         assert!(pages.password_open());
         assert_eq!(pages.password_view().unwrap().ssid, "FRITZ!Box 7590 XY");
-        // Leer abschicken geht nicht; unten heraus auch nicht
+        // Sending it empty does not work; leaving at the bottom neither
         for _ in 0..4 {
             pages.apply(Action::Down);
         }
-        // Umschalt → Leerzeichen → ⌫ → Fertig
+        // Shift → Space → ⌫ → Done
         for _ in 0..3 {
             pages.apply(Action::Right);
         }
@@ -660,7 +661,7 @@ mod tests {
         );
         assert!(!pages.password_open());
         let notices = run(&mut pages, &mut fake, requests);
-        assert_eq!(notices[0].title, "Verbunden mit FRITZ!Box 7590 XY");
+        assert_eq!(notices[0].title, "Connected to FRITZ!Box 7590 XY");
         assert_eq!(pages.view().rows[1].title, "FRITZ!Box 7590 XY");
     }
 
@@ -680,7 +681,7 @@ mod tests {
             ssid: "FRITZ!Box 7590 XY".into(),
             password: Some("kurz".into()),
         }]);
-        assert_eq!(notices[0].title, "Verbindung fehlgeschlagen");
+        assert_eq!(notices[0].title, "Connection failed");
         pages.apply(Action::Back);
         pages.apply(Action::Back);
         assert!(!pages.is_open());
@@ -690,54 +691,54 @@ mod tests {
     fn no_adapter_shows_empty_state() {
         let mut pages = NetPages::default();
         pages.open(Page::Wifi);
-        assert_eq!(pages.view().empty_title, "Wird geladen …");
+        assert_eq!(pages.view().empty_title, "Loading …");
         assert_eq!(pages.summary(Page::Wifi), "…");
         pages.handle(Response::Wifi(Ok(WifiState { adapter: false, enabled: true, networks: Vec::new() })));
         let view = pages.view();
-        assert_eq!(view.empty_title, "Kein WLAN-Adapter");
+        assert_eq!(view.empty_title, "No Wi-Fi adapter");
         assert!(view.rows.is_empty());
         assert_eq!(pages.confirm_label(), None);
         assert_eq!(pages.secondary_label(), None);
         assert!(pages.apply(Action::Confirm).is_empty());
         assert!(pages.apply(Action::Secondary).is_empty());
-        assert_eq!(pages.summary(Page::Wifi), "Kein Adapter");
-        pages.handle(Response::Bluetooth(Err("org.bluez fehlt".into())));
-        assert_eq!(pages.summary(Page::Bluetooth), "Nicht verfügbar");
+        assert_eq!(pages.summary(Page::Wifi), "No adapter");
+        pages.handle(Response::Bluetooth(Err("org.bluez missing".into())));
+        assert_eq!(pages.summary(Page::Bluetooth), "Unavailable");
     }
 
     #[test]
     fn bluetooth_discover_pair_and_remove() {
         let (mut pages, mut fake) = pages(Page::Bluetooth);
-        assert_eq!(pages.secondary_label(), Some("Geräte suchen"));
+        assert_eq!(pages.secondary_label(), Some("Find devices"));
         let requests = pages.apply(Action::Secondary);
         assert_eq!(requests, [Request::BtDiscovery(true)]);
         run(&mut pages, &mut fake, requests);
         let view = pages.view();
-        assert_eq!(view.status, "Suche nach Geräten …");
+        assert_eq!(view.status, "Searching for devices …");
         // Toggle, DualSense, WH-1000XM4, Xbox, 8BitDo, JBL
         let titles: Vec<_> = view.rows.iter().map(|r| r.title.as_str()).collect();
         assert_eq!(titles[3], "Xbox Wireless Controller");
         assert!(view.rows[3].gamepad && !view.rows[5].gamepad);
         pages.focus = 3;
-        assert_eq!(pages.confirm_label(), Some("Koppeln"));
+        assert_eq!(pages.confirm_label(), Some("Pair"));
         let requests = pages.apply(Action::Confirm);
-        assert_eq!(view.rows[3].detail, "Controller · Nicht gekoppelt");
-        assert_eq!(pages.view().rows[3].detail, "Kopple …");
-        // Zweimal drücken startet keinen zweiten Auftrag
+        assert_eq!(view.rows[3].detail, "Controller · Not paired");
+        assert_eq!(pages.view().rows[3].detail, "Pairing …");
+        // Pressing twice starts no second request
         assert!(pages.apply(Action::Confirm).is_empty());
         let notices = run(&mut pages, &mut fake, requests);
-        assert_eq!(notices[0].title, "Gekoppelt: Xbox Wireless Controller");
-        // Die Zeile ist nach oben gewandert, der Fokus ist mitgekommen
+        assert_eq!(notices[0].title, "Paired: Xbox Wireless Controller");
+        // The row moved up and the focus came along
         assert_eq!(pages.view().rows[pages.focus].title, "Xbox Wireless Controller");
-        assert_eq!(pages.confirm_label(), Some("Trennen"));
-        // Entfernen braucht zwei Drücke
+        assert_eq!(pages.confirm_label(), Some("Disconnect"));
+        // Removing needs two presses
         assert!(pages.apply(Action::Menu).is_empty());
-        assert_eq!(pages.menu_label(), Some("Wirklich entfernen"));
+        assert_eq!(pages.menu_label(), Some("Really remove"));
         assert!(pages.view().rows[pages.focus].armed);
         let requests = pages.apply(Action::Menu);
         assert!(matches!(&requests[..], [Request::BtRemove { .. }]));
         let notices = run(&mut pages, &mut fake, requests);
-        assert_eq!(notices[0].title, "Gerät entfernt");
+        assert_eq!(notices[0].title, "Device removed");
     }
 
     #[test]
@@ -750,8 +751,8 @@ mod tests {
         assert_eq!(pages.menu_label(), None);
         let requests = pages.apply(Action::Confirm);
         let notices = run(&mut pages, &mut fake, requests);
-        assert_eq!(notices[0].title, "Kopplung fehlgeschlagen");
-        // Rückfrage verfällt bei jeder anderen Eingabe
+        assert_eq!(notices[0].title, "Pairing failed");
+        // The confirmation expires on any other input
         pages.focus = 1;
         pages.apply(Action::Menu);
         pages.apply(Action::Down);

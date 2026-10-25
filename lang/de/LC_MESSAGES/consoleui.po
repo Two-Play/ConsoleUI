@@ -1,0 +1,673 @@
+# German translation of ConsoleUI (Story 6.6).
+# English is the source language. This one catalog serves both sides: Slint bundles it for @tr()
+# in the .slint files (crates/shell/build.rs), consoleui_core::i18n embeds it for strings built in
+# Rust. The test `i18n::tests::catalog_matches_sources` fails on missing or stale messages.
+# Placeholders: {} next argument, {0}/{1} a specific one, {n} the count of a plural.
+msgid ""
+msgstr ""
+"Language: de\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+# --- Tabs, titles and common hints ---
+
+msgid "Home"
+msgstr "Home"
+
+msgid "Library"
+msgstr "Bibliothek"
+
+msgid "Settings"
+msgstr "Einstellungen"
+
+msgid "Search"
+msgstr "Suchen"
+
+msgid "Navigate"
+msgstr "Navigieren"
+
+msgid "Select"
+msgstr "Auswählen"
+
+msgid "Change"
+msgstr "Ändern"
+
+msgid "OK"
+msgstr "OK"
+
+msgid "Close"
+msgstr "Schließen"
+
+msgid "Back"
+msgstr "Zurück"
+
+msgid "Cancel"
+msgstr "Abbrechen"
+
+msgid "Confirm"
+msgstr "Bestätigen"
+
+msgid "Options"
+msgstr "Optionen"
+
+msgid "Filter"
+msgstr "Filter"
+
+msgid "Open"
+msgstr "Öffnen"
+
+msgid "Play"
+msgstr "Spielen"
+
+msgid "Resume"
+msgstr "Fortsetzen"
+
+msgid "Quit"
+msgstr "Beenden"
+
+msgid "Quit shell"
+msgstr "Shell beenden"
+
+msgid "Open library"
+msgstr "Bibliothek öffnen"
+
+msgid "Control center"
+msgstr "Steuerzentrale"
+
+msgid "Go to Home"
+msgstr "Zur Übersicht"
+
+msgid "Ctrl+Q"
+msgstr "Strg+Q"
+
+# --- Tiles and library ---
+
+msgid "GAME"
+msgstr "SPIEL"
+
+msgid "APP"
+msgstr "APP"
+
+msgid "ALL APPS"
+msgstr "ALLE APPS"
+
+msgid "RUNNING"
+msgstr "LÄUFT"
+
+msgid "Running now"
+msgstr "Läuft gerade"
+
+msgid "{n} game or app"
+msgid_plural "{n} games and apps"
+msgstr[0] "{n} Spiel oder App"
+msgstr[1] "{n} Spiele und Apps"
+
+msgid "{n} item"
+msgid_plural "{n} items"
+msgstr[0] "{n} Eintrag"
+msgstr[1] "{n} Einträge"
+
+msgid "Filter: {}"
+msgstr "Filter: {}"
+
+msgid "Sort: {}"
+msgstr "Sortierung: {}"
+
+msgid "Nothing here for this filter."
+msgstr "Keine Einträge für diesen Filter."
+
+msgid "All"
+msgstr "Alle"
+
+msgid "Games"
+msgstr "Spiele"
+
+msgid "Apps"
+msgstr "Apps"
+
+msgid "Hidden"
+msgstr "Ausgeblendet"
+
+msgid "Recently used"
+msgstr "Zuletzt genutzt"
+
+msgid "Last played: today"
+msgstr "Zuletzt gespielt: heute"
+
+msgid "Last opened: today"
+msgstr "Zuletzt geöffnet: heute"
+
+msgid "Last played: yesterday"
+msgstr "Zuletzt gespielt: gestern"
+
+msgid "Last opened: yesterday"
+msgstr "Zuletzt geöffnet: gestern"
+
+msgid "Last played: {n} day ago"
+msgid_plural "Last played: {n} days ago"
+msgstr[0] "Zuletzt gespielt: vor {n} Tag"
+msgstr[1] "Zuletzt gespielt: vor {n} Tagen"
+
+msgid "Last opened: {n} day ago"
+msgid_plural "Last opened: {n} days ago"
+msgstr[0] "Zuletzt geöffnet: vor {n} Tag"
+msgstr[1] "Zuletzt geöffnet: vor {n} Tagen"
+
+msgid "Last played: {}"
+msgstr "Zuletzt gespielt: am {}"
+
+msgid "Last opened: {}"
+msgstr "Zuletzt geöffnet: am {}"
+
+msgid "%b %-d, %Y"
+msgstr "%d.%m.%Y"
+
+# --- Dummy entries (--dummy) ---
+
+msgid "Space racer"
+msgstr "Weltraum-Rennspiel"
+
+msgid "Action RPG"
+msgstr "Action-Rollenspiel"
+
+msgid "City builder"
+msgstr "Aufbau-Simulation"
+
+msgid "Survival"
+msgstr "Survival"
+
+msgid "Arcade"
+msgstr "Arcade"
+
+msgid "Adventure"
+msgstr "Abenteuer"
+
+msgid "Strategy"
+msgstr "Strategie"
+
+msgid "Media"
+msgstr "Mediathek"
+
+msgid "Movies & shows"
+msgstr "Filme & Serien"
+
+msgid "Music"
+msgstr "Musik"
+
+msgid "Playback"
+msgstr "Wiedergabe"
+
+msgid "Browser"
+msgstr "Browser"
+
+msgid "Browse the web"
+msgstr "Im Web surfen"
+
+msgid "Gallery"
+msgstr "Galerie"
+
+msgid "Screenshots & clips"
+msgstr "Screenshots & Clips"
+
+msgid "System"
+msgstr "System"
+
+# --- Context menu ---
+
+msgid "Pin"
+msgstr "Anheften"
+
+msgid "Unpin"
+msgstr "Lösen"
+
+msgid "Hide"
+msgstr "Ausblenden"
+
+msgid "Show again"
+msgstr "Wieder anzeigen"
+
+# --- Search and on-screen keyboard ---
+
+msgid "Search games and apps"
+msgstr "Spiele und Apps suchen"
+
+msgid "No results"
+msgstr "Keine Treffer"
+
+msgid "{n} result"
+msgid_plural "{n} results"
+msgstr[0] "{n} Treffer"
+msgstr[1] "{n} Treffer"
+
+msgid "Type"
+msgstr "Eingeben"
+
+msgid "Delete"
+msgstr "Löschen"
+
+msgid "Space"
+msgstr "Leerzeichen"
+
+msgid "Done"
+msgstr "Fertig"
+
+msgid "Type or pick keys"
+msgstr "Tippen oder Tasten wählen"
+
+msgid "Back to keyboard"
+msgstr "Zur Tastatur"
+
+# --- Launching and quitting ---
+
+msgid "Starting …"
+msgstr "wird gestartet …"
+
+msgid "Running"
+msgstr "läuft"
+
+msgid "Couldn't start"
+msgstr "konnte nicht gestartet werden"
+
+msgid "Launch failed"
+msgstr "Start fehlgeschlagen"
+
+msgid "Quit {}?"
+msgstr "{} beenden?"
+
+msgid "Unsaved progress may be lost."
+msgstr "Nicht gespeicherter Fortschritt kann verloren gehen."
+
+# --- Quick menu ---
+
+msgid "CONTROL CENTER"
+msgstr "STEUERZENTRALE"
+
+msgid "CONTROL CENTER · {}"
+msgstr "STEUERZENTRALE · {}"
+
+msgid "Volume"
+msgstr "Lautstärke"
+
+msgid "Mute"
+msgstr "Stumm"
+
+msgid "Muted"
+msgstr "Stumm"
+
+msgid "not available"
+msgstr "nicht verfügbar"
+
+msgid "Sleep"
+msgstr "Standby"
+
+msgid "Restart"
+msgstr "Neustart"
+
+msgid "Power off"
+msgstr "Ausschalten"
+
+msgid "Sign out"
+msgstr "Abmelden"
+
+msgid "Really?"
+msgstr "Wirklich?"
+
+# --- Notices ---
+
+msgid "Controller connected"
+msgstr "Controller verbunden"
+
+msgid "Controller disconnected"
+msgstr "Controller getrennt"
+
+msgid "Controller battery low"
+msgstr "Controller-Akku schwach"
+
+msgid "{} % left"
+msgstr "Noch {} %"
+
+# --- Settings page ---
+
+msgid "Accent color"
+msgstr "Akzentfarbe"
+
+msgid "Color of selection and buttons"
+msgstr "Farbe für Auswahl und Buttons"
+
+msgid "Animations"
+msgstr "Animationen"
+
+msgid "Transitions and motion"
+msgstr "Übergänge und Bewegungen"
+
+msgid "Sounds"
+msgstr "Klänge"
+
+msgid "Sounds while navigating"
+msgstr "Klänge beim Navigieren"
+
+msgid "Button symbols"
+msgstr "Tastensymbole"
+
+msgid "Symbols in the button hints"
+msgstr "Symbole in den Hinweisen"
+
+msgid "Language"
+msgstr "Sprache"
+
+msgid "Language of the interface"
+msgstr "Sprache der Oberfläche"
+
+msgid "Show and join networks"
+msgstr "Netzwerke anzeigen und verbinden"
+
+msgid "Pair controllers and other devices"
+msgstr "Controller und andere Geräte koppeln"
+
+msgid "Automatic"
+msgstr "Automatisch"
+
+msgid "On"
+msgstr "An"
+
+msgid "Off"
+msgstr "Aus"
+
+msgid "White"
+msgstr "Weiß"
+
+msgid "Blue"
+msgstr "Blau"
+
+msgid "Violet"
+msgstr "Violett"
+
+msgid "Green"
+msgstr "Grün"
+
+msgid "Orange"
+msgstr "Orange"
+
+msgid "Red"
+msgstr "Rot"
+
+msgid "Saved automatically: {}"
+msgstr "Wird automatisch gespeichert: {}"
+
+msgid "Settings are not saved"
+msgstr "Einstellungen werden nicht gespeichert"
+
+# --- Wi-Fi and Bluetooth ---
+
+msgid "Wi-Fi"
+msgstr "WLAN"
+
+msgid "Bluetooth"
+msgstr "Bluetooth"
+
+msgid "Unavailable"
+msgstr "Nicht verfügbar"
+
+msgid "No adapter"
+msgstr "Kein Adapter"
+
+msgid "Not connected"
+msgstr "Nicht verbunden"
+
+msgid "Connected"
+msgstr "Verbunden"
+
+msgid "Connected to {}"
+msgstr "Verbunden mit {}"
+
+msgid "Disconnected"
+msgstr "Getrennt"
+
+msgid "{n} device connected"
+msgid_plural "{n} devices connected"
+msgstr[0] "{n} Gerät verbunden"
+msgstr[1] "{n} Geräte verbunden"
+
+msgid "Turn on"
+msgstr "Einschalten"
+
+msgid "Turn off"
+msgstr "Ausschalten"
+
+msgid "Connect"
+msgstr "Verbinden"
+
+msgid "Disconnect"
+msgstr "Trennen"
+
+msgid "Pair"
+msgstr "Koppeln"
+
+msgid "Paired"
+msgstr "Gekoppelt"
+
+msgid "Not paired"
+msgstr "Nicht gekoppelt"
+
+msgid "Remove"
+msgstr "Entfernen"
+
+msgid "Really remove"
+msgstr "Wirklich entfernen"
+
+msgid "Press again to remove"
+msgstr "Zum Entfernen nochmal drücken"
+
+msgid "Scan again"
+msgstr "Neu suchen"
+
+msgid "Find devices"
+msgstr "Geräte suchen"
+
+msgid "Stop search"
+msgstr "Suche beenden"
+
+msgid "Show password"
+msgstr "Anzeigen"
+
+msgid "Hide password"
+msgstr "Verbergen"
+
+msgid "Password"
+msgstr "Passwort"
+
+msgid "for “{}”"
+msgstr "für „{}“"
+
+msgid "Enter the Wi-Fi password"
+msgstr "WLAN-Passwort eingeben"
+
+msgid "⇧ switches to upper case and symbols. “Done” connects."
+msgstr "⇧ schaltet auf Großbuchstaben und Sonderzeichen um. „Fertig“ verbindet."
+
+msgid "Saved"
+msgstr "Gespeichert"
+
+msgid "Secured"
+msgstr "Gesichert"
+
+msgid "Unsecured"
+msgstr "Offen"
+
+msgid "Loading …"
+msgstr "Wird geladen …"
+
+msgid "Connecting …"
+msgstr "Verbinde …"
+
+msgid "Disconnecting …"
+msgstr "Trenne …"
+
+msgid "Pairing …"
+msgstr "Kopple …"
+
+msgid "Removing …"
+msgstr "Entferne …"
+
+msgid "Searching …"
+msgstr "Suche …"
+
+msgid "Please wait …"
+msgstr "Bitte warten …"
+
+msgid "{} · Searching …"
+msgstr "{} · Suche …"
+
+msgid "Searching for devices …"
+msgstr "Suche nach Geräten …"
+
+msgid "Wi-Fi is off"
+msgstr "WLAN ist ausgeschaltet"
+
+msgid "Bluetooth is off"
+msgstr "Bluetooth ist ausgeschaltet"
+
+msgid "Turn the radio on or off"
+msgstr "Funk ein- oder ausschalten"
+
+msgid "Adapter {}"
+msgstr "Adapter {}"
+
+msgid "{} (simulated)"
+msgstr "{} (simuliert)"
+
+msgid "Turn it on above to see networks."
+msgstr "Schalte es oben ein, um Netzwerke zu sehen."
+
+msgid "Turn it on above to pair controllers."
+msgstr "Schalte es oben ein, um Controller zu koppeln."
+
+msgid "No networks found"
+msgstr "Keine Netzwerke gefunden"
+
+msgid "Scan again or move closer to the router."
+msgstr "Suche neu oder geh näher an den Router."
+
+msgid "No devices"
+msgstr "Keine Geräte"
+
+msgid "Start a search and put the controller in pairing mode (DualSense: hold PS + Create, Xbox: pairing button)."
+msgstr "Starte die Suche und versetze den Controller in den Kopplungsmodus (DualSense: PS + Create gedrückt halten, Xbox: Pairing-Taste)."
+
+msgid "Can't reach NetworkManager"
+msgstr "NetworkManager nicht erreichbar"
+
+msgid "Can't reach Bluetooth"
+msgstr "Bluetooth nicht erreichbar"
+
+msgid "No Wi-Fi adapter"
+msgstr "Kein WLAN-Adapter"
+
+msgid "This device has no Wi-Fi adapter. A wired connection still works."
+msgstr "Dieses Gerät hat keinen WLAN-Adapter. Eine Verbindung per Kabel funktioniert weiterhin."
+
+msgid "No Bluetooth adapter"
+msgstr "Kein Bluetooth-Adapter"
+
+msgid "No Bluetooth adapter was found."
+msgstr "Es wurde kein Bluetooth-Adapter gefunden."
+
+msgid "Controller"
+msgstr "Controller"
+
+msgid "Audio"
+msgstr "Audio"
+
+msgid "Keyboard"
+msgstr "Tastatur"
+
+msgid "Mouse"
+msgstr "Maus"
+
+msgid "Phone"
+msgstr "Telefon"
+
+msgid "Computer"
+msgstr "Computer"
+
+msgid "Device"
+msgstr "Gerät"
+
+# --- Wi-Fi and Bluetooth notices and errors ---
+
+msgid "Connection failed"
+msgstr "Verbindung fehlgeschlagen"
+
+msgid "{}: {}"
+msgstr "{}: {}"
+
+msgid "Wi-Fi disconnected"
+msgstr "WLAN getrennt"
+
+msgid "Paired: {}"
+msgstr "Gekoppelt: {}"
+
+msgid "Pairing failed"
+msgstr "Kopplung fehlgeschlagen"
+
+msgid "Device removed"
+msgstr "Gerät entfernt"
+
+msgid "Disconnecting failed"
+msgstr "Trennen fehlgeschlagen"
+
+msgid "Removing failed"
+msgstr "Entfernen fehlgeschlagen"
+
+msgid "Wi-Fi scan failed"
+msgstr "WLAN-Suche fehlgeschlagen"
+
+msgid "Bluetooth search failed"
+msgstr "Bluetooth-Suche fehlgeschlagen"
+
+msgid "Couldn't switch Wi-Fi"
+msgstr "WLAN lässt sich nicht schalten"
+
+msgid "Couldn't switch Bluetooth"
+msgstr "Bluetooth lässt sich nicht schalten"
+
+msgid "Can't reach the system bus: {}"
+msgstr "System-Bus nicht erreichbar: {}"
+
+msgid "Network no longer visible"
+msgstr "Netz nicht mehr sichtbar"
+
+msgid "Network not found"
+msgstr "Netz nicht gefunden"
+
+msgid "Device not found"
+msgstr "Gerät nicht gefunden"
+
+msgid "Device is gone"
+msgstr "Gerät nicht mehr da"
+
+msgid "WEP is not supported"
+msgstr "WEP wird nicht unterstützt"
+
+msgid "WPA Enterprise is not supported"
+msgstr "WPA-Enterprise wird nicht unterstützt"
+
+msgid "Password required"
+msgstr "Passwort erforderlich"
+
+msgid "Wrong password"
+msgstr "Falsches Passwort"
+
+msgid "Connection refused (wrong password?)"
+msgstr "Verbindung abgelehnt (Passwort falsch?)"
+
+msgid "Timed out"
+msgstr "Zeitüberschreitung"
+
+msgid "BlueZ is not running"
+msgstr "BlueZ läuft nicht"
+
+msgid "Authentication failed"
+msgstr "Authentifizierung fehlgeschlagen"

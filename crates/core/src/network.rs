@@ -1,32 +1,33 @@
-//! Anbindung von WLAN und Bluetooth (Stories 5.3/5.4): Aufträge an ein Backend, das in einem
-//! eigenen Thread läuft, und die Antworten zurück an die UI. Das echte Backend (NetworkManager
-//! und BlueZ über D-Bus) steckt in der Shell, das simulierte in [`crate::fakenet`].
+//! Wi-Fi and Bluetooth (Stories 5.3/5.4): requests to a backend that runs on its own thread, and
+//! the responses back to the UI. The real backend (NetworkManager and BlueZ over D-Bus) lives in
+//! the shell, the simulated one in [`crate::fakenet`].
 
 use std::sync::mpsc::{self, Receiver, Sender};
 
 use crate::bluetooth::BluetoothState;
+use crate::i18n::{tr, trf};
 use crate::wifi::WifiState;
 
-/// Ein Auftrag an das Backend. Alles außer `Refresh` ändert den Systemzustand.
+/// A request to the backend. Everything except `Refresh` changes the system state.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Request {
-    /// WLAN- und Bluetooth-Zustand neu lesen
+    /// Read the Wi-Fi and Bluetooth state again
     Refresh,
     WifiEnable(bool),
     WifiScan,
-    /// Ohne Passwort: offenes Netz oder gespeichertes Profil
+    /// Without a password: open network or saved profile
     WifiConnect { ssid: String, password: Option<String> },
     WifiDisconnect { ssid: String },
     BtPower(bool),
     BtDiscovery(bool),
-    /// Koppeln, vertrauen und verbinden
+    /// Pair, trust and connect
     BtPair { address: String, name: String },
     BtConnect { address: String, name: String },
     BtDisconnect { address: String, name: String },
     BtRemove { address: String, name: String },
 }
 
-/// Hinweis für die UI (wird als Toast angezeigt)
+/// Notice for the UI (shown as a toast)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Notice {
     pub symbol: &'static str,
@@ -41,7 +42,7 @@ impl Notice {
 }
 
 impl Request {
-    /// SSID bzw. Geräteadresse, an der die Seite „läuft gerade …“ anzeigt
+    /// SSID or device address where the page shows "in progress …"
     pub fn target(&self) -> Option<&str> {
         match self {
             Self::WifiConnect { ssid, .. } | Self::WifiDisconnect { ssid } => Some(ssid),
@@ -53,64 +54,65 @@ impl Request {
         }
     }
 
-    /// Text in der Zeile, solange der Auftrag läuft
+    /// Text in the row while the request runs
     pub fn busy_label(&self) -> &'static str {
         match self {
-            Self::WifiConnect { .. } | Self::BtConnect { .. } => "Verbinde …",
-            Self::WifiDisconnect { .. } | Self::BtDisconnect { .. } => "Trenne …",
-            Self::BtPair { .. } => "Kopple …",
-            Self::BtRemove { .. } => "Entferne …",
-            Self::WifiScan | Self::BtDiscovery(true) => "Suche …",
-            _ => "Bitte warten …",
+            Self::WifiConnect { .. } | Self::BtConnect { .. } => tr("Connecting …"),
+            Self::WifiDisconnect { .. } | Self::BtDisconnect { .. } => tr("Disconnecting …"),
+            Self::BtPair { .. } => tr("Pairing …"),
+            Self::BtRemove { .. } => tr("Removing …"),
+            Self::WifiScan | Self::BtDiscovery(true) => tr("Searching …"),
+            _ => tr("Please wait …"),
         }
     }
 
-    /// Hinweis nach dem Auftrag; Erfolge ohne sichtbare Wirkung bleiben still.
+    /// Notice after the request; successes without a visible effect stay silent.
     pub fn notice(&self, result: &Result<(), String>) -> Option<Notice> {
         let ok = result.is_ok();
         let err = result.as_ref().err().map(String::as_str).unwrap_or_default();
         Some(match self {
             Self::Refresh => return None,
-            Self::WifiConnect { ssid, .. } if ok => Notice::new("✓", format!("Verbunden mit {ssid}"), "WLAN"),
-            Self::WifiConnect { ssid, .. } => Notice::new("⚠", "Verbindung fehlgeschlagen", format!("{ssid}: {err}")),
-            Self::WifiDisconnect { ssid } if ok => Notice::new("✓", "WLAN getrennt", ssid.clone()),
-            Self::BtPair { name, .. } if ok => Notice::new("✓", format!("Gekoppelt: {name}"), "Bluetooth"),
-            Self::BtPair { name, .. } => Notice::new("⚠", "Kopplung fehlgeschlagen", format!("{name}: {err}")),
-            Self::BtConnect { name, .. } if ok => Notice::new("✓", format!("Verbunden mit {name}"), "Bluetooth"),
-            Self::BtConnect { name, .. } => Notice::new("⚠", "Verbindung fehlgeschlagen", format!("{name}: {err}")),
-            Self::BtDisconnect { name, .. } if ok => Notice::new("✓", "Getrennt", name.clone()),
-            Self::BtRemove { name, .. } if ok => Notice::new("✓", "Gerät entfernt", name.clone()),
+            Self::WifiConnect { ssid, .. } if ok => Notice::new("✓", trf("Connected to {}", &[ssid]), tr("Wi-Fi")),
+            Self::WifiConnect { ssid, .. } => {
+                Notice::new("⚠", tr("Connection failed"), trf("{}: {}", &[ssid, &err]))
+            }
+            Self::WifiDisconnect { ssid } if ok => Notice::new("✓", tr("Wi-Fi disconnected"), ssid.clone()),
+            Self::BtPair { name, .. } if ok => Notice::new("✓", trf("Paired: {}", &[name]), tr("Bluetooth")),
+            Self::BtPair { name, .. } => Notice::new("⚠", tr("Pairing failed"), trf("{}: {}", &[name, &err])),
+            Self::BtConnect { name, .. } if ok => Notice::new("✓", trf("Connected to {}", &[name]), tr("Bluetooth")),
+            Self::BtConnect { name, .. } => Notice::new("⚠", tr("Connection failed"), trf("{}: {}", &[name, &err])),
+            Self::BtDisconnect { name, .. } if ok => Notice::new("✓", tr("Disconnected"), name.clone()),
+            Self::BtRemove { name, .. } if ok => Notice::new("✓", tr("Device removed"), name.clone()),
             _ if ok => return None,
-            Self::WifiDisconnect { .. } | Self::BtDisconnect { .. } => Notice::new("⚠", "Trennen fehlgeschlagen", err),
-            Self::BtRemove { .. } => Notice::new("⚠", "Entfernen fehlgeschlagen", err),
-            Self::WifiScan => Notice::new("⚠", "WLAN-Suche fehlgeschlagen", err),
-            Self::BtDiscovery(_) => Notice::new("⚠", "Bluetooth-Suche fehlgeschlagen", err),
-            Self::WifiEnable(_) => Notice::new("⚠", "WLAN lässt sich nicht schalten", err),
-            Self::BtPower(_) => Notice::new("⚠", "Bluetooth lässt sich nicht schalten", err),
+            Self::WifiDisconnect { .. } | Self::BtDisconnect { .. } => Notice::new("⚠", tr("Disconnecting failed"), err),
+            Self::BtRemove { .. } => Notice::new("⚠", tr("Removing failed"), err),
+            Self::WifiScan => Notice::new("⚠", tr("Wi-Fi scan failed"), err),
+            Self::BtDiscovery(_) => Notice::new("⚠", tr("Bluetooth search failed"), err),
+            Self::WifiEnable(_) => Notice::new("⚠", tr("Couldn't switch Wi-Fi"), err),
+            Self::BtPower(_) => Notice::new("⚠", tr("Couldn't switch Bluetooth"), err),
         })
     }
 }
 
-/// Antwort des Backend-Threads
+/// Response of the backend thread
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Response {
     Wifi(Result<WifiState, String>),
     Bluetooth(Result<BluetoothState, String>),
-    /// Ein Auftrag (nicht `Refresh`) ist fertig
+    /// A request (not `Refresh`) is done
     Done(Request, Result<(), String>),
 }
 
-/// NetworkManager/BlueZ oder die Simulation. Läuft im Backend-Thread, darf also blockieren.
+/// NetworkManager/BlueZ or the simulation. Runs on the backend thread, so it may block.
 pub trait Backend: Send {
     fn wifi(&mut self) -> Result<WifiState, String>;
     fn bluetooth(&mut self) -> Result<BluetoothState, String>;
-    /// Führt einen Auftrag außer `Refresh` aus.
+    /// Runs a request other than `Refresh`.
     fn execute(&mut self, request: &Request) -> Result<(), String>;
 }
 
-/// Startet den Backend-Thread. Aufträge, die sich während eines laufenden Auftrags (z. B. einer
-/// Kopplung) ansammeln, werden zusammengefasst: mehrere `Refresh` ergeben nur ein Neulesen.
-/// Nach jedem Schub kommen beide Zustände zurück.
+/// Starts the backend thread. Requests that pile up while one runs (e.g. a pairing) are batched:
+/// several `Refresh` give a single read. After every batch both states come back.
 pub fn spawn(mut backend: Box<dyn Backend>) -> (Sender<Request>, Receiver<Response>) {
     let (request_tx, request_rx) = mpsc::channel::<Request>();
     let (response_tx, response_rx) = mpsc::channel();
@@ -122,7 +124,7 @@ pub fn spawn(mut backend: Box<dyn Backend>) -> (Sender<Request>, Receiver<Respon
                 for request in batch.into_iter().filter(|r| *r != Request::Refresh) {
                     let result = backend.execute(&request);
                     if let Err(err) = &result {
-                        eprintln!("Netzwerk-Auftrag {request:?} fehlgeschlagen: {err}");
+                        eprintln!("Network request {request:?} failed: {err}");
                     }
                     if response_tx.send(Response::Done(request, result)).is_err() {
                         return;
@@ -135,7 +137,7 @@ pub fn spawn(mut backend: Box<dyn Backend>) -> (Sender<Request>, Receiver<Respon
                 }
             }
         })
-        .expect("Netzwerk-Thread lässt sich nicht starten");
+        .expect("cannot start the network thread");
     (request_tx, response_rx)
 }
 
@@ -148,11 +150,11 @@ mod tests {
     #[test]
     fn notices() {
         let connect = Request::WifiConnect { ssid: "Zuhause".into(), password: None };
-        assert_eq!(connect.notice(&Ok(())).unwrap().title, "Verbunden mit Zuhause");
-        let failed = connect.notice(&Err("Falsches Passwort".into())).unwrap();
-        assert_eq!((failed.title.as_str(), failed.text.as_str()), ("Verbindung fehlgeschlagen", "Zuhause: Falsches Passwort"));
+        assert_eq!(connect.notice(&Ok(())).unwrap().title, "Connected to Zuhause");
+        let failed = connect.notice(&Err("Wrong password".into())).unwrap();
+        assert_eq!((failed.title.as_str(), failed.text.as_str()), ("Connection failed", "Zuhause: Wrong password"));
         let pair = Request::BtPair { address: "A".into(), name: "8BitDo".into() };
-        assert_eq!(pair.notice(&Err("x".into())).unwrap().title, "Kopplung fehlgeschlagen");
+        assert_eq!(pair.notice(&Err("x".into())).unwrap().title, "Pairing failed");
         assert_eq!(Request::WifiScan.notice(&Ok(())), None);
         assert_eq!(Request::Refresh.notice(&Err("x".into())), None);
         assert_eq!(pair.target(), Some("A"));

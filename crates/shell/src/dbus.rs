@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use consoleui_core::bluetooth::{self, Adapter, BluetoothState, BtDevice};
+use consoleui_core::i18n::{tr, trf};
 use consoleui_core::network::{Backend, Request};
 use consoleui_core::wifi::{self, AccessPoint, WifiState};
 use serde::de::DeserializeOwned;
@@ -103,7 +104,7 @@ fn get<T: TryFrom<OwnedValue>>(props: &Props, key: &str) -> Option<T> {
 impl DbusBackend {
     fn bus(&mut self) -> Result<&Connection, String> {
         if self.connection.is_none() {
-            self.connection = Some(Connection::system().map_err(|e| format!("System-Bus nicht erreichbar: {e}"))?);
+            self.connection = Some(Connection::system().map_err(|e| trf("Can't reach the system bus: {}", &[&e]))?);
         }
         Ok(self.connection.as_ref().expect("gerade gesetzt"))
     }
@@ -203,7 +204,7 @@ impl DbusBackend {
     }
 
     fn wifi_device(&self) -> Result<OwnedObjectPath, String> {
-        self.wifi_device.clone().ok_or_else(|| "Kein WLAN-Adapter".to_string())
+        self.wifi_device.clone().ok_or_else(|| tr("No Wi-Fi adapter").to_string())
     }
 
     fn connect_wifi(&mut self, ssid: &str, password: Option<&str>) -> Result<(), String> {
@@ -218,7 +219,7 @@ impl DbusBackend {
             }
             (existing, _) => {
                 let (ap, security) =
-                    self.access_points.get(ssid).cloned().ok_or_else(|| "Netz nicht mehr sichtbar".to_string())?;
+                    self.access_points.get(ssid).cloned().ok_or_else(|| tr("Network no longer visible").to_string())?;
                 let mut settings: HashMap<&str, HashMap<&str, Value<'_>>> = HashMap::new();
                 settings.insert(
                     "connection",
@@ -229,11 +230,11 @@ impl DbusBackend {
                     Security::Open => None,
                     Security::WpaPsk => Some("wpa-psk"),
                     Security::Sae => Some("sae"),
-                    Security::Wep => return Err("WEP wird nicht unterstützt".into()),
-                    Security::Enterprise => return Err("WPA-Enterprise wird nicht unterstützt".into()),
+                    Security::Wep => return Err(tr("WEP is not supported").into()),
+                    Security::Enterprise => return Err(tr("WPA Enterprise is not supported").into()),
                 };
                 if let Some(key_mgmt) = key_mgmt {
-                    let psk = password.ok_or_else(|| "Passwort erforderlich".to_string())?;
+                    let psk = password.ok_or_else(|| tr("Password required").to_string())?;
                     settings.insert(
                         "802-11-wireless-security",
                         HashMap::from([("key-mgmt", Value::from(key_mgmt)), ("psk", Value::from(psk))]),
@@ -262,11 +263,11 @@ impl DbusBackend {
         while started.elapsed() < ACTIVATION_TIMEOUT {
             match self.get_all(NM, active.as_str(), NM_ACTIVE).ok().and_then(|p| get::<u32>(&p, "State")) {
                 Some(2) => return Ok(()),
-                Some(3 | 4) | None => return Err("Verbindung abgelehnt (Passwort falsch?)".into()),
+                Some(3 | 4) | None => return Err(tr("Connection refused (wrong password?)").into()),
                 _ => std::thread::sleep(Duration::from_millis(300)),
             }
         }
-        Err("Zeitüberschreitung".into())
+        Err(tr("Timed out").into())
     }
 
     // --- BlueZ -----------------------------------------------------------------------------
@@ -274,7 +275,7 @@ impl DbusBackend {
     fn read_bluetooth(&mut self) -> Result<BluetoothState, String> {
         let objects: ManagedObjects = self
             .call(BLUEZ, "/", "org.freedesktop.DBus.ObjectManager", "GetManagedObjects", &())
-            .map_err(|e| if e.contains("ServiceUnknown") { "BlueZ läuft nicht".into() } else { e })?;
+            .map_err(|e| if e.contains("ServiceUnknown") { tr("BlueZ is not running").into() } else { e })?;
         let mut adapters: Vec<(&OwnedObjectPath, &Props)> =
             objects.iter().filter_map(|(path, ifaces)| Some((path, ifaces.get(BLUEZ_ADAPTER)?))).collect();
         adapters.sort_by(|a, b| a.0.as_str().cmp(b.0.as_str()));
@@ -317,11 +318,11 @@ impl DbusBackend {
     }
 
     fn adapter(&self) -> Result<String, String> {
-        self.adapter.as_ref().map(|p| p.to_string()).ok_or_else(|| "Kein Bluetooth-Adapter".to_string())
+        self.adapter.as_ref().map(|p| p.to_string()).ok_or_else(|| tr("No Bluetooth adapter").to_string())
     }
 
     fn device(&self, address: &str) -> Result<String, String> {
-        self.devices.get(address).map(|p| p.to_string()).ok_or_else(|| "Gerät nicht mehr da".to_string())
+        self.devices.get(address).map(|p| p.to_string()).ok_or_else(|| tr("Device is gone").to_string())
     }
 
     /// Eigener Kopplungs-Agent ohne Ein-/Ausgabe (Controller koppeln per „Just Works“). BlueZ fragt

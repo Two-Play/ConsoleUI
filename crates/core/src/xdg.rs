@@ -1,4 +1,4 @@
-//! XDG-Pfade und Spracheinstellungen aus der Umgebung.
+//! XDG paths and language settings from the environment.
 
 use std::env;
 use std::path::PathBuf;
@@ -22,7 +22,7 @@ pub fn config_home() -> Option<PathBuf> {
     from_env_or_home("XDG_CONFIG_HOME", ".config")
 }
 
-/// `$XDG_DATA_HOME` gefolgt von `$XDG_DATA_DIRS`, nach Priorität sortiert und ohne Duplikate.
+/// `$XDG_DATA_HOME` followed by `$XDG_DATA_DIRS`, by priority and without duplicates.
 pub fn data_dirs() -> Vec<PathBuf> {
     let system = env::var("XDG_DATA_DIRS")
         .ok()
@@ -37,7 +37,7 @@ pub fn data_dirs() -> Vec<PathBuf> {
     dirs
 }
 
-/// Sprachcodes für lokalisierte `.desktop`-Schlüssel, z. B. `["de_DE", "de"]`.
+/// Locale codes for localized `.desktop` keys, e.g. `["de_DE", "de"]`.
 pub fn languages() -> Vec<String> {
     ["LC_ALL", "LC_MESSAGES", "LANG"]
         .iter()

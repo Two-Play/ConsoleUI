@@ -3,6 +3,7 @@ use std::error::Error;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
+use consoleui_core::i18n::{self, tr};
 use consoleui_core::input::GlyphStyle;
 use consoleui_core::settings::{GlyphChoice, Settings};
 use consoleui_core::status::{self, Network};
@@ -61,8 +62,16 @@ fn main() -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
 
+    // The language decides the desktop entry names the loader reads, so it is set first.
+    let settings_path = Settings::default_path();
+    let settings = settings_path.as_deref().map(Settings::load).unwrap_or_default();
+    let language = settings.language.resolve();
+    i18n::set_language(language);
+
     let ui = AppWindow::new()?;
     ui.set_show_fps(options.show_fps || options.bench);
+    // Slint's translations exist only once a component has been created.
+    shell::select_language(language);
 
     // Die Bibliothek lädt im Hintergrund, während die Boot-Animation läuft.
     let library = loader::spawn(LoadOptions {
@@ -81,8 +90,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         None => None,
     };
     let overlay = gamescope.as_ref().map(|g| g.overlay.as_weak());
-    let settings_path = Settings::default_path();
-    let settings = settings_path.as_deref().map(Settings::load).unwrap_or_default();
     let shell = Rc::new(RefCell::new(Shell::new(&ui, gamescope, settings, settings_path)));
     if let Some(overlay) = overlay.and_then(|o| o.upgrade()) {
         overlay.on_action({
@@ -156,8 +163,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                 };
                 for connection in gamepads.borrow_mut().take_connections() {
                     let (title, name) = match connection {
-                        Connection::Connected(name) => ("Controller verbunden", name),
-                        Connection::Disconnected(name) => ("Controller getrennt", name),
+                        Connection::Connected(name) => (tr("Controller connected"), name),
+                        Connection::Disconnected(name) => (tr("Controller disconnected"), name),
                     };
                     shell.borrow_mut().toast(&ui, "◉", title, &name);
                 }
@@ -299,8 +306,8 @@ impl ReadyTasks {
             timer.start(TimerMode::SingleShot, snapshot_delay, move || {
                 if let Some(ui) = ui.upgrade() {
                     match ui.window().take_snapshot().map_err(Box::<dyn Error>::from).and_then(|px| save_png(&path, &px)) {
-                        Ok(()) => println!("Snapshot gespeichert: {}", path.display()),
-                        Err(err) => eprintln!("Snapshot fehlgeschlagen: {err}"),
+                        Ok(()) => println!("Snapshot saved: {}", path.display()),
+                        Err(err) => eprintln!("Snapshot failed: {err}"),
                     }
                 }
                 let _ = slint::quit_event_loop();
@@ -337,7 +344,7 @@ fn run_script(ui: &AppWindow, shell: Rc<RefCell<Shell>>, steps: Vec<ScriptStep>)
             Some(ScriptStep::Wait(ms)) => due = Instant::now() + Duration::from_millis(*ms),
             Some(ScriptStep::Action(action)) => shell.borrow_mut().apply(&ui, *action),
             // Entwicklungshilfe für Tests der Hinweise (auch über laufenden Apps)
-            Some(ScriptStep::Toast) => shell.borrow_mut().toast(&ui, "◆", "Testhinweis", "Aus --actions (Entwicklung)"),
+            Some(ScriptStep::Toast) => shell.borrow_mut().toast(&ui, "◆", "Test notice", "From --actions (development)"),
             None => return,
         }
         next += 1;

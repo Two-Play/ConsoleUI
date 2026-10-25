@@ -1,4 +1,4 @@
-//! Einstellungen der Shell, gespeichert in `$XDG_CONFIG_HOME/consoleui/settings.json`.
+//! Shell settings, stored in `$XDG_CONFIG_HOME/consoleui/settings.json`.
 
 use std::fs;
 use std::io;
@@ -6,9 +6,10 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::i18n::{LanguageChoice, tr};
 use crate::xdg;
 
-/// Farbe für Fokusrahmen, Buttons und ausgewählte Karten
+/// Color of focus frames, buttons and selected cards
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum Accent {
     #[default]
@@ -25,12 +26,12 @@ impl Accent {
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::White => "Weiß",
-            Self::Blue => "Blau",
-            Self::Violet => "Violett",
-            Self::Green => "Grün",
-            Self::Orange => "Orange",
-            Self::Red => "Rot",
+            Self::White => tr("White"),
+            Self::Blue => tr("Blue"),
+            Self::Violet => tr("Violet"),
+            Self::Green => tr("Green"),
+            Self::Orange => tr("Orange"),
+            Self::Red => tr("Red"),
         }
     }
 
@@ -46,10 +47,10 @@ impl Accent {
     }
 }
 
-/// Welche Tastensymbole angezeigt werden
+/// Which button symbols are shown
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum GlyphChoice {
-    /// Nach dem verbundenen Controller
+    /// According to the connected controller
     #[default]
     Auto,
     PlayStation,
@@ -61,7 +62,7 @@ impl GlyphChoice {
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::Auto => "Automatisch",
+            Self::Auto => tr("Automatic"),
             Self::PlayStation => "PlayStation",
             Self::Xbox => "Xbox",
         }
@@ -75,64 +76,75 @@ pub struct Settings {
     pub animations: bool,
     pub sounds: bool,
     pub glyphs: GlyphChoice,
+    pub language: LanguageChoice,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { accent: Accent::default(), animations: true, sounds: true, glyphs: GlyphChoice::default() }
+        Self {
+            accent: Accent::default(),
+            animations: true,
+            sounds: true,
+            glyphs: GlyphChoice::default(),
+            language: LanguageChoice::default(),
+        }
     }
 }
 
-/// Eine Zeile der Einstellungsseite
+/// A row of the settings page
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Setting {
     Accent,
     Animations,
     Sounds,
     Glyphs,
-    /// Öffnet die WLAN-Seite (Story 5.3)
+    /// Story 6.6
+    Language,
+    /// Opens the Wi-Fi page (Story 5.3)
     Wifi,
-    /// Öffnet die Bluetooth-Seite (Story 5.4)
+    /// Opens the Bluetooth page (Story 5.4)
     Bluetooth,
 }
 
 impl Setting {
-    pub const ALL: [Setting; 6] =
-        [Self::Accent, Self::Animations, Self::Sounds, Self::Glyphs, Self::Wifi, Self::Bluetooth];
+    pub const ALL: [Setting; 7] =
+        [Self::Accent, Self::Animations, Self::Sounds, Self::Glyphs, Self::Language, Self::Wifi, Self::Bluetooth];
 
-    /// Zeilen, die eine Unterseite öffnen, statt einen Wert zu ändern
+    /// Rows that open a sub-page instead of changing a value
     pub fn opens_page(self) -> bool {
         matches!(self, Self::Wifi | Self::Bluetooth)
     }
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::Accent => "Akzentfarbe",
-            Self::Animations => "Animationen",
-            Self::Sounds => "Klänge",
-            Self::Glyphs => "Tastensymbole",
-            Self::Wifi => "WLAN",
-            Self::Bluetooth => "Bluetooth",
+            Self::Accent => tr("Accent color"),
+            Self::Animations => tr("Animations"),
+            Self::Sounds => tr("Sounds"),
+            Self::Glyphs => tr("Button symbols"),
+            Self::Language => tr("Language"),
+            Self::Wifi => tr("Wi-Fi"),
+            Self::Bluetooth => tr("Bluetooth"),
         }
     }
 
     pub fn description(self) -> &'static str {
         match self {
-            Self::Accent => "Farbe für Auswahl und Buttons",
-            Self::Animations => "Übergänge und Bewegungen",
-            Self::Sounds => "Klänge beim Navigieren",
-            Self::Glyphs => "Symbole in den Hinweisen",
-            Self::Wifi => "Netzwerke anzeigen und verbinden",
-            Self::Bluetooth => "Controller und andere Geräte koppeln",
+            Self::Accent => tr("Color of selection and buttons"),
+            Self::Animations => tr("Transitions and motion"),
+            Self::Sounds => tr("Sounds while navigating"),
+            Self::Glyphs => tr("Symbols in the button hints"),
+            Self::Language => tr("Language of the interface"),
+            Self::Wifi => tr("Show and join networks"),
+            Self::Bluetooth => tr("Pair controllers and other devices"),
         }
     }
 }
 
 fn on_off(value: bool) -> &'static str {
-    if value { "An" } else { "Aus" }
+    if value { tr("On") } else { tr("Off") }
 }
 
-/// Nächster (`forward`) bzw. vorheriger Wert in einer Liste, mit Umlauf.
+/// Next (`forward`) or previous value in a list, wrapping around.
 fn cycle<T: Copy + PartialEq>(all: &[T], current: T, forward: bool) -> T {
     let index = all.iter().position(|&v| v == current).unwrap_or(0);
     let len = all.len();
@@ -145,11 +157,11 @@ impl Settings {
         xdg::config_home().map(|dir| dir.join("consoleui/settings.json"))
     }
 
-    /// Eine fehlende oder kaputte Datei ergibt die Standardwerte.
+    /// A missing or broken file gives the defaults.
     pub fn load(path: &Path) -> Self {
         match fs::read_to_string(path) {
             Ok(content) => serde_json::from_str(&content).unwrap_or_else(|err| {
-                eprintln!("Einstellungen {} sind ungültig und werden ignoriert: {err}", path.display());
+                eprintln!("Settings {} are invalid and ignored: {err}", path.display());
                 Self::default()
             }),
             Err(_) => Self::default(),
@@ -165,24 +177,26 @@ impl Settings {
         fs::rename(tmp, path)
     }
 
-    /// Wert der Zeile; Unterseiten (WLAN, Bluetooth) zeigt die Shell mit ihrem eigenen Zustand.
+    /// Value of the row; for sub-pages (Wi-Fi, Bluetooth) the shell shows their own state.
     pub fn value_label(&self, setting: Setting) -> &'static str {
         match setting {
             Setting::Accent => self.accent.label(),
             Setting::Animations => on_off(self.animations),
             Setting::Sounds => on_off(self.sounds),
             Setting::Glyphs => self.glyphs.label(),
+            Setting::Language => self.language.label(),
             Setting::Wifi | Setting::Bluetooth => "",
         }
     }
 
-    /// Wert ändern (Links/Rechts bzw. Bestätigen).
+    /// Changes the value (left/right or confirm).
     pub fn change(&mut self, setting: Setting, forward: bool) {
         match setting {
             Setting::Accent => self.accent = cycle(&Accent::ALL, self.accent, forward),
             Setting::Animations => self.animations = !self.animations,
             Setting::Sounds => self.sounds = !self.sounds,
             Setting::Glyphs => self.glyphs = cycle(&GlyphChoice::ALL, self.glyphs, forward),
+            Setting::Language => self.language = cycle(&LanguageChoice::ALL, self.language, forward),
             Setting::Wifi | Setting::Bluetooth => {}
         }
     }
@@ -201,13 +215,18 @@ mod tests {
         assert_eq!(settings.accent, Accent::White);
         settings.change(Setting::Sounds, true);
         assert!(!settings.sounds);
-        assert_eq!(settings.value_label(Setting::Sounds), "Aus");
+        assert_eq!(settings.value_label(Setting::Sounds), "Off");
         settings.change(Setting::Glyphs, true);
         assert_eq!(settings.glyphs, GlyphChoice::PlayStation);
-        // Unterseiten ändern keinen Wert
+        // Sub-pages change no value
         settings.change(Setting::Wifi, true);
         assert_eq!(settings.glyphs, GlyphChoice::PlayStation);
         assert!(Setting::Bluetooth.opens_page() && !Setting::Sounds.opens_page());
+        settings.change(Setting::Language, true);
+        assert_eq!(settings.language, LanguageChoice::English);
+        settings.change(Setting::Language, false);
+        settings.change(Setting::Language, false);
+        assert_eq!(settings.language, LanguageChoice::German);
     }
 
     #[test]
@@ -217,7 +236,7 @@ mod tests {
         let settings = Settings { accent: Accent::Green, animations: false, ..Settings::default() };
         settings.save(&path).unwrap();
         assert_eq!(Settings::load(&path), settings);
-        // Fehlende Felder bekommen Standardwerte (z. B. nach einem Update)
+        // Missing fields get their defaults (e.g. after an update)
         fs::write(&path, r#"{"sounds": false}"#).unwrap();
         assert_eq!(Settings::load(&path), Settings { sounds: false, ..Settings::default() });
         fs::remove_dir_all(dir).unwrap();

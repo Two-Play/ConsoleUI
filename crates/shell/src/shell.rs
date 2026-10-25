@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use consoleui_core::i18n::{self, Language, tr, trf};
 use consoleui_core::launch::{self, ProcessHandle};
 use consoleui_core::netpages::Page;
 use consoleui_core::osk::{KeyboardEvent, OnScreenKeyboard};
@@ -165,12 +166,7 @@ impl Shell {
         settings_path: Option<PathBuf>,
     ) -> Self {
         let keyboard = OnScreenKeyboard::default();
-        let keys: Vec<KeyCap> = keyboard
-            .keys()
-            .iter()
-            .map(|k| KeyCap { label: k.key.label().into(), row: k.row as i32, x: k.x, width: k.width })
-            .collect();
-        ui.set_keys(ModelRc::new(VecModel::from(keys)));
+        show_keys(ui, &keyboard);
 
         let home_model = Rc::new(VecModel::default());
         let library_model = Rc::new(VecModel::default());
@@ -308,7 +304,7 @@ impl Shell {
         match percent {
             Some(p) if p <= LOW_BATTERY && !self.battery_warned => {
                 self.battery_warned = true;
-                self.toast(ui, "▁", "Controller-Akku schwach", &format!("Noch {p} %"));
+                self.toast(ui, "▁", tr("Controller battery low"), &trf("{} % left", &[&p]));
             }
             Some(p) if p > LOW_BATTERY + 5 => self.battery_warned = false,
             _ => {}
@@ -513,10 +509,13 @@ impl Shell {
             Action::Left | Action::Right if setting.opens_page() => {}
             Action::Left | Action::Right | Action::Confirm => {
                 self.settings.change(setting, action != Action::Left);
+                if setting == Setting::Language {
+                    self.apply_language(ui);
+                }
                 if let Some(path) = &self.settings_path
                     && let Err(err) = self.settings.save(path)
                 {
-                    eprintln!("Einstellungen konnten nicht gespeichert werden ({}): {err}", path.display());
+                    eprintln!("Cannot save the settings ({}): {err}", path.display());
                 }
                 self.apply_settings(ui);
             }
@@ -545,10 +544,25 @@ impl Shell {
         }
         self.update_settings_rows(ui);
         let footer = match &self.settings_path {
-            Some(path) => format!("Wird automatisch gespeichert: {}", path.display()),
-            None => "Einstellungen werden nicht gespeichert".into(),
+            Some(path) => trf("Saved automatically: {}", &[&path.display()]),
+            None => tr("Settings are not saved").into(),
         };
         ui.set_settings_footer(footer.into());
+    }
+
+    /// Switches the language (Story 6.6). Slint updates its `@tr()` texts by itself; everything
+    /// built in Rust is rebuilt here. Names and descriptions of the entries (`Name[de]` of desktop
+    /// files, dummy entries) were read in the old language and follow on the next start.
+    fn apply_language(&mut self, ui: &AppWindow) {
+        select_language(self.settings.language.resolve());
+        self.keyboard = OnScreenKeyboard::default();
+        show_keys(ui, &self.keyboard);
+        for index in 0..self.tiles.len() {
+            self.relabel_tile(index);
+        }
+        self.library_tile = tiles::library_tile(self.entries.len());
+        self.refresh(ui);
+        ui.set_net_view(self.network.view());
     }
 
     fn update_settings_rows(&self, ui: &AppWindow) {
@@ -810,77 +824,77 @@ impl Shell {
         let hint = |button, label: &str| Hint { button, label: label.into() };
         let keyboard = ui.get_controller_style() == ControllerStyle::Keyboard;
         let start_label = |index: usize| match self.entries[index].kind {
-            AppKind::Game => "Spielen",
-            AppKind::App => "Öffnen",
+            AppKind::Game => tr("Play"),
+            AppKind::App => tr("Open"),
         };
         let mut hints = Vec::new();
         if self.context.is_some() {
-            hints.push(hint(GlyphButton::Updown, "Auswählen"));
-            hints.push(hint(GlyphButton::Confirm, "OK"));
-            hints.push(hint(GlyphButton::Back, "Schließen"));
+            hints.push(hint(GlyphButton::Updown, tr("Select")));
+            hints.push(hint(GlyphButton::Confirm, tr("OK")));
+            hints.push(hint(GlyphButton::Back, tr("Close")));
             ui.set_hints(ModelRc::new(VecModel::from(hints)));
             return;
         }
         match self.screen {
             Screen::Home => {
-                hints.push(hint(GlyphButton::Dpad, "Navigieren"));
+                hints.push(hint(GlyphButton::Dpad, tr("Navigate")));
                 match self.home_entry() {
                     Some(i) => {
-                        let label = if self.running_for(i).is_some() { "Fortsetzen" } else { start_label(i) };
+                        let label = if self.running_for(i).is_some() { tr("Resume") } else { start_label(i) };
                         hints.push(hint(GlyphButton::Confirm, label));
-                        hints.push(hint(GlyphButton::Menu, "Optionen"));
+                        hints.push(hint(GlyphButton::Menu, tr("Options")));
                     }
-                    None => hints.push(hint(GlyphButton::Confirm, "Bibliothek öffnen")),
+                    None => hints.push(hint(GlyphButton::Confirm, tr("Open library"))),
                 }
-                hints.push(hint(GlyphButton::North, "Suchen"));
-                hints.push(hint(GlyphButton::R1, "Bibliothek"));
-                hints.push(hint(GlyphButton::Guide, "Steuerzentrale"));
+                hints.push(hint(GlyphButton::North, tr("Search")));
+                hints.push(hint(GlyphButton::R1, tr("Library")));
+                hints.push(hint(GlyphButton::Guide, tr("Control center")));
                 if keyboard {
-                    hints.push(hint(GlyphButton::Quit, "Shell beenden"));
+                    hints.push(hint(GlyphButton::Quit, tr("Quit shell")));
                 }
             }
             Screen::Library => {
-                hints.push(hint(GlyphButton::Dpad, "Navigieren"));
+                hints.push(hint(GlyphButton::Dpad, tr("Navigate")));
                 if let Some(i) = self.focused_entry() {
-                    let label = if self.running_for(i).is_some() { "Fortsetzen" } else { start_label(i) };
+                    let label = if self.running_for(i).is_some() { tr("Resume") } else { start_label(i) };
                     hints.push(hint(GlyphButton::Confirm, label));
                 }
-                hints.push(hint(GlyphButton::West, "Filter"));
-                hints.push(hint(GlyphButton::Menu, "Optionen"));
-                hints.push(hint(GlyphButton::North, "Suchen"));
-                hints.push(hint(GlyphButton::Back, "Zurück"));
+                hints.push(hint(GlyphButton::West, tr("Filter")));
+                hints.push(hint(GlyphButton::Menu, tr("Options")));
+                hints.push(hint(GlyphButton::North, tr("Search")));
+                hints.push(hint(GlyphButton::Back, tr("Back")));
             }
             Screen::Settings if self.network.pages.is_open() => {
                 hints.extend(self.network.hints().into_iter().map(|(button, label)| hint(button, label)));
             }
             Screen::Settings if Setting::ALL[self.settings_row].opens_page() => {
-                hints.push(hint(GlyphButton::Updown, "Auswählen"));
-                hints.push(hint(GlyphButton::Confirm, "Öffnen"));
-                hints.push(hint(GlyphButton::L1, "Bibliothek"));
-                hints.push(hint(GlyphButton::Back, "Zurück"));
+                hints.push(hint(GlyphButton::Updown, tr("Select")));
+                hints.push(hint(GlyphButton::Confirm, tr("Open")));
+                hints.push(hint(GlyphButton::L1, tr("Library")));
+                hints.push(hint(GlyphButton::Back, tr("Back")));
             }
             Screen::Settings => {
-                hints.push(hint(GlyphButton::Updown, "Auswählen"));
-                hints.push(hint(GlyphButton::Dpad, "Ändern"));
-                hints.push(hint(GlyphButton::L1, "Bibliothek"));
-                hints.push(hint(GlyphButton::Back, "Zurück"));
+                hints.push(hint(GlyphButton::Updown, tr("Select")));
+                hints.push(hint(GlyphButton::Dpad, tr("Change")));
+                hints.push(hint(GlyphButton::L1, tr("Library")));
+                hints.push(hint(GlyphButton::Back, tr("Back")));
             }
             Screen::Search if self.search_area == SearchArea::Keyboard => {
                 if keyboard {
-                    hints.push(hint(GlyphButton::Dpad, "Tippen oder Tasten wählen"));
+                    hints.push(hint(GlyphButton::Dpad, tr("Type or pick keys")));
                 } else {
-                    hints.push(hint(GlyphButton::Confirm, "Eingeben"));
-                    hints.push(hint(GlyphButton::West, "Löschen"));
-                    hints.push(hint(GlyphButton::North, "Leerzeichen"));
+                    hints.push(hint(GlyphButton::Confirm, tr("Type")));
+                    hints.push(hint(GlyphButton::West, tr("Delete")));
+                    hints.push(hint(GlyphButton::North, tr("Space")));
                 }
-                hints.push(hint(GlyphButton::Back, "Schließen"));
+                hints.push(hint(GlyphButton::Back, tr("Close")));
             }
             Screen::Search => {
-                hints.push(hint(GlyphButton::Dpad, "Navigieren"));
+                hints.push(hint(GlyphButton::Dpad, tr("Navigate")));
                 if let Some(i) = self.focused_entry() {
                     hints.push(hint(GlyphButton::Confirm, start_label(i)));
                 }
-                hints.push(hint(GlyphButton::Back, "Zur Tastatur"));
+                hints.push(hint(GlyphButton::Back, tr("Back to keyboard")));
             }
         }
         ui.set_hints(ModelRc::new(VecModel::from(hints)));
@@ -946,7 +960,7 @@ impl Shell {
         if let Some(path) = &self.collection_path
             && let Err(err) = self.collection.save(path)
         {
-            eprintln!("Sammlung konnte nicht gespeichert werden ({}): {err}", path.display());
+            eprintln!("Cannot save the collection ({}): {err}", path.display());
         }
         self.refresh(ui);
         // Angeheftet/gelöst: Der Fokus wandert mit dem Eintrag an seinen neuen Platz.
@@ -999,7 +1013,7 @@ impl Shell {
                     QuickAction::Volume => {}
                     QuickAction::Power(power) => {
                         if let Err(err) = system::power(power) {
-                            eprintln!("Energieaktion fehlgeschlagen: {err}");
+                            eprintln!("Power action failed: {err}");
                         }
                     }
                     QuickAction::Logout => {
@@ -1082,7 +1096,7 @@ impl Shell {
                     }
                 };
                 self.running.push(Running { entry_id: id.clone(), app_id, app, stop, owner, has_window: false });
-                ui.set_launch_status("wird gestartet …".into());
+                ui.set_launch_status(tr("Starting …").into());
                 ui.set_launching(true);
                 self.set_running_flag(&id, true);
                 self.record_launch(index);
@@ -1092,12 +1106,12 @@ impl Shell {
                 self.set_foreground(Some(app_id));
             }
             Err(err) => {
-                eprintln!("{} konnte nicht gestartet werden: {err}", entry.title);
-                ui.set_launch_status("konnte nicht gestartet werden".into());
+                eprintln!("Cannot start {}: {err}", entry.title);
+                ui.set_launch_status(tr("Couldn't start").into());
                 ui.set_launching(true);
                 self.failed_launch = Some(now);
                 let title = entry.title.clone();
-                self.toast(ui, "⚠", "Start fehlgeschlagen", &title);
+                self.toast(ui, "⚠", tr("Launch failed"), &title);
             }
         }
     }
@@ -1117,7 +1131,7 @@ impl Shell {
         ui.set_launch_title(self.tiles[index].title.clone());
         ui.set_launch_image(self.launch_image(index));
         ui.set_launch_accent(self.tiles[index].accent);
-        ui.set_launch_status("läuft".into());
+        ui.set_launch_status(tr("Running").into());
         ui.set_launching(true);
     }
 
@@ -1171,7 +1185,7 @@ impl Shell {
                 Phase::Starting => {}
                 Phase::Running => {
                     if ui.get_launching() && self.foreground == Some(running.app_id) {
-                        ui.set_launch_status("läuft".into());
+                        ui.set_launch_status(tr("Running").into());
                     }
                 }
                 Phase::Finished => finished.push((running.entry_id.clone(), running.app_id)),
@@ -1241,15 +1255,21 @@ impl Shell {
         }
     }
 
-    /// Setzt das „Läuft“-Badge und die Unterzeile; gibt zurück, ob es den Eintrag gab.
+    /// Sets the "running" badge and the subtitle; returns whether the entry exists.
     fn set_running_flag(&mut self, id: &str, running: bool) -> bool {
         let Some(index) = self.entries.iter().position(|e| e.id == id) else { return false };
-        let tile = &mut self.tiles[index];
-        tile.running = running;
-        tile.action_label = tiles::action_label(self.entries[index].kind, running).into();
-        tile.subtitle =
-            if running { "Läuft gerade".into() } else { tiles::subtitle(&self.entries[index], tiles::today()).into() };
+        self.tiles[index].running = running;
+        self.relabel_tile(index);
         true
+    }
+
+    /// Texts of a tile that depend on its state and the language
+    fn relabel_tile(&mut self, index: usize) {
+        let entry = &self.entries[index];
+        let tile = &mut self.tiles[index];
+        tile.kind = tiles::kind_label(entry.kind).into();
+        tile.action_label = tiles::action_label(entry.kind, tile.running).into();
+        tile.subtitle = if tile.running { tr("Running now").into() } else { tiles::subtitle(entry, tiles::today()).into() };
     }
 
     fn ask_quit(&mut self, ui: &AppWindow, index: usize) {
@@ -1257,8 +1277,8 @@ impl Shell {
             return;
         }
         self.confirm_quit = Some(self.entries[index].id.clone());
-        ui.set_confirm_title(format!("{} beenden?", self.entries[index].title).into());
-        ui.set_confirm_text("Nicht gespeicherter Fortschritt kann verloren gehen.".into());
+        ui.set_confirm_title(trf("Quit {}?", &[&self.entries[index].title]).into());
+        ui.set_confirm_text(tr("Unsaved progress may be lost.").into());
         ui.set_confirm_open(true);
     }
 
@@ -1276,7 +1296,7 @@ impl Shell {
             Stop::Steam(app_id) => steam::stop_game(*app_id).map(|_| ()),
         };
         if let Err(err) = result {
-            eprintln!("Beenden fehlgeschlagen: {err}");
+            eprintln!("Quitting failed: {err}");
         }
     }
 
@@ -1290,12 +1310,30 @@ impl Shell {
         if let Some(path) = &self.history_path
             && let Err(err) = self.history.save(path)
         {
-            eprintln!("Historie konnte nicht gespeichert werden ({}): {err}", path.display());
+            eprintln!("Cannot save the history ({}): {err}", path.display());
         }
         let tile = self.tiles.remove(index);
         self.entries.insert(0, entry);
         self.tiles.insert(0, tile);
     }
+}
+
+/// Selects the language for strings built in Rust and for Slint's `@tr()` (Story 6.6).
+pub fn select_language(language: Language) {
+    i18n::set_language(language);
+    if let Err(err) = slint::select_bundled_translation(language.code()) {
+        eprintln!("Cannot select the translation {}: {err}", language.code());
+    }
+}
+
+/// Keys of the on-screen keyboard in the search
+fn show_keys(ui: &AppWindow, keyboard: &OnScreenKeyboard) {
+    let keys: Vec<KeyCap> = keyboard
+        .keys()
+        .iter()
+        .map(|k| KeyCap { label: k.key.label().into(), row: k.row as i32, x: k.x, width: k.width })
+        .collect();
+    ui.set_keys(ModelRc::new(VecModel::from(keys)));
 }
 
 /// Zeigt das Overlay-Fenster. Beim ersten Mal (oder wenn Slint das Fenster neu angelegt hat)
@@ -1305,7 +1343,7 @@ fn show_overlay_window(gamescope: &mut GamescopeUi) {
     let overlay = &gamescope.overlay;
     overlay.window().set_fullscreen(true);
     if let Err(err) = overlay.show() {
-        eprintln!("Overlay konnte nicht angezeigt werden: {err}");
+        eprintln!("Cannot show the overlay: {err}");
         return;
     }
     let window = x11_window_id(overlay.window());
@@ -1332,7 +1370,7 @@ fn show_notification_window(gamescope: &mut GamescopeUi) {
         notification.set_window_height(height as f32 / scale);
     }
     if let Err(err) = notification.show() {
-        eprintln!("Hinweisfenster konnte nicht angezeigt werden: {err}");
+        eprintln!("Cannot show the notification window: {err}");
         return;
     }
     let window = x11_window_id(notification.window());
