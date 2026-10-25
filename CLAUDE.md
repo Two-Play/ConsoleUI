@@ -75,10 +75,12 @@ Cargo workspace (edition 2024, `default-members` = the shell):
   - `launch::spawn` starts detached processes (desktop apps in a `systemd-run --user --scope` unit when the
     user bus exists) and returns a `ProcessHandle` that can `stop()`; Steam games are stopped via
     `steam::stop_game` (SIGTERM to processes with `SteamAppId=<id>`). `History` persists to
-    `$XDG_DATA_HOME/consoleui/history.json`.
+    `$XDG_DATA_HOME/consoleui/history.json`, `Collection` (pinned/hidden entry IDs, `collection.rs`)
+    to `collection.json` next to it.
   - `Action` / `Carousel` (row) / `Grid` (library) handle input-agnostic navigation; `osk.rs` is the
     on-screen keyboard; `search.rs` ranks titles (`normalize` folds case and umlauts, also used for A–Z
-    sorting); `library_view` applies the library filter and sort.
+    sorting); `library_view` applies the library filter (incl. `Hidden`) and sort, `home_view` builds the
+    home row (pinned first, then recents); hidden entries are left out of home, library and search.
   - `input.rs` has the device-free gamepad logic
     (`DirectionRepeat` for hold-to-repeat, `Stick` with hysteresis, `glyph_style` by device name).
   - `running::RunningApp` decides when the launch overlay closes: process exit for commands,
@@ -97,10 +99,10 @@ Cargo workspace (edition 2024, `default-members` = the shell):
   - `ui/types.slint`: `NavAction` enum and `AppTile` struct shared with Rust.
   - `src/shell.rs`: `Shell` owns entries plus a parallel `tiles` vector, all `running` apps (each with a
     gamescope app ID, a stop handle and an `Owner`), the `foreground` app, the three tile models (home =
-    first 12 entries + library tile, library view, search results), the current `Screen`, focus, history,
-    the hero cache, the tracked running app and the quit confirmation. `Shell::apply(action)` is the single
-    entry point for input; it dispatches by screen and ends with `sync()` (screen, focus, hero, hints).
-    `refresh()` rebuilds the models after a launch, an app exit or a re-sort. The hero background uses two
+    `home_entries` from `home_view` + library tile, library view, search results), the `Collection`,
+    the current `Screen`, focus, history, the hero cache, the tracked running app, the open context menu
+    and the quit confirmation. `Shell::apply(action)` is the single entry point for input; it dispatches
+    by screen and ends with `sync()` (screen, focus, hero, hints). `refresh()` rebuilds the models after a launch, an app exit or a re-sort. The hero background uses two
     image layers (`hero-a`/`hero-b` + `hero-front-a`) for crossfades; a launch moves the entry to index 0
     under the fullscreen launch overlay.
   - `src/tiles.rs`: `AppEntry` → `AppTile` (loads cover, icon and logo, overrides the accent from the cover).
@@ -116,6 +118,9 @@ Cargo workspace (edition 2024, `default-members` = the shell):
   - `src/quick.rs`: quick menu ("Steuerzentrale") items and input handling. In gamescope it is shown in
     `OverlayWindow` (`ui/overlay.slint`, transparent, gets `STEAM_OVERLAY` and is remapped before first
     use); otherwise it is the `QuickMenu` layer inside `AppWindow`.
+  - `src/context.rs`: context menu (Menu/Tab on a focused entry in home and library: pin/unpin, hide,
+    show again, quit, and the library sort). Shown as the `ContextMenu` layer (`ui/contextmenu.slint`)
+    in `AppWindow`; its hints come from `Shell::update_hints`.
   - `src/main.rs`: wiring and timers: gamepad poll (8 ms), status/clock (1 s), app watcher (500 ms), bench.
   - `ui/statusbar.slint`: the right side of the top bar; icons in `ui/icons/*.svg` are tinted with `colorize`.
   - `ui/home.slint`, `ui/library.slint`, `ui/search.slint`: one component per `Screen`, all stacked in
@@ -132,10 +137,12 @@ Input flow: keyboard events are handled in the `FocusScope` in `main.slint`, whi
 `action(NavAction)`; gamepad events come from `Gamepads::poll`. Both end up in `Shell::apply(Action)`,
 and Rust pushes properties back (`focused`, `pulse`, `launching`, …). New input sources must use the same path.
 In the search screen the `FocusScope` sends printable keys to `typed(text)` instead of the letter
-shortcuts (WASD, Q/E, F, /). Gamepad input is dropped while the window is not focused
-(`window-active`), because gilrs reads devices directly and would otherwise react to presses meant
-for the game in front. Exceptions (`Shell::accepts_unfocused`): the Guide button in gamescope mode and
-everything while the quick menu is open. `--actions` script steps bypass the gating.
+shortcuts (WASD, Q/E, F, /). gilrs reads devices directly, so `Shell::accepts_gamepad` decides which
+gamepad input reaches the shell: everything while the quick menu is open, the Guide button always; in
+gamescope otherwise only while the shell is in front (`shell_in_front`; gamescope does not hand the X11
+focus back after the overlay, so `window-active` is unreliable there and `restore_keyboard_focus` fixes
+it for the keyboard), on the desktop only while the window is focused (`window-active`). `--actions`
+script steps bypass the gating.
 
 Note: `[profile.dev]` uses `opt-level = 1` and dependencies use `opt-level = 3`, so debug builds
 render smoothly.

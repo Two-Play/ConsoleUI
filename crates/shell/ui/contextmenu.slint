@@ -1,0 +1,80 @@
+import { Theme } from "theme.slint";
+import { ContextItem } from "types.slint";
+
+// Kontextmenü für den fokussierten Eintrag: kleine Karte in der Mitte wie die Rückfrage, die
+// Zeilen wie die Karten der Steuerzentrale. Die Tastenhinweise stehen in der Hinweisleiste.
+export component ContextMenu inherits Rectangle {
+    in property <bool> open;
+    in property <string> title;
+    in property <[ContextItem]> items;
+    in property <int> focused;
+    in property <float> s: 1;
+
+    property <length> row-height: 64px * root.s;
+    property <length> pad: 28px * root.s;
+
+    Rectangle {
+        width: 100%;
+        height: 100%;
+        background: #000000b3;
+        opacity: root.open ? 1 : 0;
+        animate opacity { duration: Theme.page-duration; }
+    }
+
+    if root.open: panel := Rectangle {
+        width: 520px * root.s;
+        height: 2 * root.pad + 52px * root.s + root.items.length * (root.row-height + 8px * root.s);
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        border-radius: 24px * root.s;
+        background: #191b24;
+        border-width: 1px;
+        border-color: #ffffff22;
+
+        Text {
+            x: root.pad + 6px * root.s;
+            y: root.pad;
+            width: parent.width - 2 * root.pad;
+            text: root.title;
+            color: Theme.text-dim;
+            font-size: 20px * root.s;
+            font-weight: 600;
+            letter-spacing: 2px * root.s;
+            overflow: elide;
+        }
+
+        for item[i] in root.items: Rectangle {
+            property <bool> is-focused: i == root.focused;
+            x: root.pad;
+            y: root.pad + 52px * root.s + i * (root.row-height + 8px * root.s);
+            width: parent.width - 2 * root.pad;
+            height: root.row-height;
+            border-radius: 16px * root.s;
+            background: self.is-focused ? Theme.accent : Theme.surface.with-alpha(0.06);
+            animate background { duration: Theme.focus-duration; easing: ease-out-quart; }
+
+            Text {
+                x: 22px * root.s;
+                width: 32px * root.s;
+                height: 100%;
+                text: item.symbol;
+                color: parent.is-focused ? Theme.base : Theme.text;
+                font-size: 24px * root.s;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+
+            Text {
+                x: 72px * root.s;
+                width: parent.width - 90px * root.s;
+                height: 100%;
+                text: item.label;
+                color: parent.is-focused ? Theme.base : Theme.text;
+                font-size: 22px * root.s;
+                font-weight: 700;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+        }
+    }
+}

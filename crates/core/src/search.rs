@@ -1,5 +1,6 @@
 //! Suche über die App-Titel, unempfindlich gegen Groß-/Kleinschreibung und Umlaute.
 
+use crate::collection::Collection;
 use crate::library::AppEntry;
 
 /// Kleinbuchstaben, Akzente und Umlaute auf die Grundbuchstaben zurückgeführt („Échoes“ → „echoes“).
@@ -41,10 +42,15 @@ fn score(query_words: &[String], title: &str) -> Option<u32> {
 
 /// Indizes der passenden Einträge, beste Treffer zuerst; bei gleicher Güte bleibt die Reihenfolge
 /// von `entries` (also „zuletzt genutzt“) erhalten. Eine leere Suche liefert alle Einträge.
-pub fn search(entries: &[AppEntry], query: &str) -> Vec<usize> {
+/// Ausgeblendete Einträge findet die Suche nie.
+pub fn search(entries: &[AppEntry], query: &str, collection: &Collection) -> Vec<usize> {
     let words: Vec<String> = normalize(query).split_whitespace().map(str::to_string).collect();
-    let mut hits: Vec<(u32, usize)> =
-        entries.iter().enumerate().filter_map(|(i, e)| score(&words, &e.title).map(|s| (s, i))).collect();
+    let mut hits: Vec<(u32, usize)> = entries
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| !collection.is_hidden(&e.id))
+        .filter_map(|(i, e)| score(&words, &e.title).map(|s| (s, i)))
+        .collect();
     hits.sort_by_key(|&(score, _)| score);
     hits.into_iter().map(|(_, i)| i).collect()
 }
@@ -55,7 +61,7 @@ mod tests {
     use crate::library::dummy_library;
 
     fn titles(entries: &[AppEntry], query: &str) -> Vec<String> {
-        search(entries, query).into_iter().map(|i| entries[i].title.clone()).collect()
+        search(entries, query, &Collection::default()).into_iter().map(|i| entries[i].title.clone()).collect()
     }
 
     fn library(names: &[&str]) -> Vec<AppEntry> {
@@ -88,6 +94,16 @@ mod tests {
     fn empty_query_keeps_order() {
         let entries = library(&["b", "a"]);
         assert_eq!(titles(&entries, "  "), ["b", "a"]);
+    }
+
+    #[test]
+    fn hidden_entries_are_never_found() {
+        let entries = library(&["Red Dead Redemption 2", "Dead Space"]);
+        let mut collection = Collection::default();
+        collection.hide(&entries[1].id);
+        let hits: Vec<usize> = search(&entries, "dead", &collection);
+        assert_eq!(hits, [0]);
+        assert_eq!(search(&entries, "", &collection), [0]);
     }
 
     #[test]

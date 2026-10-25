@@ -1,6 +1,7 @@
 //! Plattformunabhängige Logik der ConsoleUI-Shell, ohne UI-Abhängigkeiten.
 
 pub mod accent;
+mod collection;
 pub mod desktop;
 mod grid;
 mod history;
@@ -21,6 +22,7 @@ pub mod system;
 pub mod vdf;
 pub mod xdg;
 
+pub use collection::{Collection, home_view};
 pub use grid::Grid;
 pub use history::History;
 pub use library::{

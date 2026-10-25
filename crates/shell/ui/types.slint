@@ -31,6 +31,15 @@ export struct AppTile {
     has-logo: bool,
     accent: color,
     running: bool,
+    // Im Kontextmenü angeheftet: steht in Home vorn und trägt eine Nadel
+    pinned: bool,
+}
+
+// Eintrag im Kontextmenü (Anheften, Ausblenden …)
+export struct ContextItem {
+    label: string,
+    // Symbol als Text (einfarbig)
+    symbol: string,
 }
 
 // Taste der Bildschirmtastatur; Position und Breite in Tastenbreiten

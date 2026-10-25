@@ -213,7 +213,7 @@ Deck o. Ä.) sollten wir später den Skia-Renderer vergleichen (Story 6.5).
   von Home und Bibliothek aus die Suche. Seitenwechsel blenden über und gleiten (200 ms).
 - **Bibliothek (2.4):** Raster mit Titeln, die Spaltenzahl richtet sich nach der Fensterbreite.
   Quadrat/F schaltet den Filter (Alle/Spiele/Apps) um, Options/Tab die Sortierung (zuletzt
-  genutzt / A–Z, Umlaute richtig einsortiert).
+  genutzt / A–Z, Umlaute richtig einsortiert; seit Sprint 7 im Kontextmenü).
 - **Suche (2.5):** QWERTZ-Bildschirmtastatur mit Ziffern, Leerzeichen, ⌫ und „Fertig“. Mit der
   echten Tastatur kann man direkt tippen. Die Suche ignoriert Groß-/Kleinschreibung und Umlaute,
   jedes Suchwort muss vorkommen. Die Reihenfolge ist: Titelanfang, dann Wortanfang, dann irgendwo
@@ -311,6 +311,26 @@ Deck o. Ä.) sollten wir später den Skia-Renderer vergleichen (Story 6.5).
 - Lösung: `steam::running_games()` sucht in `/proc` nach Prozessen mit `SteamAppId=<id>` (setzt Steam
   für jedes Spiel, auch unter Proton). Gibt es 2 s lang keinen, ist das Spiel beendet.
   `steam::stop_game` nutzt dieselbe Suche.
+
+### Sprint 7 – Kontextmenü (umgesetzt: 2.7)
+
+- **Kontextmenü (2.7):** Options/Tab öffnet auf dem fokussierten Eintrag in Home und Bibliothek
+  eine kleine Karte mit „Anheften“/„Lösen“, „Ausblenden“ und bei laufenden Apps „Beenden“ (mit der
+  bekannten Rückfrage). ▲▼ wählt, ✕ führt aus, ○ schließt. Der „•••“-Knopf in Home steht dafür,
+  die Hinweisleiste zeigt „Optionen“.
+- **Angeheftet:** steht in der Home-Reihe immer vorn (in Anheft-Reihenfolge, zählt nicht gegen die
+  12 zuletzt genutzten) und trägt eine Nadel oben rechts in der Akzentfarbe. In der Bibliothek gilt
+  die normale Sortierung.
+- **Ausgeblendet:** verschwindet aus Home, Bibliothek und Suche. Der Bibliotheksfilter hat jetzt
+  den Wert „Ausgeblendet“, dort bietet das Kontextmenü „Wieder anzeigen“.
+- **Sortierung:** Weil Options jetzt das Kontextmenü öffnet, steht „Sortierung: …“ in der
+  Bibliothek als letzter Menüpunkt (✕ schaltet um, das Menü bleibt offen). Eine freie Taste gab es
+  dort nicht mehr.
+- Gespeichert in `$XDG_DATA_HOME/consoleui/collection.json` (Eintrags-IDs, tolerant geladen, atomar
+  geschrieben); mit `--dummy` wird wie bei der Historie nichts gespeichert.
+- Geprüft per `--snapshot` (Menü in Home/Bibliothek, Nadel, Filter „Ausgeblendet“, Suche ohne
+  ausgeblendeten Eintrag, „Beenden“ mit `--dummy-launch "sleep 15"`). **Nicht getestet:** mit
+  echter Bibliothek und echtem Controller.
 
 ## Risiken / offene Fragen
 
