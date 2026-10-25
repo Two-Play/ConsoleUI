@@ -64,39 +64,51 @@ impl ProcessHandle {
 
 fn kill_group(pgid: u32) -> io::Result<()> {
     let status = Command::new("kill").args(["-TERM", "--", &format!("-{pgid}")]).status()?;
-    if status.success() { Ok(()) } else { Err(io::Error::other(format!("Beenden fehlgeschlagen ({status})"))) }
+    if status.success() { Ok(()) } else { Err(io::Error::other(format!("Quitting failed ({status})"))) }
 }
 
-/// Baut den Startbefehl. Mit `scope_unit` läuft die App über `systemd-run --scope` in einer eigenen
-/// Unit; systemd-run führt das Programm dabei selbst aus, die PID bleibt also dieselbe.
+/// Builds the launch command. With `scope_unit` the app runs in its own unit via
+/// `systemd-run --scope`; systemd-run executes the program itself, so the PID stays the same.
 fn plan(launch: &Launch, scope_unit: Option<&str>) -> Option<(Command, Option<String>)> {
     match launch {
         Launch::None => None,
         Launch::Steam(app_id) => {
-            // `-silent`: Startet Steam erst durch diesen Aufruf, bleibt das Bibliotheksfenster zu
-            // und nimmt dem Spiel in gamescope nicht den Fokus weg. Steam-Spiele sind Kinder von
-            // Steam, nicht von uns, deshalb ohne eigenen Scope.
+            // `-silent`: if this call starts Steam, the library window stays closed and does not
+            // take the focus from the game in gamescope. Steam games are children of Steam, not
+            // of us, hence no own scope.
             let mut command = Command::new("steam");
             command.args(["-silent", &format!("steam://rungameid/{app_id}")]);
             Some((command, None))
         }
         Launch::Command(argv) => {
             let (program, args) = argv.split_first()?;
-            match scope_unit {
+            let command = match scope_unit {
                 Some(unit) => {
                     let mut command = Command::new("systemd-run");
                     command.args(["--user", "--scope", "--collect", "--quiet", &format!("--unit={unit}"), "--"]);
                     command.args(argv);
-                    Some((command, Some(format!("{unit}.scope"))))
+                    (command, Some(format!("{unit}.scope")))
                 }
                 None => {
                     let mut command = Command::new(program);
                     command.args(args);
-                    Some((command, None))
+                    (command, None)
                 }
-            }
+            };
+            Some(without_outer_wsi(command, program))
         }
     }
+}
+
+/// A nested gamescope (Story 7.10) inside the gamescope session would load the outer gamescope's
+/// WSI layer for its own swapchain (`ENABLE_GAMESCOPE_WSI=1` is inherited), which fails with
+/// "Creating swapchain for non-Gamescope swapchain". Unset, the nested gamescope sets it for its
+/// own children again.
+fn without_outer_wsi((mut command, scope): (Command, Option<String>), program: &str) -> (Command, Option<String>) {
+    if Path::new(program).file_name().is_some_and(|name| name == crate::game_options::GAMESCOPE) {
+        command.env_remove("ENABLE_GAMESCOPE_WSI");
+    }
+    (command, scope)
 }
 
 /// Startet die App losgelöst von der Shell (eigene Prozessgruppe, damit Strg+C im Terminal sie
@@ -186,6 +198,17 @@ mod tests {
             ["systemd-run", "--user", "--scope", "--collect", "--quiet", "--unit=consoleui-app-1", "--", "vlc", "--fullscreen"]
         );
         assert_eq!(scope.as_deref(), Some("consoleui-app-1.scope"));
+        assert!(scoped.get_envs().next().is_none());
+    }
+
+    #[test]
+    fn nested_gamescope_does_not_inherit_the_outer_wsi_layer() {
+        let wrapped = Launch::Command(["gamescope", "-f", "--", "glxgears"].map(String::from).to_vec());
+        let (command, scope) = plan(&wrapped, Some("consoleui-app-2")).unwrap();
+        assert_eq!(argv(&command)[6..], ["--", "gamescope", "-f", "--", "glxgears"]);
+        assert_eq!(scope.as_deref(), Some("consoleui-app-2.scope"));
+        let envs: Vec<_> = command.get_envs().collect();
+        assert_eq!(envs, [(std::ffi::OsStr::new("ENABLE_GAMESCOPE_WSI"), None)]);
     }
 
     #[test]

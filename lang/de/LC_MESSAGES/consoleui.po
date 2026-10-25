@@ -671,3 +671,56 @@ msgstr "BlueZ läuft nicht"
 
 msgid "Authentication failed"
 msgstr "Authentifizierung fehlgeschlagen"
+
+# --- Gamescope options (Story 7.10) ---
+
+msgid "Gamescope options…"
+msgstr "Gamescope-Optionen …"
+
+msgid "Start in gamescope"
+msgstr "In gamescope starten"
+
+msgid "Own nested gamescope for this entry"
+msgstr "Eigenes verschachteltes gamescope für diesen Eintrag"
+
+msgid "Resolution"
+msgstr "Auflösung"
+
+msgid "The game renders at this size"
+msgstr "Das Spiel rendert in dieser Größe"
+
+msgid "Native"
+msgstr "Nativ"
+
+msgid "Upscaler"
+msgstr "Hochskalierung"
+
+msgid "Scaling to the screen size"
+msgstr "Skalierung auf die Bildschirmgröße"
+
+msgid "Integer"
+msgstr "Ganzzahlig"
+
+msgid "FPS limit"
+msgstr "FPS-Limit"
+
+msgid "Frame rate of the nested display"
+msgstr "Bildrate der verschachtelten Anzeige"
+
+msgid "HDR output (needs gamescope's WSI layer)"
+msgstr "HDR-Ausgabe (braucht die WSI-Schicht von gamescope)"
+
+msgid "Fullscreen"
+msgstr "Vollbild"
+
+msgid "gamescope window covers the screen"
+msgstr "gamescope-Fenster füllt den Bildschirm"
+
+msgid "Starts directly, without gamescope"
+msgstr "Startet direkt, ohne gamescope"
+
+msgid "Not available for Steam games"
+msgstr "Für Steam-Spiele nicht verfügbar"
+
+msgid "Steam starts the game itself. Use gamescope … -- %command% in its launch options."
+msgstr "Steam startet das Spiel selbst. Trage dort gamescope … -- %command% in die Startoptionen ein."

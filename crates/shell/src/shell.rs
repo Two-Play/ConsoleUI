@@ -7,6 +7,7 @@ use std::rc::Rc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use consoleui_core::i18n::{self, Language, tr, trf};
+use consoleui_core::game_options::{GameOptions, GameOptionsPanel, GameOptionsStore, PanelOutcome};
 use consoleui_core::launch::{self, ProcessHandle};
 use consoleui_core::netpages::Page;
 use consoleui_core::osk::{KeyboardEvent, OnScreenKeyboard};
@@ -108,8 +109,13 @@ pub struct Shell {
     /// Angeheftete und ausgeblendete Einträge
     collection: Collection,
     collection_path: Option<PathBuf>,
-    /// Offenes Kontextmenü für den fokussierten Eintrag
+    /// Open context menu for the focused entry
     context: Option<ContextMenu>,
+    /// Nested gamescope options per entry (Story 7.10)
+    game_options: GameOptionsStore,
+    game_options_path: Option<PathBuf>,
+    /// Open options panel (from the context menu)
+    game_options_panel: Option<GameOptionsPanel>,
     /// Hero-Bilder, im Hintergrund dekodiert und begrenzt zwischengespeichert
     heroes: Heroes,
 
@@ -146,7 +152,10 @@ const LOW_BATTERY: u8 = 15;
 struct Feedback {
     screen: Screen,
     quick_open: bool,
+    /// Context menu or game options panel open
     context_open: bool,
+    /// Focus and values of the game options panel
+    game_options: Option<(usize, GameOptions)>,
     launching: bool,
     focus: [usize; 8],
     query_len: usize,
@@ -205,6 +214,9 @@ impl Shell {
             collection: Collection::default(),
             collection_path: None,
             context: None,
+            game_options: GameOptionsStore::default(),
+            game_options_path: None,
+            game_options_panel: None,
             heroes: Heroes::new(ui),
             running: Vec::new(),
             next_app_id: FIRST_DESKTOP_APP_ID,
@@ -236,6 +248,8 @@ impl Shell {
         self.history_path = library.history_path;
         self.collection = library.collection;
         self.collection_path = library.collection_path;
+        self.game_options = library.game_options;
+        self.game_options_path = library.game_options_path;
         self.heroes.invalidate();
         self.refresh(ui);
     }
@@ -371,7 +385,8 @@ impl Shell {
         Feedback {
             screen: self.screen,
             quick_open: self.quick.is_some(),
-            context_open: self.context.is_some(),
+            context_open: self.context.is_some() || self.game_options_panel.is_some(),
+            game_options: self.game_options_panel.as_ref().map(|p| (p.focused(), p.options())),
             launching: ui.get_launching(),
             focus: [
                 self.home.focused(),
@@ -420,6 +435,7 @@ impl Shell {
         }
         if action == Action::Guide {
             self.close_context(ui);
+            self.close_game_options(ui);
             self.open_quick(ui);
             return;
         }
@@ -443,6 +459,11 @@ impl Shell {
         }
         if self.context.is_some() {
             self.apply_context(ui, action);
+            self.sync(ui);
+            return;
+        }
+        if self.game_options_panel.is_some() {
+            self.apply_game_options(ui, action);
             self.sync(ui);
             return;
         }
@@ -819,7 +840,7 @@ impl Shell {
         self.heroes.cached(&self.entries[index].id).unwrap_or_else(|| self.tiles[index].cover.clone())
     }
 
-    /// Hinweisleiste unten, passend zu Bildschirm und Auswahl.
+    /// Hint bar at the bottom, matching the screen and selection.
     pub fn update_hints(&self, ui: &AppWindow) {
         let hint = |button, label: &str| Hint { button, label: label.into() };
         let keyboard = ui.get_controller_style() == ControllerStyle::Keyboard;
@@ -832,6 +853,15 @@ impl Shell {
             hints.push(hint(GlyphButton::Updown, tr("Select")));
             hints.push(hint(GlyphButton::Confirm, tr("OK")));
             hints.push(hint(GlyphButton::Back, tr("Close")));
+            ui.set_hints(ModelRc::new(VecModel::from(hints)));
+            return;
+        }
+        if let Some(panel) = &self.game_options_panel {
+            if panel.is_available() {
+                hints.push(hint(GlyphButton::Updown, tr("Select")));
+                hints.push(hint(GlyphButton::Dpad, tr("Change")));
+            }
+            hints.push(hint(GlyphButton::Back, tr("Back")));
             ui.set_hints(ModelRc::new(VecModel::from(hints)));
             return;
         }
@@ -900,7 +930,7 @@ impl Shell {
         ui.set_hints(ModelRc::new(VecModel::from(hints)));
     }
 
-    // --- Kontextmenü -----------------------------------------------------------------------
+    // --- Context menu ---------------------------------------------------------------------
 
     /// Öffnet das Kontextmenü für den fokussierten Eintrag (in der Bibliothek auch ohne Eintrag,
     /// wegen der Sortierung). Auf der Bibliothekskachel in Home passiert nichts.
@@ -945,6 +975,12 @@ impl Shell {
         let Some(id) = self.context.as_ref().and_then(|m| m.entry_id()).map(str::to_string) else { return };
         self.close_context(ui);
         match action {
+            ContextAction::GameOptions => {
+                if let Some(index) = self.entries.iter().position(|e| e.id == id) {
+                    self.open_game_options(ui, index);
+                }
+                return;
+            }
             ContextAction::Quit => {
                 if let Some(index) = self.entries.iter().position(|e| e.id == id) {
                     self.ask_quit(ui, index);
@@ -963,7 +999,7 @@ impl Shell {
             eprintln!("Cannot save the collection ({}): {err}", path.display());
         }
         self.refresh(ui);
-        // Angeheftet/gelöst: Der Fokus wandert mit dem Eintrag an seinen neuen Platz.
+        // Pinned/unpinned: the focus moves with the entry to its new place.
         if matches!(action, ContextAction::Pin | ContextAction::Unpin) {
             self.focus_entry(&id);
         }
@@ -981,6 +1017,71 @@ impl Shell {
         if self.context.take().is_some() {
             ui.set_context_open(false);
         }
+    }
+
+    // --- Nested gamescope options (Story 7.10) ----------------------------------------------
+
+    fn open_game_options(&mut self, ui: &AppWindow, index: usize) {
+        let entry = &self.entries[index];
+        let options = self.game_options.get(&entry.id);
+        self.game_options_panel = Some(GameOptionsPanel::new(&entry.id, &entry.title, &entry.launch, options));
+        self.show_game_options(ui);
+    }
+
+    fn apply_game_options(&mut self, ui: &AppWindow, action: Action) {
+        let Some(panel) = self.game_options_panel.as_mut() else { return };
+        match panel.apply(action) {
+            PanelOutcome::Stay => {}
+            PanelOutcome::Close => {
+                self.close_game_options(ui);
+                return;
+            }
+            PanelOutcome::Changed => {
+                self.game_options.set(panel.entry_id(), panel.options());
+                if let Some(path) = &self.game_options_path
+                    && let Err(err) = self.game_options.save(path)
+                {
+                    eprintln!("Game options could not be saved ({}): {err}", path.display());
+                }
+            }
+        }
+        self.show_game_options(ui);
+    }
+
+    fn show_game_options(&self, ui: &AppWindow) {
+        let Some(panel) = &self.game_options_panel else { return };
+        let rows: Vec<SettingRow> = panel
+            .rows()
+            .into_iter()
+            .map(|(label, description, value)| SettingRow {
+                label: label.into(),
+                description: description.into(),
+                value: value.into(),
+                opens_page: false,
+            })
+            .collect();
+        ui.set_game_options_title(panel.title().to_uppercase().into());
+        ui.set_game_options_rows(ModelRc::new(VecModel::from(rows)));
+        ui.set_game_options_focused(panel.focused() as i32);
+        let footer = if panel.is_available() { panel.options().preview(self.output_size(ui)) } else { String::new() };
+        ui.set_game_options_footer(footer.into());
+        ui.set_game_options_open(true);
+    }
+
+    fn close_game_options(&mut self, ui: &AppWindow) {
+        if self.game_options_panel.take().is_some() {
+            ui.set_game_options_open(false);
+        }
+    }
+
+    /// Size the nested gamescope outputs at: in gamescope the screen (root window), otherwise the
+    /// shell's own window (the screen when fullscreen).
+    fn output_size(&self, ui: &AppWindow) -> Option<(u32, u32)> {
+        if let Some(size) = self.gamescope.as_ref().and_then(|g| g.control.root_size()) {
+            return Some(size);
+        }
+        let size = ui.window().size();
+        (size.width > 0 && size.height > 0).then_some((size.width, size.height))
     }
 
     // --- Quick-Menü ------------------------------------------------------------------------
@@ -1069,7 +1170,7 @@ impl Shell {
     // --- Starten, Verfolgen, Beenden -------------------------------------------------------
 
     fn launch(&mut self, ui: &AppWindow, index: usize) {
-        // Läuft die App schon, kommt sie nur wieder nach vorn.
+        // If the app is already running, it only comes to the front again.
         if let Some(app_id) = self.running_for(index).map(|r| r.app_id) {
             self.bring_to_front(ui, app_id);
             return;
@@ -1083,7 +1184,10 @@ impl Shell {
 
         let now = Instant::now();
         let id = entry.id.clone();
-        match launch::spawn(&entry.launch) {
+        // With the nested gamescope option, gamescope is started in front of the command (in the
+        // same scope, so stopping and window ownership work as before).
+        let launch = self.game_options.get(&id).wrap(&entry.launch, self.output_size(ui));
+        match launch::spawn(&launch) {
             Ok(handle) => {
                 let (app_id, app, stop, owner) = match entry.launch {
                     Launch::Steam(steam_id) => {

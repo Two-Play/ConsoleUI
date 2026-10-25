@@ -5,6 +5,7 @@ pub mod bluetooth;
 mod collection;
 pub mod desktop;
 pub mod fakenet;
+pub mod game_options;
 mod grid;
 mod history;
 pub mod i18n;
