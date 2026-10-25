@@ -114,6 +114,7 @@ Schätzung in Story Points (SP): 1, 2, 3, 5, 8, 13. Ein Sprint dauert 2 Wochen.
 | 6.5 | Performance pass: load images asynchronously, thumbnail cache, frame-time overlay for debugging | 5 |
 | 6.6 | i18n: UI strings in English as the source language, German translation (e.g. Slint's `@tr()` with gettext catalogs), language follows `LANG` and can be changed on the settings page; remaining German strings in the code are moved to English | 5 |
 | 6.7 | **Done (Sprint 11).** Optional background music on the home screen like on the PS5: a generated ambient loop or the user's own files, fades out while an app is in front | 3 |
+| 6.9 | **Done (Sprint 11).** Animated background ("shader" background) as a settings choice: Artwork (animated where an entry has no artwork), Animated (always), Classic | 3 |
 | 6.8 | **Done (Sprint 11).** Animation polish: focus ring with a gap, light sweep on focus, ripple on press, gliding tab underline, crossfading info area, progress indicator on the launch screen | 3 |
 
 ## Epic 7 (optional, phase 3) – Own Smithay compositor (hybrid)
@@ -631,7 +632,7 @@ Two agents in parallel; both had to test with real key events (QMP `send-key`), 
   gyro/LED/rumble); the overlay stays on top ~450 ms while fading out; a monitor that comes back after
   a hand-over stays dark (single output); shutdown logs a harmless DRM "restore previous state" error.
 
-### Sprint 11 – "Transitions" (done: 7.7, 6.7, 6.8)
+### Sprint 11 – "Transitions" (done: 7.7, 6.7, 6.8, 6.9)
 
 - **Transitions (7.7):** `ShellMessage::Focus` carries an optional `Transition` (the tile rectangle
   and how long the shell's launch screen takes to grow); the compositor announces
@@ -657,6 +658,15 @@ Two agents in parallel; both had to test with real key events (QMP `send-key`), 
   and an indeterminate progress bar on the launch screen. The settings list scrolls now (nine rows
   with the music row did not fit above the hint bar in a 720p window). Benchmark: render time
   Ø 6.0 → 7.0 ms, max frame gap unchanged.
+- **Animated background (6.9):** settings row "Background": Artwork (default: the hero artwork, the
+  animated background where an entry has none), Animated (always, no artwork), Classic (the old
+  plain gradient). Slint has no custom shaders, so `consoleui_core::backdrop` is a per-pixel
+  function (aurora bands in the accent of the focused entry, vignette, dither) rendered at 240×135
+  on its own thread at ~30 fps (3.7 ms per frame, too much for the UI thread) and scaled up
+  smoothly; the color glides to the new accent. It runs only while visible and the shell is in
+  front; with animations off it is one still frame. Costs: while it runs the window repaints at
+  30 fps instead of idling. Under heavy unrelated load (two Android emulators) the benchmark showed
+  no difference between Classic and Animated; repeat on an idle machine.
 - **Tested:** nested on the NVIDIA host (`--winit`, glxgears via `--dummy-launch`, one run, no Xid):
   a screenshot series every 70 ms through launch → zoom in, quick menu → Home → shrink into the
   tile, launch again from the running tile → zoom out of the tile. Music with a stand-in `pw-cat`

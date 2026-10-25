@@ -152,7 +152,8 @@ Cargo workspace (edition 2024, `default-members` = the shell):
     `RunningAppID` in `~/.steam/registry.vdf` is updated by Steam only minutes later), with a minimum hold
     time and a 2 s grace period without game processes.
   - `settings.rs` (persisted `Settings`, the rows of the settings page), `sound.rs` (synthesized UI sounds
-    as raw PCM), `music.rs` (generated ambient loop and the music folder for the background music), `input::evdev` (key codes/axis normalization for the exclusive grab).
+    as raw PCM), `music.rs` (generated ambient loop and the music folder for the background music),
+    `backdrop.rs` (per-pixel animated background, rendered small and scaled up by the shell), `input::evdev` (key codes/axis normalization for the exclusive grab).
   - `wifi.rs` / `bluetooth.rs`: D-Bus-free models for NetworkManager/BlueZ (merge/sort networks, AP
     security flags, device kind from `Icon`/Class/name, visible devices). `network.rs`: `Request`,
     `Response`, the `Backend` trait and `spawn` (backend thread, coalesces refreshes); `fakenet.rs` is the
@@ -229,8 +230,11 @@ Cargo workspace (edition 2024, `default-members` = the shell):
     `main.rs` polls the channel, calls `Shell::set_library` and then hides the boot screen.
   - `src/audio.rs`: persistent `pw-cat --raw` process fed by a writer thread. `Shell::apply` compares a
     `Feedback` snapshot before/after each action to pick the sound.
+  - `src/backdrop.rs`: renders the animated background on its own thread and hands the newest frame
+    to the `backdrop` image in `main.slint`; `Shell::update_ambience` decides when it runs (shown by
+    the "Background" setting and the shell in front).
   - `src/music.rs`: background music on its own thread (ambient loop through `pw-cat --raw` with fades,
-    or the user's files); `Shell::update_music` lets it play only while the shell is in front.
+    or the user's files); `Shell::update_ambience` lets it play only while the shell is in front.
   - `src/grab.rs`: while the quick menu is open, `EVIOCGRAB` on the controller's evdev nodes (matched by
     gilrs `os_name`) and read them directly so the game in front gets no input.
   - `src/gamepad.rs`: gilrs polling → `Action`s (only devices with an SDL mapping); PS/Guide → `Action::Guide`.

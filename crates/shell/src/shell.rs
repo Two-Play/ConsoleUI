@@ -16,7 +16,7 @@ use consoleui_core::osk::{KeyboardEvent, OnScreenKeyboard};
 use consoleui_core::ownership::{self, FIRST_DESKTOP_APP_ID, Owner, SHELL_APP_ID};
 use consoleui_core::protocol::{CompositorMessage, Rect, ShellMessage, Transition};
 use consoleui_core::running::{MIN_HOLD, Phase, RunningApp};
-use consoleui_core::settings::{GlyphChoice, Setting, Settings};
+use consoleui_core::settings::{BackgroundChoice, GlyphChoice, Setting, Settings};
 use consoleui_core::sound::Sound;
 use consoleui_core::system;
 use consoleui_core::{
@@ -26,6 +26,7 @@ use consoleui_core::{
 use slint::{ComponentHandle, Image, ModelRc, VecModel};
 
 use crate::audio::Audio;
+use crate::backdrop::Backdrop;
 use crate::compositor::Compositor;
 use crate::context::{ContextAction, ContextMenu, ContextOutcome, EntryState};
 use crate::gamescope::{Gamescope, x11_window_id};
@@ -164,6 +165,8 @@ pub struct Shell {
     audio: Option<Audio>,
     /// Background music; plays only while the shell is in front
     music: Music,
+    /// Animated background (settings row "Background")
+    backdrop: Backdrop,
     /// Counts toasts up so that an older hide timer does not close a newer toast
     toast_generation: Rc<Cell<u64>>,
     /// "Controller battery low" warning already shown
@@ -269,6 +272,7 @@ impl Shell {
             settings_row: 0,
             audio: Audio::start(),
             music: Music::start(),
+            backdrop: Backdrop::new(),
             toast_generation: Rc::default(),
             battery_warned: false,
             network: Network::default(),
@@ -869,13 +873,25 @@ impl Shell {
         ui.set_keyboard_active(self.search_area == SearchArea::Keyboard);
         self.show_hero(ui);
         self.update_hints(ui);
-        self.update_music(ui);
+        self.update_ambience(ui);
     }
 
-    /// Background music plays while the shell is in front: no app, no launch screen, no boot.
-    fn update_music(&mut self, ui: &AppWindow) {
-        let active = self.foreground.is_none() && !ui.get_launching() && !ui.get_booting();
-        self.music.set(self.settings.music, active);
+    /// Background music and the animated background run while the shell is in front: no app, no
+    /// launch screen, no boot screen.
+    fn update_ambience(&mut self, ui: &AppWindow) {
+        let in_front = self.foreground.is_none() && !ui.get_launching() && !ui.get_booting();
+        self.music.set(self.settings.music, in_front);
+        let entry = self.focused_entry();
+        let has_artwork = entry.is_some_and(|i| self.entries[i].artwork.hero.is_some());
+        let accent = match entry {
+            Some(i) => self.tiles[i].accent,
+            None => {
+                let [r, g, b] = self.settings.accent.rgb();
+                slint::Color::from_rgb_u8(r, g, b)
+            }
+        };
+        let shown = self.settings.background.animated(has_artwork);
+        self.backdrop.update(ui, shown, in_front, self.settings.animations, accent);
     }
 
     /// Fades in the hero of the focused entry (once it is decoded), prefetches the neighbours
@@ -897,7 +913,11 @@ impl Shell {
                     .collect()
             })
             .unwrap_or_default();
-        self.heroes.show(entry.map(|e| e.id.as_str()), entry.and_then(|e| e.artwork.hero.as_deref()), prefetch);
+        // "Animated": no artwork over the animated background
+        let hero = entry
+            .and_then(|e| e.artwork.hero.as_deref())
+            .filter(|_| self.settings.background != BackgroundChoice::Animated);
+        self.heroes.show(entry.map(|e| e.id.as_str()), hero, prefetch);
 
         let parallax = match layout {
             Some((pos, len, row)) if self.settings.animations => {
@@ -1443,7 +1463,7 @@ impl Shell {
         self.tag_windows(ui);
         self.restore_keyboard_focus(ui);
         // Also after the boot screen, an app exit or the launch screen closing
-        self.update_music(ui);
+        self.update_ambience(ui);
 
         let now = Instant::now();
         let steam_games =

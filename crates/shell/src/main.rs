@@ -11,6 +11,7 @@ use consoleui_core::status::{self, Network};
 use slint::{RenderingState, Rgba8Pixel, SharedPixelBuffer, Timer, TimerMode};
 
 mod audio;
+mod backdrop;
 mod compositor;
 mod context;
 mod cover;

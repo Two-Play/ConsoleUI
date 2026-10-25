@@ -352,6 +352,21 @@ msgstr "Klänge"
 msgid "Sounds while navigating"
 msgstr "Klänge beim Navigieren"
 
+msgid "Background"
+msgstr "Hintergrund"
+
+msgid "Game artwork or an animated background"
+msgstr "Spielbilder oder ein animierter Hintergrund"
+
+msgid "Artwork"
+msgstr "Spielbilder"
+
+msgid "Animated"
+msgstr "Animiert"
+
+msgid "Classic"
+msgstr "Klassisch"
+
 msgid "Background music"
 msgstr "Hintergrundmusik"
 

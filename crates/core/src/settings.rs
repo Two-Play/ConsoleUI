@@ -70,6 +70,40 @@ impl GlyphChoice {
     }
 }
 
+/// What fills the background behind the pages
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BackgroundChoice {
+    /// The hero artwork of the focused entry; the animated background where there is none
+    #[default]
+    Artwork,
+    /// Always the animated background (see [`crate::backdrop`])
+    Animated,
+    /// The artwork, and the plain accent gradient where there is none
+    Classic,
+}
+
+impl BackgroundChoice {
+    pub const ALL: [BackgroundChoice; 3] = [Self::Artwork, Self::Animated, Self::Classic];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Artwork => tr("Artwork"),
+            Self::Animated => tr("Animated"),
+            Self::Classic => tr("Classic"),
+        }
+    }
+
+    /// Whether the animated background shows, given whether the focused entry has artwork.
+    pub fn animated(self, has_artwork: bool) -> bool {
+        match self {
+            Self::Artwork => !has_artwork,
+            Self::Animated => true,
+            Self::Classic => false,
+        }
+    }
+}
+
 /// Background music on the home screen (see [`crate::music`])
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -99,6 +133,7 @@ impl MusicChoice {
 pub struct Settings {
     pub accent: Accent,
     pub animations: bool,
+    pub background: BackgroundChoice,
     pub sounds: bool,
     pub music: MusicChoice,
     pub glyphs: GlyphChoice,
@@ -113,6 +148,7 @@ impl Default for Settings {
         Self {
             accent: Accent::default(),
             animations: true,
+            background: BackgroundChoice::default(),
             sounds: true,
             music: MusicChoice::default(),
             glyphs: GlyphChoice::default(),
@@ -127,6 +163,8 @@ impl Default for Settings {
 pub enum Setting {
     Accent,
     Animations,
+    /// Artwork or the animated background
+    Background,
     Sounds,
     /// Background music on the home screen
     Music,
@@ -142,9 +180,10 @@ pub enum Setting {
 }
 
 impl Setting {
-    pub const ALL: [Setting; 9] = [
+    pub const ALL: [Setting; 10] = [
         Self::Accent,
         Self::Animations,
+        Self::Background,
         Self::Sounds,
         Self::Music,
         Self::Glyphs,
@@ -169,6 +208,7 @@ impl Setting {
         match self {
             Self::Accent => tr("Accent color"),
             Self::Animations => tr("Animations"),
+            Self::Background => tr("Background"),
             Self::Sounds => tr("Sounds"),
             Self::Music => tr("Background music"),
             Self::Glyphs => tr("Button symbols"),
@@ -183,6 +223,7 @@ impl Setting {
         match self {
             Self::Accent => tr("Color of selection and buttons"),
             Self::Animations => tr("Transitions and motion"),
+            Self::Background => tr("Game artwork or an animated background"),
             Self::Sounds => tr("Sounds while navigating"),
             Self::Music => tr("Plays while the home screen is in front"),
             Self::Glyphs => tr("Symbols in the button hints"),
@@ -236,6 +277,7 @@ impl Settings {
         match setting {
             Setting::Accent => self.accent.label(),
             Setting::Animations => on_off(self.animations),
+            Setting::Background => self.background.label(),
             Setting::Sounds => on_off(self.sounds),
             Setting::Music => self.music.label(),
             Setting::Glyphs => self.glyphs.label(),
@@ -250,6 +292,7 @@ impl Settings {
         match setting {
             Setting::Accent => self.accent = cycle(&Accent::ALL, self.accent, forward),
             Setting::Animations => self.animations = !self.animations,
+            Setting::Background => self.background = cycle(&BackgroundChoice::ALL, self.background, forward),
             Setting::Sounds => self.sounds = !self.sounds,
             Setting::Music => self.music = cycle(&MusicChoice::ALL, self.music, forward),
             Setting::Glyphs => self.glyphs = cycle(&GlyphChoice::ALL, self.glyphs, forward),
@@ -278,6 +321,10 @@ mod tests {
         assert_eq!(settings.value_label(Setting::Sounds), "Off");
         settings.change(Setting::Glyphs, true);
         assert_eq!(settings.glyphs, GlyphChoice::PlayStation);
+        settings.change(Setting::Background, true);
+        assert_eq!(settings.background, BackgroundChoice::Animated);
+        assert!(BackgroundChoice::Artwork.animated(false) && !BackgroundChoice::Artwork.animated(true));
+        assert!(BackgroundChoice::Animated.animated(true) && !BackgroundChoice::Classic.animated(false));
         settings.change(Setting::Music, true);
         assert_eq!(settings.music, MusicChoice::Ambient);
         settings.change(Setting::Music, false);

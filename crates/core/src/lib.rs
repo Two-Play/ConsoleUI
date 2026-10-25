@@ -1,6 +1,7 @@
 //! Platform-independent logic of the ConsoleUI shell, without UI dependencies.
 
 pub mod accent;
+pub mod backdrop;
 pub mod bluetooth;
 mod collection;
 pub mod desktop;
