@@ -3,10 +3,12 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
+use crate::i18n::Language;
 use crate::icons;
 use crate::launch;
-use crate::library::{AppEntry, AppKind, Artwork, Launch, palette_for};
+use crate::library::{AppEntry, AppKind, Artwork, Launch, Names, palette_for};
 use crate::xdg;
 
 /// Categories that make sense on a TV: games, media, browsers, images.
@@ -18,9 +20,7 @@ const EXCLUDED_CATEGORIES: &[&str] = &["Settings", "System", "Development", "Off
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct DesktopEntry {
     pub id: String,
-    pub name: String,
-    pub generic_name: Option<String>,
-    pub comment: Option<String>,
+    pub names: DesktopNames,
     pub exec: Option<String>,
     pub try_exec: Option<String>,
     pub icon: Option<String>,
@@ -29,6 +29,52 @@ pub struct DesktopEntry {
     pub no_display: bool,
     pub hidden: bool,
     pub terminal: bool,
+}
+
+/// A localized key (`Name`, `Name[de]`, `Name[de_DE]`, …). Only the variants of the languages the
+/// shell has (see [`Language::ALL`]) are kept, so a runtime language switch (Story 6.6) can pick
+/// another variant without reading the file again, and the dozens of other translations a
+/// `.desktop` file usually carries cost no memory.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct LocalizedText {
+    /// The unlocalized value
+    pub default: Option<Box<str>>,
+    /// (locale of the key, value), e.g. `("de_DE", "…")`
+    pub variants: Vec<(Box<str>, Box<str>)>,
+}
+
+impl LocalizedText {
+    /// The value for the first of `langs` that has a variant, otherwise the unlocalized one
+    /// (like the old resolution at discovery time).
+    pub fn get(&self, langs: &[String]) -> Option<&str> {
+        langs
+            .iter()
+            .find_map(|lang| self.variants.iter().find(|(l, _)| **l == **lang))
+            .map(|(_, v)| &**v)
+            .or(self.default.as_deref())
+    }
+
+    fn is_empty(&self) -> bool {
+        self.default.is_none() && self.variants.is_empty()
+    }
+}
+
+/// The localizable texts of a desktop entry, kept on [`AppEntry`] (behind an `Arc`).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct DesktopNames {
+    pub name: LocalizedText,
+    pub generic_name: LocalizedText,
+    pub comment: LocalizedText,
+}
+
+impl DesktopNames {
+    /// Title and description for the locale codes `langs` (see [`crate::i18n::desktop_languages`]).
+    /// A name that only exists in another language is still better than none.
+    pub fn resolve(&self, langs: &[String]) -> (String, String) {
+        let title = self.name.get(langs).or_else(|| self.name.variants.first().map(|(_, v)| &**v)).unwrap_or_default();
+        let description = self.generic_name.get(langs).or_else(|| self.comment.get(langs)).unwrap_or_default();
+        (title.to_string(), description.to_string())
+    }
 }
 
 impl DesktopEntry {
@@ -49,7 +95,8 @@ impl DesktopEntry {
     }
 }
 
-/// Finds all matching desktop apps. `data_dirs` is sorted by priority (see [`xdg::data_dirs`]).
+/// Finds all matching desktop apps. `data_dirs` is sorted by priority (see [`xdg::data_dirs`]);
+/// `langs` are the locale codes the titles are resolved for first ([`AppEntry::localize`] switches).
 pub fn discover(data_dirs: &[PathBuf], langs: &[String]) -> Vec<AppEntry> {
     let theme = icon_theme();
     let mut seen = HashSet::new();
@@ -60,24 +107,26 @@ pub fn discover(data_dirs: &[PathBuf], langs: &[String]) -> Vec<AppEntry> {
             if !seen.insert(id.clone()) {
                 continue;
             }
-            let Some(entry) = fs::read_to_string(&path).ok().and_then(|c| parse(&id, &c, langs)) else {
+            let Some(entry) = fs::read_to_string(&path).ok().and_then(|c| parse(&id, &c)) else {
                 continue;
             };
             if entry.is_console_friendly() {
-                entries.push(to_app_entry(entry, data_dirs, &theme));
+                entries.push(to_app_entry(entry, data_dirs, &theme, langs));
             }
         }
     }
     entries
 }
 
-fn to_app_entry(entry: DesktopEntry, data_dirs: &[PathBuf], theme: &str) -> AppEntry {
+fn to_app_entry(entry: DesktopEntry, data_dirs: &[PathBuf], theme: &str, langs: &[String]) -> AppEntry {
     let id = format!("desktop:{}", entry.id);
     let (accent, accent2) = palette_for(&id);
     let kind = if entry.has_category(&["Game"]) { AppKind::Game } else { AppKind::App };
+    let (title, description) = entry.names.resolve(langs);
     AppEntry {
-        title: entry.name,
-        description: entry.generic_name.or(entry.comment).unwrap_or_default(),
+        title,
+        description,
+        names: Names::Desktop(Arc::new(entry.names)),
         kind,
         accent,
         accent2,
@@ -111,7 +160,7 @@ fn desktop_files(root: &Path) -> Vec<(String, PathBuf)> {
 }
 
 /// Parses the `[Desktop Entry]` group. Returns `None` if there is no name.
-pub fn parse(id: &str, content: &str, langs: &[String]) -> Option<DesktopEntry> {
+pub fn parse(id: &str, content: &str) -> Option<DesktopEntry> {
     let mut values: HashMap<&str, &str> = HashMap::new();
     let mut in_main_group = false;
     for line in content.lines().map(str::trim) {
@@ -127,21 +176,36 @@ pub fn parse(id: &str, content: &str, langs: &[String]) -> Option<DesktopEntry> 
         }
     }
 
-    let localized = |key: &str| {
-        langs
-            .iter()
-            .find_map(|lang| values.get(format!("{key}[{lang}]").as_str()))
-            .or_else(|| values.get(key))
-            .map(|v| unescape(v))
+    let localized = |key: &str, clean: fn(String) -> String| {
+        let mut text = LocalizedText {
+            default: values.get(key).map(|v| clean(unescape(v)).into()),
+            ..LocalizedText::default()
+        };
+        for (full, value) in &values {
+            if let Some(locale) = full.strip_prefix(key).and_then(|k| k.strip_prefix('[')).and_then(|k| k.strip_suffix(']'))
+                && is_supported_locale(locale)
+            {
+                text.variants.push((locale.into(), clean(unescape(value)).into()));
+            }
+        }
+        // `values` is a HashMap; a stable order keeps entries comparable.
+        text.variants.sort();
+        text
     };
     let plain = |key: &str| values.get(key).map(|v| unescape(v));
     let flag = |key: &str| values.get(key).is_some_and(|v| *v == "true");
 
+    let name = localized("Name", |v| v.trim().to_string());
+    if name.is_empty() {
+        return None;
+    }
     Some(DesktopEntry {
         id: id.to_string(),
-        name: localized("Name")?.trim().to_string(),
-        generic_name: localized("GenericName"),
-        comment: localized("Comment"),
+        names: DesktopNames {
+            name,
+            generic_name: localized("GenericName", |v| v),
+            comment: localized("Comment", |v| v),
+        },
         exec: plain("Exec"),
         try_exec: plain("TryExec"),
         icon: plain("Icon"),
@@ -154,6 +218,12 @@ pub fn parse(id: &str, content: &str, langs: &[String]) -> Option<DesktopEntry> 
         hidden: flag("Hidden"),
         terminal: flag("Terminal"),
     })
+}
+
+/// Whether a `.desktop` locale (`de`, `de_DE`, `de_DE@euro`, …) belongs to a language of the shell
+fn is_supported_locale(locale: &str) -> bool {
+    let language = locale.split(['_', '.', '@']).next().unwrap_or_default();
+    Language::ALL.iter().any(|l| l.code() == language)
 }
 
 fn unescape(value: &str) -> String {
@@ -253,7 +323,10 @@ mod tests {
 Type=Application
 Name=Firefox
 Name[de]=Firefox-Browser
+Name[en_GB]=Firefox
+Name[fr]=Navigateur Firefox
 GenericName=Web Browser
+GenericName[de]=Webbrowser
 Exec=firefox %u
 Icon=firefox
 Categories=Network;WebBrowser;
@@ -265,8 +338,9 @@ Exec=firefox --new-window %u
 
     #[test]
     fn parses_main_group_with_locale() {
-        let entry = parse("firefox.desktop", FIREFOX, &["de_DE".into(), "de".into()]).unwrap();
-        assert_eq!(entry.name, "Firefox-Browser");
+        let entry = parse("firefox.desktop", FIREFOX).unwrap();
+        let (title, description) = entry.names.resolve(&["de_DE".into(), "de".into()]);
+        assert_eq!((title.as_str(), description.as_str()), ("Firefox-Browser", "Webbrowser"));
         assert_eq!(entry.exec.as_deref(), Some("firefox %u"));
         assert_eq!(entry.categories, ["Network", "WebBrowser"]);
         assert!(entry.is_console_friendly());
@@ -274,13 +348,33 @@ Exec=firefox --new-window %u
 
     #[test]
     fn falls_back_to_unlocalized_name() {
-        let entry = parse("firefox.desktop", FIREFOX, &["fr".into()]).unwrap();
-        assert_eq!(entry.name, "Firefox");
+        let entry = parse("firefox.desktop", FIREFOX).unwrap();
+        assert_eq!(entry.names.resolve(&["fr".into()]), ("Firefox".into(), "Web Browser".into()));
+        assert_eq!(entry.names.resolve(&["en".into()]).0, "Firefox");
+    }
+
+    #[test]
+    fn keeps_only_supported_languages() {
+        let entry = parse("firefox.desktop", FIREFOX).unwrap();
+        let locales: Vec<_> = entry.names.name.variants.iter().map(|(l, _)| &**l).collect();
+        assert_eq!(locales, ["de", "en_GB"]);
+        assert_eq!(entry.names.generic_name.variants.len(), 1);
+        assert!(is_supported_locale("de_AT@euro"));
+        assert!(!is_supported_locale("fr_FR"));
+    }
+
+    #[test]
+    fn name_only_in_another_language_and_comment_fallback() {
+        let content = "[Desktop Entry]\nType=Application\nName[de]=Nur Deutsch\nComment[de]=Kommentar\n";
+        let entry = parse("x.desktop", content).unwrap();
+        assert_eq!(entry.names.resolve(&["en".into()]), ("Nur Deutsch".into(), "".into()));
+        assert_eq!(entry.names.resolve(&["de".into()]), ("Nur Deutsch".into(), "Kommentar".into()));
+        assert!(parse("y.desktop", "[Desktop Entry]\nName[fr]=Seulement\n").is_none());
     }
 
     #[test]
     fn filters_unwanted_entries() {
-        let base = parse("firefox.desktop", FIREFOX, &[]).unwrap();
+        let base = parse("firefox.desktop", FIREFOX).unwrap();
         let check = |change: fn(&mut DesktopEntry)| {
             let mut entry = base.clone();
             change(&mut entry);

@@ -25,7 +25,8 @@ export component SearchPage inherits Rectangle {
     Text {
         x: root.margin;
         y: 120px * root.s;
-        text: @tr("Search");
+        // Own msgid: "Search" is the hint (German "Suchen"), the heading is a noun ("Suche").
+        text: @tr("Find");
         color: Theme.text;
         font-size: 44px * root.s;
         font-weight: 800;
