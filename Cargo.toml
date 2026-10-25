@@ -6,11 +6,12 @@ default-members = ["crates/shell"]
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
+license = "GPL-3.0-or-later"
 
 [workspace.dependencies]
 consoleui-core = { path = "crates/core" }
 
-# Slint rendert im Debug-Build sonst spürbar langsamer; eigene Crates bleiben schnell kompilierbar.
+# Slint renders noticeably slower in debug builds otherwise; our own crates stay quick to compile.
 [profile.dev]
 opt-level = 1
 

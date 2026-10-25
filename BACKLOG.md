@@ -149,8 +149,8 @@ are updated after the spike.
 
 About 98 SP in total, 7.1–7.6 (≈ 54 SP) as the first goal: a session that runs as well without
 gamescope as it does today. Deliberately **not** in the compositor: own upscaling, HDR and color
-management, FPS limiter — the nested gamescope (7.10) provides those. **Before 7.2:** decide the
-project license (no license file yet; niri and cosmic-comp are GPL, anvil/smallvil are MIT).
+management, FPS limiter — the nested gamescope (7.10) provides those. License decided before 7.2:
+GPL-3.0-or-later, so code from niri (GPL-3.0-or-later) and anvil/smallvil (MIT) can be reused.
 
 ---|---|---|
 | 7.1 | Spike: Smithay-Beispiel `anvil` bauen und auf einem TTY starten; prüfen, ob die Shell (Slint, Wayland) und `gamescope` verschachtelt darin laufen | 5 |

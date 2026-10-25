@@ -214,9 +214,10 @@ One msgid has exactly one German text; use a different English text if the Germa
 `Shell::apply_language` switches the language at runtime (the on-screen keyboard is QWERTZ for German,
 QWERTY for English).
 
-The Smithay compositor (Epic 7) is planned in `docs/spike-smithay.md`: a separate `crates/compositor`,
-code may be taken from anvil/smallvil (MIT) but not from niri/cosmic-comp (GPL) until a project
-license is decided.
+License: GPL-3.0-or-later (`LICENSE`, `license.workspace` in every crate). The Smithay compositor
+(Epic 7) is planned in `docs/spike-smithay.md` (a separate `crates/compositor`); code may be taken from
+anvil/smallvil (MIT) and niri (GPL-3.0-or-later) with attribution in a comment. cosmic-comp is
+GPL-3.0-only: copying from it would pin the project to GPL-3.0-only, so only take ideas from it.
 
 If the GPU renderer fails (e.g. the NVIDIA driver needs a reset after a gamescope crash),
 `SLINT_BACKEND=winit-software` still renders `--snapshot` PNGs.
