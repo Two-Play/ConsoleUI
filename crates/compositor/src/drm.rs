@@ -30,7 +30,7 @@ use smithay::output::{Mode as WlMode, Output, PhysicalProperties};
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{EventLoop, RegistrationToken};
 use smithay::reexports::drm::Device as _;
-use smithay::reexports::drm::control::{ModeTypeFlags, connector, crtc};
+use smithay::reexports::drm::control::{Mode as DrmMode, ModeTypeFlags, connector, crtc};
 use smithay::reexports::input::{DeviceCapability, Libinput};
 use smithay::reexports::rustix::fs::OFlags;
 use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
@@ -87,6 +87,8 @@ struct Gpu {
 struct Surface {
     crtc: crtc::Handle,
     connector: connector::Handle,
+    /// The mode set on the CRTC (the connector's preferred one)
+    mode: DrmMode,
     output: Output,
     drm_output: GbmDrmOutput,
     global: GlobalId,
@@ -317,18 +319,31 @@ impl State {
             }
         };
         let mut lost = false;
+        let mut changed = None;
         for event in events {
-            if let DrmScanEvent::Disconnected { connector, .. } = event
-                && gpu.surface.as_ref().is_some_and(|s| s.connector == connector.handle())
-            {
-                info!("output {:?} unplugged", connector.handle());
-                lost = true;
+            match event {
+                DrmScanEvent::Disconnected { connector, .. }
+                    if gpu.surface.as_ref().is_some_and(|s| s.connector == connector.handle()) =>
+                {
+                    info!("output {:?} unplugged", connector.handle());
+                    lost = true;
+                }
+                // Same monitor, other modes (a TV switched its EDID, a VM window was resized)
+                DrmScanEvent::Changed { connector, .. }
+                    if gpu.surface.as_ref().is_some_and(|s| s.connector == connector.handle()) =>
+                {
+                    changed = Some(connector);
+                }
+                _ => {}
             }
         }
         if lost && let Some(surface) = gpu.surface.take() {
             self.space.unmap_output(&surface.output);
             self.display_handle.remove_global::<State>(surface.global);
             self.output = None;
+        }
+        if !lost && let Some(connector) = changed {
+            self.drm_connector_modes_changed(&connector);
         }
         let Some(gpu) = self.drm().and_then(|d| d.device.as_mut()) else { return };
         if gpu.surface.is_none() {
@@ -339,17 +354,35 @@ impl State {
         }
     }
 
+    /// Switches our output to the connector's new preferred mode, if it has another one.
+    fn drm_connector_modes_changed(&mut self, connector: &connector::Info) {
+        let Some(gpu) = self.drm().and_then(|d| d.device.as_mut()) else { return };
+        let Some(surface) = gpu.surface.as_mut() else { return };
+        let Some(mode) = preferred_mode(connector).filter(|mode| *mode != surface.mode) else { return };
+        let wl_mode = WlMode::from(mode);
+        if let Err(err) = surface.drm_output.use_mode::<_, OutputElement>(
+            mode,
+            &mut gpu.renderer,
+            &DrmOutputRenderElements::default(),
+        ) {
+            warn!("cannot switch {} to {}x{}: {err}", surface.output.name(), wl_mode.size.w, wl_mode.size.h);
+            return;
+        }
+        info!("output {}: mode {}x{}@{}", surface.output.name(), wl_mode.size.w, wl_mode.size.h, wl_mode.refresh);
+        surface.mode = mode;
+        let output = surface.output.clone();
+        output.set_preferred(wl_mode);
+        output.change_current_state(Some(wl_mode), None, None, None);
+        // Clients and the shell learn the new size; windows are refitted.
+        self.set_output(output);
+        self.schedule_drm_render(Duration::ZERO);
+    }
+
     fn drm_connector_connected(&mut self, connector: connector::Info, crtc: crtc::Handle) {
         let dh = self.display_handle.clone();
         let Some(gpu) = self.drm().and_then(|d| d.device.as_mut()) else { return };
         let name = format!("{}-{}", connector.interface().as_str(), connector.interface_id());
-        let Some(drm_mode) = connector
-            .modes()
-            .iter()
-            .find(|mode| mode.mode_type().contains(ModeTypeFlags::PREFERRED))
-            .or_else(|| connector.modes().first())
-            .copied()
-        else {
+        let Some(drm_mode) = preferred_mode(&connector) else {
             warn!("connector {name} has no modes");
             return;
         };
@@ -405,6 +438,7 @@ impl State {
         gpu.surface = Some(Surface {
             crtc,
             connector: connector.handle(),
+            mode: drm_mode,
             output: output.clone(),
             drm_output,
             global,
@@ -518,4 +552,14 @@ impl State {
         // Render a bit after the vblank, so clients have time for their next frame (anvil).
         self.schedule_drm_render(frame_duration.mul_f64(0.6));
     }
+}
+
+/// The connector's preferred mode, else its first one.
+fn preferred_mode(connector: &connector::Info) -> Option<DrmMode> {
+    connector
+        .modes()
+        .iter()
+        .find(|mode| mode.mode_type().contains(ModeTypeFlags::PREFERRED))
+        .or_else(|| connector.modes().first())
+        .copied()
 }
