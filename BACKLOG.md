@@ -795,6 +795,13 @@ Branch `agent/compositor-blur`, on top of the UI feedback round (6.10).
   model (`Shell::quick_items`, only changed rows are replaced), so the focus animates from card to
   card instead of the row being rebuilt on every input (96 instead of 38 menu frames for three
   steps). Verified with timed `--actions` around the 450 ms mark and real key events in the VM.
+- **Third follow-up (glitches on the NVIDIA host):** following the sliding bar did not work: the
+  region sent after a frame of the overlay often reached the compositor before that frame's buffer
+  (the shell's swap waits for vsync), so the blur ran a frame ahead and flickered at the bar's edge.
+  Now only a resting panel is blurred: the region is sent once the bar (or toast) has arrived and
+  fades in within 150 ms, and it is removed at once when the panel starts to leave; while sliding,
+  the panel is the plain glass. A blur that follows moving panels would need the region tied to
+  the overlay's buffer (e.g. applied on the window's next commit), left for later.
 - **Observed (pre-existing, also on 6.10):** the winit backend logs `EGL_BAD_SURFACE` from
   `eglQuerySurface` (buffer age) after frames without damage and after screenshots, because the
   surface is no longer current; harmless, but noisy.
