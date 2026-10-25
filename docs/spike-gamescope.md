@@ -71,3 +71,29 @@ eine zweite Shell-Instanz.
   `consoleui_core::ownership`).
 - Ende-zu-Ende verschachtelt getestet (`--dummy --dummy-launch glxgears --actions …`): Starten,
   Overlay über dem Spiel, Home mit laufendem Spiel, Fortsetzen, Beenden mit Bestätigung.
+
+# Spike 4 (Sprint 7) – Benachrichtigungsfenster
+
+Für Toasts über laufenden Spielen. Quellen: `steamcompmgr.cpp` aus gamescope (3.16.29), getestet
+verschachtelt mit `-e -W 960 -H 540` und `glxgears`.
+
+- `DetermineAndApplyFocus`: Ein `STEAM_OVERLAY`-Fenster, das so breit wie das Root-Fenster ist
+  oder `STEAM_INPUT_FOCUS` setzt, wird das interaktive Overlay. Jedes andere wird das
+  `notificationWindow`. Fenster mit `STEAM_OVERLAY` kommen nie in die Liste der fokussierbaren
+  Fenster. Das Benachrichtigungsfenster nimmt dem Spiel also weder Tastatur noch Maus weg.
+  (In älteren Versionen, z. B. 3.16.20, zählt nur `nWidth > 1200`.)
+- `paint_all` zeichnet das Benachrichtigungsfenster immer als eigene Ebene über Spiel und Overlay
+  (wenn `opacity` ≠ 0). Die **Position wird ignoriert**: `paint_window_commit` skaliert das
+  Fenster auf die Ausgabe (wie das Spiel) und zentriert es. Ein kleines Fenster würde also
+  vergrößert in der Mitte erscheinen. Deshalb ist das Fenster genau 1 px schmaler als das Root-
+  Fenster und so hoch wie der Bildschirm (Maßstab ≈ 1), transparent, und der Toast liegt darin oben
+  rechts.
+- `handle_desktop_window` zieht Fenster ohne `STEAM_GAME` auf Root-Größe, außer sie haben feste
+  Size-Hints (min = max). Ohne die war das Fenster wieder 960 breit und damit ein Overlay. In Slint
+  reicht es, `width`/`height` des Fensters fest zu binden (Rust setzt sie aus der Root-Geometrie).
+- Ergebnis: Hinweis über `glxgears` zu sehen, `GAMESCOPE_FOCUSED_WINDOW` und `XGetInputFocus`
+  bleiben beim Spiel. Mit offener Steuerzentrale sind beide zu sehen, und den Fokus hat das Overlay.
+- Nebenbefund (nicht neu): Nach dem Schließen der Steuerzentrale steht `GAMESCOPE_FOCUSED_APP`
+  leer und `XGetInputFocus` zeigt auf ein gamescope-internes Fenster statt aufs Spiel. Das war auch
+  ohne Hinweisfenster so.
+
