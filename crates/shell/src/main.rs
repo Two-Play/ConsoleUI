@@ -1,12 +1,12 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::error::Error;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use consoleui_core::Action;
 use consoleui_core::i18n::{self, tr};
-use consoleui_core::input::GlyphStyle;
-use consoleui_core::settings::{GlyphChoice, Settings};
+use consoleui_core::input::{self, GlyphStyle, InputDevice};
+use consoleui_core::settings::Settings;
 use consoleui_core::status::{self, Network};
 use slint::{RenderingState, Rgba8Pixel, SharedPixelBuffer, Timer, TimerMode};
 
@@ -102,12 +102,23 @@ fn main() -> Result<(), Box<dyn Error>> {
     let overlay =
         gamescope.as_ref().map(|g| g.overlay.as_weak()).or_else(|| compositor_ui.as_ref().map(|c| c.overlay.as_weak()));
     let shell = Rc::new(RefCell::new(Shell::new(&ui, gamescope, compositor, compositor_ui, settings, settings_path)));
+    let gamepads = Gamepads::new().map(|g| Rc::new(RefCell::new(g)));
+    // The hints show the buttons of the device used last (keyboard keys after keyboard input).
+    let last_input = Rc::new(Cell::new(InputDevice::Gamepad));
+    let keyboard_used = {
+        let gamepads = gamepads.clone();
+        let shell = shell.clone();
+        let last_input = last_input.clone();
+        move |ui: &AppWindow| input_used(ui, gamepads.as_deref(), &shell.borrow(), &last_input, InputDevice::Keyboard)
+    };
     if let Some(overlay) = overlay.and_then(|o| o.upgrade()) {
         overlay.on_action({
             let ui = ui.as_weak();
             let shell = shell.clone();
+            let keyboard_used = keyboard_used.clone();
             move |nav| {
                 if let Some(ui) = ui.upgrade() {
+                    keyboard_used(&ui);
                     shell.borrow_mut().apply(&ui, to_action(nav));
                 }
             }
@@ -116,8 +127,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     ui.on_action({
         let ui = ui.as_weak();
         let shell = shell.clone();
+        let keyboard_used = keyboard_used.clone();
         move |nav| {
             if let Some(ui) = ui.upgrade() {
+                keyboard_used(&ui);
                 shell.borrow_mut().apply(&ui, to_action(nav));
             }
         }
@@ -125,13 +138,20 @@ fn main() -> Result<(), Box<dyn Error>> {
     ui.on_typed({
         let ui = ui.as_weak();
         let shell = shell.clone();
-        move |text| ui.upgrade().is_some_and(|ui| shell.borrow_mut().type_text(&ui, &text))
+        let keyboard_used = keyboard_used.clone();
+        move |text| {
+            ui.upgrade().is_some_and(|ui| {
+                keyboard_used(&ui);
+                shell.borrow_mut().type_text(&ui, &text)
+            })
+        }
     });
     ui.on_erase({
         let ui = ui.as_weak();
         let shell = shell.clone();
         move || {
             if let Some(ui) = ui.upgrade() {
+                keyboard_used(&ui);
                 shell.borrow_mut().erase_text(&ui);
             }
         }
@@ -141,22 +161,35 @@ fn main() -> Result<(), Box<dyn Error>> {
     });
 
     let stats = Rc::new(RefCell::new(FrameStats::default()));
-    if ui.get_show_fps() {
+    let notifier = ui.window().set_rendering_notifier({
         let stats = stats.clone();
-        ui.window().set_rendering_notifier(move |state, _| match state {
-            RenderingState::BeforeRendering => stats.borrow_mut().frame_started(),
-            RenderingState::AfterRendering => stats.borrow_mut().frame_finished(),
+        let shell = shell.clone();
+        let show_fps = ui.get_show_fps();
+        move |state, _| match state {
+            RenderingState::BeforeRendering if show_fps => stats.borrow_mut().frame_started(),
+            RenderingState::AfterRendering => {
+                if show_fps {
+                    stats.borrow_mut().frame_finished();
+                }
+                // Not while the shell is busy (a snapshot renders from within a timer)
+                if let Ok(mut shell) = shell.try_borrow_mut() {
+                    shell.frame_rendered();
+                }
+            }
             _ => {}
-        })?;
+        }
+    });
+    if ui.get_show_fps() {
+        notifier?;
     }
 
-    let gamepads = Gamepads::new().map(|g| Rc::new(RefCell::new(g)));
     let gamepad_timer = Timer::default();
     if let Some(gamepads) = &gamepads {
         gamepad_timer.start(TimerMode::Repeated, GAMEPAD_POLL, {
             let ui = ui.as_weak();
             let shell = shell.clone();
             let gamepads = gamepads.clone();
+            let last_input = last_input.clone();
             let mut grab: Option<grab::Grab> = None;
             move || {
                 let Some(ui) = ui.upgrade() else { return };
@@ -182,6 +215,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 for action in actions {
                     let accepted = shell.borrow().accepts_gamepad(&ui, action);
                     if accepted {
+                        input_used(&ui, Some(&gamepads), &shell.borrow(), &last_input, InputDevice::Gamepad);
                         shell.borrow_mut().apply(&ui, action);
                     }
                 }
@@ -189,7 +223,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         });
     }
 
-    update_status(&ui, gamepads.as_deref(), &shell.borrow());
+    update_status(&ui, gamepads.as_deref(), &shell.borrow(), last_input.get());
     let tick = Timer::default();
     tick.start(TimerMode::Repeated, Duration::from_secs(1), {
         let ui = ui.as_weak();
@@ -198,7 +232,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let shell = shell.clone();
         move || {
             let Some(ui) = ui.upgrade() else { return };
-            update_status(&ui, gamepads.as_deref(), &shell.borrow());
+            update_status(&ui, gamepads.as_deref(), &shell.borrow(), last_input.get());
             let battery = gamepads.as_ref().and_then(|g| g.borrow().status()).and_then(|c| c.battery);
             shell.borrow_mut().check_controller_battery(&ui, battery);
             if ui.get_show_fps() {
@@ -408,7 +442,7 @@ fn to_action(nav: NavAction) -> Action {
 }
 
 /// Clock, network, battery and controller in the top bar, plus the matching button glyphs.
-fn update_status(ui: &AppWindow, gamepads: Option<&RefCell<Gamepads>>, shell: &Shell) {
+fn update_status(ui: &AppWindow, gamepads: Option<&RefCell<Gamepads>>, shell: &Shell, last_input: InputDevice) {
     ui.set_clock(chrono::Local::now().format("%H:%M").to_string().into());
 
     let system = status::read();
@@ -423,12 +457,28 @@ fn update_status(ui: &AppWindow, gamepads: Option<&RefCell<Gamepads>>, shell: &S
     let controller = gamepads.and_then(|g| g.borrow().status());
     ui.set_controller_connected(controller.is_some());
     ui.set_controller_battery(controller.as_ref().and_then(|c| c.battery).map_or(-1, i32::from));
-    let style = match (shell.glyph_choice(), controller.map(|c| c.style)) {
-        (GlyphChoice::PlayStation, _) | (GlyphChoice::Auto, Some(GlyphStyle::PlayStation)) => {
-            ControllerStyle::Playstation
-        }
-        (GlyphChoice::Xbox, _) | (GlyphChoice::Auto, Some(GlyphStyle::Xbox)) => ControllerStyle::Xbox,
-        (GlyphChoice::Auto, None) => ControllerStyle::Keyboard,
+    update_glyphs(ui, controller.map(|c| c.style), shell, last_input);
+}
+
+/// Notes the device of an input and switches the hint glyphs when it changed.
+fn input_used(
+    ui: &AppWindow,
+    gamepads: Option<&RefCell<Gamepads>>,
+    shell: &Shell,
+    last_input: &Cell<InputDevice>,
+    device: InputDevice,
+) {
+    if last_input.replace(device) != device {
+        let controller = gamepads.and_then(|g| g.borrow().status()).map(|c| c.style);
+        update_glyphs(ui, controller, shell, device);
+    }
+}
+
+fn update_glyphs(ui: &AppWindow, controller: Option<GlyphStyle>, shell: &Shell, last_input: InputDevice) {
+    let style = match input::hint_glyphs(shell.glyph_choice(), controller, last_input) {
+        Some(GlyphStyle::PlayStation) => ControllerStyle::Playstation,
+        Some(GlyphStyle::Xbox) => ControllerStyle::Xbox,
+        None => ControllerStyle::Keyboard,
     };
     if ui.get_controller_style() != style {
         ui.set_controller_style(style);

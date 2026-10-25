@@ -15,8 +15,9 @@ import { NetworkPage } from "network.slint";
 import { BootScreen } from "boot.slint";
 import { Toast } from "toast.slint";
 import { HeroLayer } from "hero.slint";
+import { Glass, GlassPanel } from "glass.slint";
 
-export { AppTile, ContextItem, ControllerStyle, GlyphButton, Hint, KeyCap, NavAction, NetRow, NetView, NetworkState, QuickItem, Screen, SettingRow, OverlayWindow, NotificationWindow, Theme }
+export { AppTile, ContextItem, ControllerStyle, GlyphButton, Hint, KeyCap, NavAction, NetRow, NetView, NetworkState, QuickItem, Screen, SettingRow, OverlayWindow, NotificationWindow, Theme, Glass }
 
 export component AppWindow inherits Window {
     title: "ConsoleUI";
@@ -143,6 +144,23 @@ export component AppWindow inherits Window {
     animate glow {
         duration: Theme.background-duration;
         easing: ease-in-out;
+    }
+
+    // Frosted panels show the background through (glass.slint)
+    init => {
+        Glass.active = true;
+        Glass.glow = root.glow;
+        Glass.view-width = root.width;
+        Glass.view-height = root.height;
+    }
+    changed glow => {
+        Glass.glow = root.glow;
+    }
+    changed width => {
+        Glass.view-width = root.width;
+    }
+    changed height => {
+        Glass.view-height = root.height;
     }
 
     Timer {
@@ -627,15 +645,12 @@ export component AppWindow inherits Window {
             height: 100%;
             background: #000000b3;
 
-            Rectangle {
+            GlassPanel {
                 width: 680px * s;
                 height: 270px * s;
                 x: (parent.width - self.width) / 2;
                 y: (parent.height - self.height) / 2;
                 border-radius: 24px * s;
-                background: #191b24;
-                border-width: 1px;
-                border-color: #ffffff22;
 
                 VerticalLayout {
                     padding: 44px * s;

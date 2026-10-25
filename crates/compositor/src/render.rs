@@ -30,13 +30,13 @@ use smithay::output::Output;
 use smithay::utils::{IsAlive, Logical, Physical, Point, Rectangle, Scale, Size, Transform};
 use smithay::wayland::compositor::with_states;
 
+use crate::rounded::{self, RoundedSurface};
 use crate::transition::Effect;
 
 /// Background where no window covers the output
 pub const CLEAR_COLOR: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
 
-type Transformed =
-    CropRenderElement<RelocateRenderElement<RescaleRenderElement<WaylandSurfaceRenderElement<GlesRenderer>>>>;
+type Transformed = CropRenderElement<RelocateRenderElement<RescaleRenderElement<RoundedSurface>>>;
 
 smithay::backend::renderer::element::render_elements! {
     pub OutputElement<=GlesRenderer>;
@@ -95,15 +95,18 @@ pub fn output_elements(
             drawn.window.render_elements(renderer, location, scale, effect.alpha);
         let offset = Point::<f64, Logical>::from(effect.offset).to_physical(scale).to_i32_round();
         let clip = match effect.clip {
-            Some(area) => Rectangle::<f64, Logical>::new((area.x, area.y).into(), (area.w, area.h).into())
-                .to_physical(scale)
-                .to_i32_round(),
-            None => Rectangle::from_size(output_size),
+            Some(area) => {
+                Rectangle::<f64, Logical>::new((area.x, area.y).into(), (area.w, area.h).into()).to_physical(scale)
+            }
+            None => Rectangle::from_size(output_size).to_f64(),
         };
+        let radius = effect.radius * scale.x;
+        let program = if radius >= 0.5 { rounded::program(renderer) } else { None };
         elements.extend(window_elements.into_iter().filter_map(|element| {
+            let element = RoundedSurface::new(element, program.clone(), clip, radius);
             let element = RescaleRenderElement::from_element(element, Point::default(), effect.scale);
             let element = RelocateRenderElement::from_element(element, offset, Relocate::Relative);
-            CropRenderElement::from_element(element, scale, clip).map(OutputElement::Transformed)
+            CropRenderElement::from_element(element, scale, clip.to_i32_round()).map(OutputElement::Transformed)
         }));
     }
     elements

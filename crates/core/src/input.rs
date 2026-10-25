@@ -3,6 +3,7 @@
 use std::time::{Duration, Instant};
 
 use crate::nav::Action;
+use crate::settings::GlyphChoice;
 
 /// Delay until the first repeat.
 const INITIAL_DELAY: Duration = Duration::from_millis(350);
@@ -24,6 +25,27 @@ pub fn glyph_style(name: &str) -> GlyphStyle {
     let name = name.to_lowercase();
     let sony = ["dualsense", "dualshock", "playstation", "ps4", "ps5", "sony", "wireless controller"];
     if sony.iter().any(|s| name.contains(s)) { GlyphStyle::PlayStation } else { GlyphStyle::Xbox }
+}
+
+/// The input device used last; the hints show its buttons.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InputDevice {
+    Keyboard,
+    Gamepad,
+}
+
+/// Glyphs for the hints: keyboard keys (`None`) after keyboard input or without a controller,
+/// otherwise the chosen style, or with `Auto` the connected controller's.
+pub fn hint_glyphs(choice: GlyphChoice, controller: Option<GlyphStyle>, last: InputDevice) -> Option<GlyphStyle> {
+    let controller = controller?;
+    if last == InputDevice::Keyboard {
+        return None;
+    }
+    Some(match choice {
+        GlyphChoice::Auto => controller,
+        GlyphChoice::PlayStation => GlyphStyle::PlayStation,
+        GlyphChoice::Xbox => GlyphStyle::Xbox,
+    })
 }
 
 pub fn is_direction(action: Action) -> bool {
@@ -223,6 +245,16 @@ mod tests {
         r.press(Action::Down, t0);
         assert!(r.poll(t0 + ms(5000)).is_some());
         assert_eq!(r.poll(t0 + ms(5001)), None);
+    }
+
+    #[test]
+    fn hints_follow_the_last_input_device() {
+        use GlyphChoice::*;
+        let pad = InputDevice::Gamepad;
+        assert_eq!(hint_glyphs(Auto, None, pad), None);
+        assert_eq!(hint_glyphs(Auto, Some(GlyphStyle::PlayStation), pad), Some(GlyphStyle::PlayStation));
+        assert_eq!(hint_glyphs(Xbox, Some(GlyphStyle::PlayStation), pad), Some(GlyphStyle::Xbox));
+        assert_eq!(hint_glyphs(PlayStation, Some(GlyphStyle::Xbox), InputDevice::Keyboard), None);
     }
 
     #[test]

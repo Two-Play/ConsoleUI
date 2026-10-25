@@ -116,6 +116,7 @@ Schätzung in Story Points (SP): 1, 2, 3, 5, 8, 13. Ein Sprint dauert 2 Wochen.
 | 6.7 | **Done (Sprint 11).** Optional background music on the home screen like on the PS5: a generated ambient loop or the user's own files, fades out while an app is in front | 3 |
 | 6.9 | **Done (Sprint 11).** Animated background ("shader" background) as a settings choice: Artwork (animated where an entry has no artwork), Animated (always), Classic | 3 |
 | 6.8 | **Done (Sprint 11).** Animation polish: focus ring with a gap, light sweep on focus, ripple on press, gliding tab underline, crossfading info area, progress indicator on the launch screen | 3 |
+| 6.10 | **Done.** UI feedback round: the game comes to the front only once the launch screen is fully open, rounded corners on the zooming game image, frosted-glass panels, a calm info area on the home screen, keyboard key caps in the hints after keyboard input | 5 |
 
 ## Epic 7 (optional, phase 3) – Own Smithay compositor (hybrid)
 
@@ -677,6 +678,42 @@ Two agents in parallel; both had to test with real key events (QMP `send-key`), 
 - **Known gaps:** no rounded corners or shadow on the zooming game image (would need a shader);
   the return animation needs the app's window, so an app that quits shows only the shell part;
   "My music" pauses without a fade.
+
+### UI feedback round (done: 6.10)
+
+- **Launch handover:** the launched app is handed to our compositor (or gamescope's baselayer) only
+  once the shell has rendered a frame after the launch screen's animation ended (rendering notifier,
+  checked by the 50 ms compositor poll; at the latest 300 ms later). The compositor then zooms the
+  app in from slightly smaller than fullscreen (`Transition { tile: None }`), so the game never
+  appears over a half-open launch screen. The launch screen closes ~700 ms after that handover.
+- **Rounded corners (7.7 gap):** `crates/compositor/src/rounded.rs` wraps each surface of the zooming
+  app in an element that swaps Smithay's texture shader for one with an antialiased rounded-rect
+  clip (approach after niri's `ClippedSurfaceRenderElement`). The radius follows the tile (12 % of
+  the shorter side, at most 4 % of the output height) at the small end and is 0 at fullscreen, in
+  both directions. Not scanned out directly while rounded; buffers with a transform other than
+  `Normal` are drawn without rounding.
+- **Frosted glass:** Slint 1.18 has no backdrop blur, so the hero workers also make a 192×108
+  copy blurred with σ 2.5 (≈ 25 px at 1080p); `GlassPanel` (`ui/glass.slint`, global `Glass`) shows
+  it through, lined up with the window, above the accent gradient, frosted with a 62 % tint. Used by
+  the context menu, the game options panel, the quit confirmation, the quick menu and toasts in the
+  main window. Like Windows' Mica it shows the blurred background artwork, not the tiles in front of
+  it. The overlay and notification windows above a game stay an almost opaque dark glass (blurring
+  the game would need a compositor blur pass). Benchmark unchanged (render time Ø 6.0 → 5.4 ms, noise).
+- **Calm info area:** the home info area only crossfades now (old text out in half the focus
+  duration, new text in after a short delay); the sink/rise motion made logo and text jump back and
+  forth while scrolling.
+- **Keyboard glyphs:** the hints show the buttons of the device used last: key caps (Enter, Esc,
+  Tab, F1, two arrow keys, …) after keyboard input, controller glyphs after gamepad input
+  (`input::hint_glyphs`); before, keyboard glyphs appeared only without a connected controller.
+- **Tested:** nested compositor in the dev container (llvmpipe, glxgears) with screenshot series
+  every 50 ms through launch → zoom in and quick menu → Home → shrink into the tile; snapshots of the
+  hints with keyboard glyphs and of the frosted panels with a scratch Steam library (copied hero
+  images). 141 core + 21 compositor + 8 shell tests, clippy, fmt.
+- **Not tested:** on the NVIDIA host, on DRM in the VM, with a real game; the keyboard/gamepad switch
+  with real devices (scripted actions bypass it).
+- **Observed:** under llvmpipe in the dev container the shell sometimes renders no frame for
+  ~0.5 s right after a launch (CPU starved by glxgears); the frame-based handover waits for it, the
+  300 ms fallback then brings the app anyway.
 
 ## Risiken / offene Fragen
 

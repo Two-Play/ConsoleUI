@@ -1,7 +1,8 @@
 import { Theme } from "theme.slint";
+import { GlassPanel } from "glass.slint";
 
 // Short notice at the top right, e.g. "Controller connected". Slides in and fades out.
-export component Toast inherits Rectangle {
+export component Toast inherits GlassPanel {
     in property <bool> shown;
     in property <string> symbol;
     in property <string> title;
@@ -11,12 +12,10 @@ export component Toast inherits Rectangle {
     width: 440px * root.s;
     height: 86px * root.s;
     border-radius: 18px * root.s;
-    background: #191b24f2;
-    border-width: 1px;
-    border-color: #ffffff22;
     drop-shadow-blur: 30px * root.s;
     drop-shadow-color: #00000099;
     opacity: root.shown ? 1 : 0;
+    visible: self.opacity > 0.01;
     animate opacity { duration: Theme.page-duration * 1.5; }
 
     HorizontalLayout {

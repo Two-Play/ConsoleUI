@@ -1,29 +1,70 @@
 import { Theme } from "theme.slint";
 import { ControllerStyle, GlyphButton, Hint } from "types.slint";
 
-// Button symbol in the style of the connected controller (PlayStation, Xbox) or as a keyboard key.
+// A keyboard key: light cap with a darker lower edge, so it reads as a key and not as a button.
+component KeyCap inherits Rectangle {
+    in property <string> label;
+    in property <float> s: 1;
+
+    property <length> size: 28px * root.s;
+    height: root.size;
+    width: max(root.size, label.preferred-width + 14px * root.s);
+    border-radius: 6px * root.s;
+    // Lower edge of the key
+    background: #ffffff14;
+
+    Rectangle {
+        y: 0;
+        height: parent.height - 3px * root.s;
+        border-radius: parent.border-radius;
+        background: #ffffff2e;
+        border-width: 1px;
+        border-color: #ffffff40;
+    }
+
+    label := Text {
+        y: 0;
+        width: 100%;
+        height: parent.height - 3px * root.s;
+        text: root.label;
+        color: Theme.text;
+        font-size: 14px * root.s;
+        font-weight: 700;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+// Button symbol in the style of the connected controller (PlayStation, Xbox) or as keyboard keys.
 export component ButtonGlyph inherits Rectangle {
     in property <GlyphButton> button;
     in property <ControllerStyle> style;
     in property <float> s: 1;
 
-    property <bool> face: root.style != ControllerStyle.keyboard
+    property <bool> keyboard: root.style == ControllerStyle.keyboard;
+    property <bool> face: !root.keyboard
         && (root.button == GlyphButton.confirm || root.button == GlyphButton.back
             || root.button == GlyphButton.north || root.button == GlyphButton.west);
     property <bool> ps: root.style == ControllerStyle.playstation;
+    property <bool> plain: root.button == GlyphButton.dpad || root.button == GlyphButton.updown;
+    // Keyboard: the key labels; directions are two arrow keys
+    property <string> key:
+        root.button == GlyphButton.dpad ? "←"
+        : root.button == GlyphButton.updown ? "↑"
+        : root.button == GlyphButton.confirm ? "Enter"
+        : root.button == GlyphButton.back ? "Esc"
+        : root.button == GlyphButton.north ? "/"
+        : root.button == GlyphButton.west ? "F"
+        : root.button == GlyphButton.menu ? "Tab"
+        : root.button == GlyphButton.l1 ? "Q"
+        : root.button == GlyphButton.r1 ? "E"
+        : root.button == GlyphButton.guide ? "F1"
+        : @tr("Ctrl+Q");
+    property <string> second-key: root.button == GlyphButton.dpad ? "→" : "↓";
     property <string> symbol:
         root.button == GlyphButton.dpad ? "◀ ▶"
         : root.button == GlyphButton.updown ? "▲ ▼"
-        : root.button == GlyphButton.guide ? (root.style == ControllerStyle.keyboard ? "F1" : root.ps ? "PS" : "Guide")
-        : root.style == ControllerStyle.keyboard ? (
-            root.button == GlyphButton.confirm ? "Enter"
-            : root.button == GlyphButton.back ? "Esc"
-            : root.button == GlyphButton.north ? "/"
-            : root.button == GlyphButton.west ? "F"
-            : root.button == GlyphButton.menu ? "Tab"
-            : root.button == GlyphButton.l1 ? "Q"
-            : root.button == GlyphButton.r1 ? "E"
-            : @tr("Ctrl+Q"))
+        : root.button == GlyphButton.guide ? (root.ps ? "PS" : "Guide")
         : root.button == GlyphButton.confirm ? (root.ps ? "✕" : "A")
         : root.button == GlyphButton.back ? (root.ps ? "○" : "B")
         : root.button == GlyphButton.north ? (root.ps ? "△" : "Y")
@@ -41,15 +82,20 @@ export component ButtonGlyph inherits Rectangle {
         : (root.ps ? #ff9ad8 : #5aa9ff);
 
     property <length> size: 28px * root.s;
+    property <length> gap: 4px * root.s;
     height: root.size;
-    width: root.face ? root.size : max(root.size, label.preferred-width + 14px * root.s);
-    border-radius: root.face ? root.size / 2 : 6px * root.s;
-    property <bool> plain: root.button == GlyphButton.dpad || root.button == GlyphButton.updown;
-    background: root.plain ? transparent : Theme.surface;
-    border-width: root.face ? 0 : 1px;
-    border-color: root.plain ? transparent : #ffffff33;
+    width: root.keyboard ? (root.plain ? first.width + root.gap + second.width : first.width)
+        : root.face ? root.size : max(root.size, label.preferred-width + 14px * root.s);
+
+    if !root.keyboard: Rectangle {
+        border-radius: root.face ? root.size / 2 : 6px * root.s;
+        background: root.plain ? transparent : Theme.surface;
+        border-width: root.face ? 0 : 1px;
+        border-color: root.plain ? transparent : #ffffff33;
+    }
 
     label := Text {
+        visible: !root.keyboard;
         width: 100%;
         height: 100%;
         text: root.symbol;
@@ -58,6 +104,20 @@ export component ButtonGlyph inherits Rectangle {
         font-weight: 700;
         horizontal-alignment: center;
         vertical-alignment: center;
+    }
+
+    first := KeyCap {
+        x: 0;
+        visible: root.keyboard;
+        label: root.key;
+        s: root.s;
+    }
+
+    second := KeyCap {
+        x: first.width + root.gap;
+        visible: root.keyboard && root.plain;
+        label: root.second-key;
+        s: root.s;
     }
 }
 

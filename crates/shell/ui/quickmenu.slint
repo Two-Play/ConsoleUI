@@ -1,6 +1,7 @@
 import { Theme } from "theme.slint";
 import { ControllerStyle, GlyphButton, Hint, QuickItem } from "types.slint";
 import { HintBar } from "glyph.slint";
+import { GlassPanel } from "glass.slint";
 
 // Quick menu: a bar of cards at the bottom edge with a slight darkening above. Used in the overlay
 // window (gamescope) or as a layer of the main window.
@@ -25,11 +26,12 @@ export component QuickMenu inherits Rectangle {
         animate opacity { duration: Theme.page-duration; }
     }
 
-    Rectangle {
+    GlassPanel {
         y: root.open ? root.height - root.panel-height : root.height;
         width: 100%;
         height: root.panel-height;
-        background: #12141cf2;
+        tint: #12141c;
+        edge: false;
         opacity: root.open ? 1 : 0;
         animate y, opacity {
             duration: Theme.launch-duration;

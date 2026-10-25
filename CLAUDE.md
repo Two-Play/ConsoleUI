@@ -183,7 +183,8 @@ Cargo workspace (edition 2024, `default-members` = the shell):
   handlers (dmabuf, drm-syncobj, presentation-time, relative-pointer, pointer-constraints, …).
   `transition.rs` (Story 7.7) is the Smithay-free logic of the animated front changes (zoom out of
   the tile, shrink back into it), `State::frame_windows` applies it per window and `render.rs` draws
-  the resulting `Effect` with rescale/relocate/crop elements.
+  the resulting `Effect` with rescale/relocate/crop elements; `rounded.rs` draws the zooming app's
+  surfaces with a custom GLES texture shader for the rounded corners.
   `policy.rs` is the Smithay-free, unit-tested window policy (owner shell/app/unknown, front, stacking,
   keyboard focus; every toplevel is fullscreen, an app comes to the front once its window shows
   content). `xwayland.rs` runs `X11Wm` and maps windows to apps via `_NET_WM_PID` or the X-Resource
@@ -208,6 +209,8 @@ Cargo workspace (edition 2024, `default-members` = the shell):
     `s` factor; tiles are positioned absolutely and animated (`animate x, y, width, height`).
   - `ui/theme.slint`: the `Theme` global with design tokens (colors, durations). Use it instead of
     hard-coded values.
+  - `ui/glass.slint`: `GlassPanel`, the frosted background of menus, dialogs and toasts; it shows the
+    blurred hero copy from `hero.rs` (global `Glass`, set only by the main window).
   - `ui/types.slint`: `NavAction` enum and `AppTile` struct shared with Rust.
   - `src/shell.rs`: `Shell` owns entries plus a parallel `tiles` vector, all `running` apps (each with a
     gamescope app ID, a stop handle and an `Owner`), the `foreground` app, the three tile models (home =
