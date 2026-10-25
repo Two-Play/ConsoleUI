@@ -1,0 +1,37 @@
+[package]
+name = "consoleui-compositor"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Own Smithay compositor for the ConsoleUI session (Epic 7)"
+
+[[bin]]
+name = "consoleui-compositor"
+path = "src/main.rs"
+
+[dependencies]
+consoleui-core.workspace = true
+# Smithay is pinned to a git commit (Smithay main at the time of Story 7.2, the same commit the
+# spike in docs/spike-smithay.md used). Bump both entries together.
+smithay = { git = "https://github.com/Smithay/smithay.git", rev = "24647fc8d00131eb7f388efed26e35ea316b0018", default-features = false, features = [
+    "backend_drm",
+    "backend_egl",
+    "backend_gbm",
+    "backend_libinput",
+    "backend_session_libseat",
+    "backend_udev",
+    "backend_winit",
+    "desktop",
+    "renderer_gl",
+    "use_system_lib",
+    "wayland_frontend",
+    "xwayland",
+] }
+smithay-drm-extras = { git = "https://github.com/Smithay/smithay.git", rev = "24647fc8d00131eb7f388efed26e35ea316b0018" }
+# Same version as Smithay's event loop
+calloop = "0.14.5"
+png = "0.18.1"
+serde_json = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+libc = "0.2"

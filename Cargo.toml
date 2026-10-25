@@ -1,6 +1,8 @@
 [workspace]
 resolver = "3"
-members = ["crates/core", "crates/shell"]
+members = ["crates/core", "crates/shell", "crates/compositor"]
+# The compositor needs -devel packages the host does not have (see dev/toolbox.sh), so a plain
+# `cargo build`/`cargo run` only builds the shell.
 default-members = ["crates/shell"]
 
 [workspace.package]

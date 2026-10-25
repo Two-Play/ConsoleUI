@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=ConsoleUI (own compositor)
+Comment=Console shell for games and apps on the ConsoleUI compositor (experimental, no gamescope)
+Exec=/usr/local/bin/consoleui-compositor-session
+DesktopNames=ConsoleUI
