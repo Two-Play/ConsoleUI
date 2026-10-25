@@ -100,7 +100,8 @@ fn is_supported(gamepad: &Gamepad) -> bool {
     gamepad.is_connected() && gamepad.mapping_source() != MappingSource::None
 }
 
-/// Kreuz/A bestätigt, Kreis/B geht zurück, Options/Start und PS/Guide öffnen das Menü.
+/// Kreuz/A bestätigt, Kreis/B geht zurück, Dreieck/Y sucht, Quadrat/X filtert, L1/R1 wechseln
+/// die Tabs, Options/Start und PS/Guide öffnen das Menü.
 fn button_action(button: Button) -> Option<Action> {
     Some(match button {
         Button::DPadUp => Action::Up,
@@ -109,6 +110,10 @@ fn button_action(button: Button) -> Option<Action> {
         Button::DPadRight => Action::Right,
         Button::South => Action::Confirm,
         Button::East => Action::Back,
+        Button::North => Action::Search,
+        Button::West => Action::Secondary,
+        Button::LeftTrigger => Action::PrevTab,
+        Button::RightTrigger => Action::NextTab,
         Button::Start | Button::Mode => Action::Menu,
         _ => return None,
     })

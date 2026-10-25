@@ -1,0 +1,98 @@
+import { AppTile, KeyCap } from "types.slint";
+import { Theme } from "theme.slint";
+import { TileRow } from "tilerow.slint";
+
+// Suche: Eingabefeld, Bildschirmtastatur und darunter die Treffer als Kachelreihe.
+export component SearchPage inherits Rectangle {
+    in property <string> query;
+    in property <[KeyCap]> keys;
+    in property <int> key-focused;
+    in property <bool> keyboard-active: true;
+    in property <[AppTile]> results;
+    in property <int> result-focused;
+    in property <bool> pulse;
+    in property <float> s;
+
+    out property <length> focus-x: row.focus-x;
+    out property <length> focus-y: row.focus-y;
+    out property <length> focus-size: row.focus-size;
+
+    property <length> margin: 110px * root.s;
+    property <length> unit: 62px * root.s;
+    property <length> key-gap: 8px * root.s;
+    property <length> keyboard-y: 230px * root.s;
+
+    Text {
+        x: root.margin;
+        y: 120px * root.s;
+        text: "Suche";
+        color: Theme.text;
+        font-size: 44px * root.s;
+        font-weight: 800;
+    }
+
+    // Eingabefeld
+    Rectangle {
+        x: root.margin + 260px * root.s;
+        y: 116px * root.s;
+        width: 11 * root.unit - root.key-gap;
+        height: 64px * root.s;
+        border-radius: self.height / 2;
+        background: Theme.surface;
+        border-width: 2px;
+        border-color: root.keyboard-active ? Theme.text : transparent;
+
+        Text {
+            x: 28px * root.s;
+            height: 100%;
+            width: parent.width - 56px * root.s;
+            text: root.query == "" ? "Spiele und Apps suchen" : root.query + "|";
+            color: root.query == "" ? Theme.text-dim : Theme.text;
+            font-size: 26px * root.s;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+    }
+
+    for key[i] in root.keys: Rectangle {
+        property <bool> is-focused: root.keyboard-active && i == root.key-focused;
+        x: root.margin + 260px * root.s + key.x * root.unit;
+        y: root.keyboard-y + key.row * root.unit;
+        width: key.width * root.unit - root.key-gap;
+        height: root.unit - root.key-gap;
+        border-radius: 10px * root.s;
+        background: self.is-focused ? Theme.text : Theme.surface;
+        animate background { duration: 90ms; }
+
+        Text {
+            width: 100%;
+            height: 100%;
+            text: key.label;
+            color: parent.is-focused ? Theme.base : Theme.text;
+            font-size: (key.label.character-count > 1 ? 18px : 24px) * root.s;
+            font-weight: 600;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+
+    Text {
+        x: root.margin;
+        y: root.keyboard-y + 5 * root.unit + 28px * root.s;
+        text: root.query == "" ? "Zuletzt genutzt" : root.results.length == 0 ? "Keine Treffer" : root.results.length + " Treffer";
+        color: Theme.text-dim;
+        font-size: 20px * root.s;
+    }
+
+    row := TileRow {
+        x: root.margin;
+        y: root.keyboard-y + 5 * root.unit + 72px * root.s;
+        tiles: root.results;
+        focused: root.result-focused;
+        active: !root.keyboard-active;
+        pulse: root.pulse;
+        tile: 130px * root.s;
+        tile-focused: 190px * root.s;
+        gap: 18px * root.s;
+    }
+}

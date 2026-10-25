@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 
 use crate::library::{AppEntry, AppKind, Artwork, Launch, palette_for};
@@ -68,6 +69,37 @@ fn to_entry(root: &Path, manifest: Manifest) -> AppEntry {
 pub fn running_app_id() -> Option<u32> {
     let path = xdg::home()?.join(".steam/registry.vdf");
     running_app_id_from(&fs::read_to_string(path).ok()?)
+}
+
+/// Beendet ein laufendes Steam-Spiel per SIGTERM. Steam gibt jedem Spielprozess `SteamAppId`
+/// in die Umgebung; Steam selbst und seine Hilfsprozesse bleiben verschont.
+pub fn stop_game(app_id: u32) -> io::Result<usize> {
+    let own_pid = std::process::id();
+    let mut stopped = 0;
+    for entry in fs::read_dir("/proc")?.flatten() {
+        let Some(pid) = entry.file_name().to_str().and_then(|n| n.parse::<u32>().ok()) else { continue };
+        if pid == own_pid {
+            continue;
+        }
+        let dir = entry.path();
+        let comm = fs::read_to_string(dir.join("comm")).unwrap_or_default();
+        if matches!(comm.trim(), "steam" | "steamwebhelper") {
+            continue;
+        }
+        // Nur Prozesse des eigenen Benutzers sind lesbar; alle anderen fallen hier heraus.
+        let Ok(environ) = fs::read(dir.join("environ")) else { continue };
+        if environ_has_app(&environ, app_id)
+            && std::process::Command::new("kill").args(["-TERM", &pid.to_string()]).status()?.success()
+        {
+            stopped += 1;
+        }
+    }
+    Ok(stopped)
+}
+
+fn environ_has_app(environ: &[u8], app_id: u32) -> bool {
+    let wanted = format!("SteamAppId={app_id}");
+    environ.split(|&b| b == 0).any(|var| var == wanted.as_bytes())
 }
 
 fn running_app_id_from(registry: &str) -> Option<u32> {
@@ -184,6 +216,14 @@ mod tests {
             parse_manifest(r#""AppState" { "appid" "1" "name" "X" "StateFlags" "1026" "LastPlayed" "0" }"#).unwrap();
         assert!(!manifest.installed);
         assert_eq!(manifest.last_played, None);
+    }
+
+    #[test]
+    fn finds_app_id_in_environment() {
+        let environ = b"HOME=/home/x\0SteamAppId=730\0SteamGameId=730\0";
+        assert!(environ_has_app(environ, 730));
+        assert!(!environ_has_app(environ, 73));
+        assert!(!environ_has_app(b"SteamAppId=7300\0", 730));
     }
 
     #[test]

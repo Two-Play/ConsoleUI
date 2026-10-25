@@ -1,9 +1,12 @@
 import { Theme } from "theme.slint";
-import { AppTile, NavAction, NetworkState } from "types.slint";
-import { Tile } from "tile.slint";
+import { AppTile, ControllerStyle, GlyphButton, Hint, KeyCap, NavAction, NetworkState, Screen } from "types.slint";
 import { StatusBar } from "statusbar.slint";
+import { ButtonGlyph, HintBar } from "glyph.slint";
+import { HomePage } from "home.slint";
+import { LibraryPage } from "library.slint";
+import { SearchPage } from "search.slint";
 
-export { AppTile, NavAction, NetworkState }
+export { AppTile, ControllerStyle, GlyphButton, Hint, KeyCap, NavAction, NetworkState, Screen }
 
 export component AppWindow inherits Window {
     title: "ConsoleUI";
@@ -12,8 +15,24 @@ export component AppWindow inherits Window {
     background: Theme.base;
     forward-focus: keys;
 
-    in property <[AppTile]> tiles;
-    in property <int> focused: 0;
+    in property <Screen> screen: Screen.home;
+
+    in property <[AppTile]> home-tiles;
+    in property <int> home-focused;
+
+    in property <[AppTile]> library-tiles;
+    in property <int> library-focused;
+    in property <string> filter-label;
+    in property <string> sort-label;
+    out property <int> library-columns: library.columns;
+
+    in property <string> search-query;
+    in property <[KeyCap]> keys;
+    in property <int> key-focused;
+    in property <bool> keyboard-active: true;
+    in property <[AppTile]> results;
+    in property <int> result-focused;
+
     // Kurzer „Drück“-Effekt auf der fokussierten Kachel; setzt sich selbst zurück.
     in-out property <bool> pulse: false;
     in property <string> clock: "--:--";
@@ -33,29 +52,36 @@ export component AppWindow inherits Window {
     in property <image> launch-image;
     in property <color> launch-accent;
 
+    // Rückfrage, z. B. vor dem Beenden einer laufenden App
+    in property <bool> confirm-open;
+    in property <string> confirm-title;
+    in property <string> confirm-text;
+
     // Top-Bar-Status
     in property <NetworkState> network: NetworkState.offline;
     in property <int> battery-percent: -1;
     in property <bool> battery-charging;
     in property <bool> controller-connected;
     in property <int> controller-battery: -1;
-    // Tastensymbole passend zum Controller (Tastatur: ⏎ / Esc)
-    in property <string> confirm-glyph: "⏎";
-    in property <string> back-glyph: "Esc";
+    in property <ControllerStyle> controller-style: ControllerStyle.keyboard;
+    in property <[Hint]> hints;
+
+    // Nur mit Fokus nimmt die Shell Gamepad-Eingaben an; sonst gehören sie dem Spiel im Vordergrund.
+    out property <bool> window-active: keys.has-focus;
 
     callback action(NavAction);
+    // Tastatureingabe in der Suche; gibt zurück, ob das Zeichen angenommen wurde.
+    callback typed(string) -> bool;
+    callback erase();
     callback quit();
 
     // Alle Maße skalieren mit der Fenstergröße (Referenz: 1920×1080).
     property <float> s: max(0.4, min(root.width / 1920px, root.height / 1080px));
     property <length> margin: 110px * s;
-    property <length> tile: 150px * s;
-    property <length> tile-focused: 230px * s;
-    property <length> gap: 20px * s;
-    property <length> row-y: 150px * s;
-    property <length> info-y: root.row-y + root.tile-focused + 56px * s;
 
-    property <AppTile> current: root.tiles[root.focused];
+    property <AppTile> current: root.screen == Screen.home ? root.home-tiles[root.home-focused]
+        : root.screen == Screen.library ? root.library-tiles[root.library-focused]
+        : root.results[root.result-focused];
     property <color> glow: root.current.accent;
     animate glow {
         duration: Theme.background-duration;
@@ -75,36 +101,91 @@ export component AppWindow inherits Window {
         height: 100%;
 
         key-pressed(event) => {
-            if (event.modifiers.control && (event.text == "q" || event.text == "Q")) {
-                root.quit();
-                return accept;
+            if (event.modifiers.control) {
+                if (event.text == "q" || event.text == "Q") {
+                    root.quit();
+                    return accept;
+                }
+                return reject;
             }
-            if (event.text == Key.LeftArrow || event.text == "a") {
+            if (event.text == Key.LeftArrow) {
                 root.action(NavAction.left);
                 return accept;
             }
-            if (event.text == Key.RightArrow || event.text == "d") {
+            if (event.text == Key.RightArrow) {
                 root.action(NavAction.right);
                 return accept;
             }
-            if (event.text == Key.UpArrow || event.text == "w") {
+            if (event.text == Key.UpArrow) {
                 root.action(NavAction.up);
                 return accept;
             }
-            if (event.text == Key.DownArrow || event.text == "s") {
+            if (event.text == Key.DownArrow) {
                 root.action(NavAction.down);
                 return accept;
             }
-            if (event.text == Key.Return || event.text == Key.Space) {
+            if (event.text == Key.Return) {
                 root.action(NavAction.confirm);
                 return accept;
             }
-            if (event.text == Key.Escape || event.text == Key.Backspace) {
+            if (event.text == Key.Escape) {
                 root.action(NavAction.back);
                 return accept;
             }
-            if (event.text == Key.Tab || event.text == "m") {
+            if (event.text == Key.Tab) {
                 root.action(NavAction.menu);
+                return accept;
+            }
+            // In der Suche tippt die Tastatur; WASD und die Buchstabenkürzel gelten dort nicht.
+            if (root.screen == Screen.search && !root.launching && !root.confirm-open) {
+                if (event.text == Key.Backspace) {
+                    root.erase();
+                    return accept;
+                }
+                return root.typed(event.text) ? accept : reject;
+            }
+            if (event.text == "a") {
+                root.action(NavAction.left);
+                return accept;
+            }
+            if (event.text == "d") {
+                root.action(NavAction.right);
+                return accept;
+            }
+            if (event.text == "w") {
+                root.action(NavAction.up);
+                return accept;
+            }
+            if (event.text == "s") {
+                root.action(NavAction.down);
+                return accept;
+            }
+            if (event.text == Key.Space) {
+                root.action(NavAction.confirm);
+                return accept;
+            }
+            if (event.text == Key.Backspace) {
+                root.action(NavAction.back);
+                return accept;
+            }
+            if (event.text == "m") {
+                root.action(NavAction.menu);
+                return accept;
+            }
+            if (event.text == "q") {
+                root.action(NavAction.prev-tab);
+                return accept;
+            }
+            if (event.text == "e") {
+                root.action(NavAction.next-tab);
+                return accept;
+            }
+            if (event.text == "/") {
+                root.action(NavAction.search);
+                return accept;
+            }
+            if (event.text == "f") {
+                root.action(NavAction.secondary);
                 return accept;
             }
             reject
@@ -150,7 +231,8 @@ export component AppWindow inherits Window {
             }
         }
 
-        // Abdunkeln von links und unten, damit Text auf jedem Artwork lesbar bleibt
+        // Abdunkeln von links und unten, damit Text auf jedem Artwork lesbar bleibt; in Bibliothek
+        // und Suche stärker, weil dort mehr Text steht.
         Rectangle {
             width: 100%;
             height: 100%;
@@ -163,23 +245,53 @@ export component AppWindow inherits Window {
             background: @linear-gradient(180deg, Theme.base.with-alpha(0.5) 0%, transparent 30%, transparent 55%, Theme.base 100%);
         }
 
-        // Top-Bar
-        Text {
-            x: root.margin;
-            y: 52px * s;
-            text: "Spiele";
-            color: Theme.text;
-            font-size: 26px * s;
-            font-weight: 700;
+        Rectangle {
+            width: 100%;
+            height: 100%;
+            background: Theme.base;
+            opacity: root.screen == Screen.home ? 0 : 0.55;
+            animate opacity { duration: Theme.page-duration; }
         }
 
-        Text {
-            x: root.margin + 130px * s;
-            y: 52px * s;
-            text: "Medien";
-            color: Theme.text-dim;
-            font-size: 26px * s;
-            font-weight: 600;
+        // Tabs
+        HorizontalLayout {
+            x: root.margin;
+            y: 50px * s;
+            width: self.preferred-width;
+            height: 36px * s;
+            spacing: 18px * s;
+
+            ButtonGlyph {
+                y: (parent.height - self.height) / 2;
+                button: GlyphButton.l1;
+                style: root.controller-style;
+                s: root.s;
+                opacity: root.screen == Screen.library ? 1 : 0.35;
+            }
+
+            Text {
+                text: "Home";
+                color: root.screen == Screen.home ? Theme.text : Theme.text-dim;
+                font-size: 26px * s;
+                font-weight: root.screen == Screen.home ? 700 : 600;
+                vertical-alignment: center;
+            }
+
+            Text {
+                text: "Bibliothek";
+                color: root.screen == Screen.library ? Theme.text : Theme.text-dim;
+                font-size: 26px * s;
+                font-weight: root.screen == Screen.library ? 700 : 600;
+                vertical-alignment: center;
+            }
+
+            ButtonGlyph {
+                y: (parent.height - self.height) / 2;
+                button: GlyphButton.r1;
+                style: root.controller-style;
+                s: root.s;
+                opacity: root.screen == Screen.home ? 1 : 0.35;
+            }
         }
 
         StatusBar {
@@ -194,119 +306,82 @@ export component AppWindow inherits Window {
             controller-battery: root.controller-battery;
         }
 
-        // Kachelreihe: Die fokussierte Kachel bleibt links stehen, die Reihe gleitet darunter durch.
-        for app[i] in root.tiles: Tile {
-            property <length> base: i == root.focused ? root.tile-focused : root.tile;
-            property <length> size: root.pulse && i == root.focused ? self.base * 0.94 : self.base;
-
-            data: app;
-            focused: i == root.focused;
-            width: self.size;
-            height: self.size;
-            x: root.margin + (i - root.focused) * (root.tile + root.gap) + (i > root.focused ? root.tile-focused - root.tile : 0px) + (self.base - self.size) / 2;
-            y: root.row-y + (self.base - self.size) / 2;
-
-            animate x, y, width, height {
-                duration: Theme.focus-duration;
+        // Seiten mit kurzem Überblenden und leichtem Seitwärtsgleiten
+        home := HomePage {
+            width: root.width;
+            height: root.height;
+            x: root.screen == Screen.home ? 0 : -60px * s;
+            opacity: root.screen == Screen.home ? 1 : 0;
+            visible: self.opacity > 0.01;
+            animate x, opacity {
+                duration: Theme.page-duration;
                 easing: ease-out-quart;
             }
+            tiles: root.home-tiles;
+            focused: root.home-focused;
+            pulse: root.pulse && root.screen == Screen.home;
+            s: root.s;
         }
 
-        // Infos zur fokussierten App
-        VerticalLayout {
-            x: root.margin;
-            y: root.info-y;
-            width: root.width - 2 * root.margin;
-            height: root.height - root.info-y;
-            alignment: start;
-            spacing: 8px * s;
-
-            Text {
-                text: root.current.kind;
-                color: Theme.text-dim;
-                font-size: 18px * s;
-                font-weight: 600;
-                letter-spacing: 3px * s;
+        library := LibraryPage {
+            width: root.width;
+            height: root.height;
+            x: root.screen == Screen.library ? 0 : root.screen == Screen.home ? 60px * s : -60px * s;
+            opacity: root.screen == Screen.library ? 1 : 0;
+            visible: self.opacity > 0.01;
+            animate x, opacity {
+                duration: Theme.page-duration;
+                easing: ease-out-quart;
             }
-
-            if root.current.has-logo: Image {
-                height: 130px * s;
-                source: root.current.logo;
-                image-fit: contain;
-                horizontal-alignment: left;
-            }
-
-            if !root.current.has-logo: Text {
-                text: root.current.title;
-                color: Theme.text;
-                font-size: 64px * s;
-                font-weight: 800;
-            }
-
-            Text {
-                text: root.current.subtitle;
-                color: Theme.text-dim;
-                font-size: 26px * s;
-            }
-
-            HorizontalLayout {
-                alignment: start;
-                spacing: 20px * s;
-                padding-top: 22px * s;
-
-                Rectangle {
-                    width: 220px * s;
-                    height: 64px * s;
-                    border-radius: self.height / 2;
-                    background: Theme.text;
-
-                    Text {
-                        width: 100%;
-                        height: 100%;
-                        text: root.current.action-label;
-                        color: Theme.base;
-                        font-size: 24px * s;
-                        font-weight: 700;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                    }
-                }
-
-                Rectangle {
-                    width: 64px * s;
-                    height: 64px * s;
-                    border-radius: self.height / 2;
-                    background: Theme.surface;
-
-                    Text {
-                        width: 100%;
-                        height: 100%;
-                        text: "•••";
-                        color: Theme.text;
-                        font-size: 20px * s;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                    }
-                }
-            }
+            tiles: root.library-tiles;
+            focused: root.library-focused;
+            pulse: root.pulse && root.screen == Screen.library;
+            s: root.s;
+            filter-label: root.filter-label;
+            sort-label: root.sort-label;
+            style: root.controller-style;
         }
 
-        // Steuerungshinweise
-        Text {
+        search := SearchPage {
+            width: root.width;
+            height: root.height;
+            y: root.screen == Screen.search ? 0 : 40px * s;
+            opacity: root.screen == Screen.search ? 1 : 0;
+            visible: self.opacity > 0.01;
+            animate y, opacity {
+                duration: Theme.page-duration;
+                easing: ease-out-quart;
+            }
+            query: root.search-query;
+            keys: root.keys;
+            key-focused: root.key-focused;
+            keyboard-active: root.keyboard-active;
+            results: root.results;
+            result-focused: root.result-focused;
+            pulse: root.pulse && root.screen == Screen.search;
+            s: root.s;
+        }
+
+        HintBar {
             x: root.margin;
-            y: root.height - 64px * s;
-            text: "◀ ▶  Navigieren        " + root.confirm-glyph + "  " + root.current.action-label + (root.controller-connected ? "" : "        Strg+Q  Beenden");
-            color: Theme.text-dim;
-            font-size: 18px * s;
+            y: root.height - 70px * s;
+            height: 28px * s;
+            hints: root.hints;
+            style: root.controller-style;
+            s: root.s;
         }
 
         // Startbildschirm; liegt geschlossen unsichtbar genau über der fokussierten Kachel.
         Rectangle {
-            x: root.margin;
-            y: root.row-y;
-            width: root.tile-focused;
-            height: root.tile-focused;
-            border-radius: root.tile-focused * 0.12;
+            property <length> origin-x: root.screen == Screen.home ? home.focus-x : root.screen == Screen.library ? library.focus-x : search.focus-x;
+            property <length> origin-y: root.screen == Screen.home ? home.focus-y : root.screen == Screen.library ? library.focus-y : search.focus-y;
+            property <length> origin-size: root.screen == Screen.home ? home.focus-size : root.screen == Screen.library ? library.focus-size : search.focus-size;
+
+            x: self.origin-x;
+            y: self.origin-y;
+            width: self.origin-size;
+            height: self.origin-size;
+            border-radius: self.origin-size * 0.12;
             background: root.launch-accent;
             opacity: 0;
             clip: true;
@@ -342,10 +417,11 @@ export component AppWindow inherits Window {
                     font-size: 26px * s;
                 }
 
-                Text {
-                    text: root.back-glyph + "  Zur Übersicht";
-                    color: Theme.text-dim;
-                    font-size: 18px * s;
+                HintBar {
+                    padding-top: 10px * s;
+                    hints: [{ button: GlyphButton.back, label: "Zur Übersicht" }];
+                    style: root.controller-style;
+                    s: root.s;
                 }
             }
 
@@ -372,6 +448,49 @@ export component AppWindow inherits Window {
                     }
                 }
             ]
+        }
+
+        if root.confirm-open: Rectangle {
+            width: 100%;
+            height: 100%;
+            background: #000000b3;
+
+            Rectangle {
+                width: 680px * s;
+                height: 270px * s;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                border-radius: 24px * s;
+                background: #191b24;
+                border-width: 1px;
+                border-color: #ffffff22;
+
+                VerticalLayout {
+                    padding: 44px * s;
+                    spacing: 14px * s;
+
+                    Text {
+                        text: root.confirm-title;
+                        color: Theme.text;
+                        font-size: 34px * s;
+                        font-weight: 800;
+                    }
+
+                    Text {
+                        text: root.confirm-text;
+                        color: Theme.text-dim;
+                        font-size: 22px * s;
+                        wrap: word-wrap;
+                    }
+
+                    HintBar {
+                        padding-top: 18px * s;
+                        hints: [{ button: GlyphButton.confirm, label: "Beenden" }, { button: GlyphButton.back, label: "Abbrechen" }];
+                        style: root.controller-style;
+                        s: root.s;
+                    }
+                }
+            }
         }
 
         if root.show-fps: Rectangle {

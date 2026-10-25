@@ -1,0 +1,143 @@
+import { AppTile, ControllerStyle, GlyphButton } from "types.slint";
+import { Theme } from "theme.slint";
+import { Tile } from "tile.slint";
+import { ButtonGlyph } from "glyph.slint";
+
+component Chip inherits HorizontalLayout {
+    in property <GlyphButton> button;
+    in property <ControllerStyle> style;
+    in property <string> label;
+    in property <float> s;
+    spacing: 10px * root.s;
+
+    ButtonGlyph {
+        button: root.button;
+        style: root.style;
+        s: root.s;
+    }
+
+    Text {
+        text: root.label;
+        color: Theme.text;
+        font-size: 20px * root.s;
+        vertical-alignment: center;
+    }
+}
+
+// Bibliothek: alle Einträge als Raster, mit Filter und Sortierung.
+export component LibraryPage inherits Rectangle {
+    in property <[AppTile]> tiles;
+    in property <int> focused;
+    in property <bool> pulse;
+    in property <float> s;
+    in property <string> filter-label;
+    in property <string> sort-label;
+    in property <ControllerStyle> style;
+
+    property <length> margin: 110px * root.s;
+    property <length> tile: 180px * root.s;
+    property <length> gap: 32px * root.s;
+    property <length> row-height: root.tile + 60px * root.s;
+    property <length> grid-y: 250px * root.s;
+    // Platz über der ersten Zeile, damit Glow und Rahmen der Fokus-Kachel nicht abgeschnitten werden
+    property <length> grid-pad: 24px * root.s;
+
+    // Die UI bestimmt die Spaltenzahl, Rust liest sie für die Navigation.
+    out property <int> columns: max(1, floor((root.width - 2 * root.margin + root.gap) / (root.tile + root.gap)));
+    property <int> focused-row: floor(root.focused / root.columns);
+    // Die Fokuszeile bleibt die zweite sichtbare Zeile.
+    property <length> scroll: max(0, root.focused-row - 1) * root.row-height;
+    animate scroll {
+        duration: Theme.focus-duration;
+        easing: ease-out-quart;
+    }
+
+    out property <length> focus-x: root.margin + mod(root.focused, root.columns) * (root.tile + root.gap);
+    out property <length> focus-y: root.grid-y + root.focused-row * root.row-height - root.scroll;
+    out property <length> focus-size: root.tile;
+
+    Text {
+        x: root.margin;
+        y: 120px * root.s;
+        text: "Bibliothek";
+        color: Theme.text;
+        font-size: 44px * root.s;
+        font-weight: 800;
+    }
+
+    HorizontalLayout {
+        x: root.margin;
+        y: 186px * root.s;
+        height: 28px * root.s;
+        spacing: 36px * root.s;
+        alignment: start;
+
+        Text {
+            text: root.tiles.length + (root.tiles.length == 1 ? " Eintrag" : " Einträge");
+            color: Theme.text-dim;
+            font-size: 20px * root.s;
+            vertical-alignment: center;
+        }
+
+        Chip {
+            button: GlyphButton.west;
+            style: root.style;
+            label: "Filter: " + root.filter-label;
+            s: root.s;
+        }
+
+        Chip {
+            button: GlyphButton.menu;
+            style: root.style;
+            label: "Sortierung: " + root.sort-label;
+            s: root.s;
+        }
+    }
+
+    Rectangle {
+        y: root.grid-y - root.grid-pad;
+        height: root.height - self.y - 90px * root.s;
+        clip: true;
+
+        if root.tiles.length == 0: Text {
+            x: root.margin;
+            y: root.grid-pad;
+            text: "Keine Einträge für diesen Filter.";
+            color: Theme.text-dim;
+            font-size: 24px * root.s;
+        }
+
+        for app[i] in root.tiles: Rectangle {
+            property <bool> is-focused: i == root.focused;
+            x: root.margin + mod(i, root.columns) * (root.tile + root.gap);
+            y: root.grid-pad + floor(i / root.columns) * root.row-height - root.scroll;
+            width: root.tile;
+            height: root.row-height;
+
+            Tile {
+                property <length> size: root.tile * (parent.is-focused ? (root.pulse ? 0.94 : 1) : 0.9);
+                x: (root.tile - self.size) / 2;
+                y: (root.tile - self.size) / 2;
+                width: self.size;
+                height: self.size;
+                data: app;
+                focused: parent.is-focused;
+                animate x, y, width, height {
+                    duration: Theme.focus-duration;
+                    easing: ease-out-quart;
+                }
+            }
+
+            Text {
+                y: root.tile + 12px * root.s;
+                width: root.tile;
+                text: app.title;
+                color: parent.is-focused ? Theme.text : Theme.text-dim;
+                font-size: 18px * root.s;
+                font-weight: parent.is-focused ? 700 : 400;
+                overflow: elide;
+                horizontal-alignment: center;
+            }
+        }
+    }
+}

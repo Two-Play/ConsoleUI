@@ -1,0 +1,85 @@
+import { Theme } from "theme.slint";
+import { ControllerStyle, GlyphButton, Hint } from "types.slint";
+
+// Tastensymbol im Stil des verbundenen Controllers (PlayStation, Xbox) oder als Tastaturtaste.
+export component ButtonGlyph inherits Rectangle {
+    in property <GlyphButton> button;
+    in property <ControllerStyle> style;
+    in property <float> s: 1;
+
+    property <bool> face: root.style != ControllerStyle.keyboard
+        && (root.button == GlyphButton.confirm || root.button == GlyphButton.back
+            || root.button == GlyphButton.north || root.button == GlyphButton.west);
+    property <bool> ps: root.style == ControllerStyle.playstation;
+    property <string> symbol:
+        root.button == GlyphButton.dpad ? "◀ ▶"
+        : root.style == ControllerStyle.keyboard ? (
+            root.button == GlyphButton.confirm ? "Enter"
+            : root.button == GlyphButton.back ? "Esc"
+            : root.button == GlyphButton.north ? "/"
+            : root.button == GlyphButton.west ? "F"
+            : root.button == GlyphButton.menu ? "Tab"
+            : root.button == GlyphButton.l1 ? "Q"
+            : root.button == GlyphButton.r1 ? "E"
+            : "Strg+Q")
+        : root.button == GlyphButton.confirm ? (root.ps ? "✕" : "A")
+        : root.button == GlyphButton.back ? (root.ps ? "○" : "B")
+        : root.button == GlyphButton.north ? (root.ps ? "△" : "Y")
+        : root.button == GlyphButton.west ? (root.ps ? "□" : "X")
+        : root.button == GlyphButton.menu ? "≡"
+        : root.button == GlyphButton.l1 ? (root.ps ? "L1" : "LB")
+        : root.button == GlyphButton.r1 ? (root.ps ? "R1" : "RB")
+        : "";
+    // Farben wie auf den Controllern
+    property <color> tint:
+        !root.face ? Theme.text
+        : root.button == GlyphButton.confirm ? (root.ps ? #8fb4ff : #6fdc6f)
+        : root.button == GlyphButton.back ? (root.ps ? #ff7a7a : #ff6464)
+        : root.button == GlyphButton.north ? (root.ps ? #5fe0b5 : #ffd54a)
+        : (root.ps ? #ff9ad8 : #5aa9ff);
+
+    property <length> size: 28px * root.s;
+    height: root.size;
+    width: root.face ? root.size : max(root.size, label.preferred-width + 14px * root.s);
+    border-radius: root.face ? root.size / 2 : 6px * root.s;
+    background: root.button == GlyphButton.dpad ? transparent : Theme.surface;
+    border-width: root.face ? 0 : 1px;
+    border-color: root.button == GlyphButton.dpad ? transparent : #ffffff33;
+
+    label := Text {
+        width: 100%;
+        height: 100%;
+        text: root.symbol;
+        color: root.tint;
+        font-size: (root.face ? 17px : 14px) * root.s;
+        font-weight: 700;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+export component HintBar inherits HorizontalLayout {
+    in property <[Hint]> hints;
+    in property <ControllerStyle> style;
+    in property <float> s: 1;
+
+    spacing: 34px * root.s;
+    alignment: start;
+
+    for hint in root.hints: HorizontalLayout {
+        spacing: 10px * root.s;
+
+        ButtonGlyph {
+            button: hint.button;
+            style: root.style;
+            s: root.s;
+        }
+
+        Text {
+            text: hint.label;
+            color: Theme.text-dim;
+            font-size: 18px * root.s;
+            vertical-alignment: center;
+        }
+    }
+}

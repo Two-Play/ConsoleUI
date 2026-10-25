@@ -8,6 +8,13 @@ pub enum Action {
     Confirm,
     Back,
     Menu,
+    /// Dreieck/Y: Suche öffnen (in der Suche: Leerzeichen)
+    Search,
+    /// Quadrat/X: Filter wechseln (in der Suche: Zeichen löschen)
+    Secondary,
+    /// L1/LB und R1/RB: zwischen den Tabs wechseln
+    PrevTab,
+    NextTab,
 }
 
 /// Fokus innerhalb einer horizontalen Kachelreihe. Läuft am Rand nicht im Kreis (wie bei der PS5).

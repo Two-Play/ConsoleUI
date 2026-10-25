@@ -203,6 +203,38 @@ Deck o. Ä.) sollten wir später den Skia-Renderer vergleichen (Story 6.5).
 - Noch offen: das echte Bedienen mit dem DualSense und die Session auf echter Hardware
   (DRM-Backend) testen.
 
+### Sprint 4 – „Bibliothek“ (umgesetzt: 2.4, 2.5, 4.5, 3.3, Teile von 4.4)
+
+- **Fehler aus Sprint 3 behoben:** gilrs liest den Controller direkt vom Gerät. Ohne Fensterfokus
+  ignoriert die Shell deshalb jetzt alle Gamepad-Eingaben (`FocusScope.has-focus`), damit Tasten
+  im Spiel keine Aktionen in der Shell auslösen. In gamescope mit einem zweiten Fenster getestet.
+- **Navigation:** Die Tabs „Home“ und „Bibliothek“ wechseln mit L1/R1 bzw. Q/E. Die Home-Reihe
+  zeigt die 12 zuletzt genutzten Apps und am Ende die Kachel „Bibliothek“. Dreieck bzw. `/` öffnet
+  von Home und Bibliothek aus die Suche. Seitenwechsel blenden über und gleiten (200 ms).
+- **Bibliothek (2.4):** Raster mit Titeln, die Spaltenzahl richtet sich nach der Fensterbreite.
+  Quadrat/F schaltet den Filter (Alle/Spiele/Apps) um, Options/Tab die Sortierung (zuletzt
+  genutzt / A–Z, Umlaute richtig einsortiert).
+- **Suche (2.5):** QWERTZ-Bildschirmtastatur mit Ziffern, Leerzeichen, ⌫ und „Fertig“. Mit der
+  echten Tastatur kann man direkt tippen. Die Suche ignoriert Groß-/Kleinschreibung und Umlaute,
+  jedes Suchwort muss vorkommen. Die Reihenfolge ist: Titelanfang, dann Wortanfang, dann irgendwo
+  im Titel. Die Treffer stehen als Kachelreihe darunter, ohne Suchtext die zuletzt genutzten Apps.
+- **Tastensymbole (3.3):** gezeichnete Symbole in den Controller-Farben (✕ ○ △ □ / A B X Y,
+  L1/R1 bzw. LB/RB, ≡), mit Tastatur die Tastennamen. Die Hinweisleiste passt sich an Bildschirm
+  und Auswahl an.
+- **systemd-Scope (4.5):** Desktop-Apps laufen über `systemd-run --user --scope` in einer eigenen
+  Unit (`consoleui-app-*.scope`). Ohne User-Bus wird direkt gestartet (Prozessgruppe).
+- **Laufende App (4.4, Teil):** „● LÄUFT“-Badge und „Läuft gerade“ als Unterzeile. Options/Tab
+  in Home beendet die App nach einer Rückfrage: Desktop-Apps über `systemctl --user stop`,
+  Steam-Spiele per SIGTERM an Prozesse mit `SteamAppId=<id>`. Kreis/Esc schließt den
+  Startbildschirm, die App wird weiter verfolgt.
+  **Offen für Sprint 5:** zu einer laufenden App zurückwechseln (gamescope-Fokus) und mehrere
+  laufende Apps gleichzeitig verfolgen.
+- **Entwickler-Optionen:** `--start home|library|search`, `--query <text>`, `--snapshot <png>`
+  (rendert das eigene Fenster, ohne den Bildschirm abzufotografieren).
+- Messwert: Home mit Bibliothekskachel Ø 105 fps, Renderzeit Ø 5,7 ms.
+- Nicht manuell getestet: Beenden-Dialog und Badge mit einer echten App sowie die
+  Start-Animation aus Bibliothek und Suche.
+
 ## Risiken / offene Fragen
 
 - **gamescope-Fokussteuerung** ist kaum dokumentiert und auf XWayland bzw. Steam ausgelegt → deshalb Spike 0.3 früh einplanen. Falls das nicht klappt, wird Epic 7 wichtiger.

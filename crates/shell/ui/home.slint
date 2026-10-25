@@ -1,0 +1,107 @@
+import { AppTile } from "types.slint";
+import { Theme } from "theme.slint";
+import { TileRow } from "tilerow.slint";
+
+// Home: die zuletzt genutzten Apps und am Ende die Bibliothekskachel, darunter Infos zur Auswahl.
+export component HomePage inherits Rectangle {
+    in property <[AppTile]> tiles;
+    in property <int> focused;
+    in property <bool> pulse;
+    in property <float> s;
+
+    out property <length> focus-x: row.focus-x;
+    out property <length> focus-y: row.focus-y;
+    out property <length> focus-size: row.focus-size;
+
+    property <length> margin: 110px * root.s;
+    property <AppTile> current: root.tiles[root.focused];
+
+    row := TileRow {
+        x: root.margin;
+        y: 150px * root.s;
+        tiles: root.tiles;
+        focused: root.focused;
+        pulse: root.pulse;
+        tile: 150px * root.s;
+        tile-focused: 230px * root.s;
+        gap: 20px * root.s;
+    }
+
+    VerticalLayout {
+        x: root.margin;
+        y: row.y + row.height + 56px * root.s;
+        width: root.width - 2 * root.margin;
+        height: root.height - self.y;
+        alignment: start;
+        spacing: 8px * root.s;
+
+        Text {
+            text: root.current.kind;
+            color: Theme.text-dim;
+            font-size: 18px * root.s;
+            font-weight: 600;
+            letter-spacing: 3px * root.s;
+        }
+
+        if root.current.has-logo: Image {
+            height: 130px * root.s;
+            source: root.current.logo;
+            image-fit: contain;
+            horizontal-alignment: left;
+        }
+
+        if !root.current.has-logo: Text {
+            text: root.current.title;
+            color: Theme.text;
+            font-size: 64px * root.s;
+            font-weight: 800;
+        }
+
+        Text {
+            text: root.current.subtitle;
+            color: root.current.running ? Theme.charging : Theme.text-dim;
+            font-size: 26px * root.s;
+        }
+
+        HorizontalLayout {
+            alignment: start;
+            spacing: 20px * root.s;
+            padding-top: 22px * root.s;
+
+            Rectangle {
+                width: 220px * root.s;
+                height: 64px * root.s;
+                border-radius: self.height / 2;
+                background: Theme.text;
+
+                Text {
+                    width: 100%;
+                    height: 100%;
+                    text: root.current.action-label;
+                    color: Theme.base;
+                    font-size: 24px * root.s;
+                    font-weight: 700;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+
+            Rectangle {
+                width: 64px * root.s;
+                height: 64px * root.s;
+                border-radius: self.height / 2;
+                background: Theme.surface;
+
+                Text {
+                    width: 100%;
+                    height: 100%;
+                    text: "•••";
+                    color: Theme.text;
+                    font-size: 20px * root.s;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+}

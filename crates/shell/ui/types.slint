@@ -1,7 +1,19 @@
 // Eingabeunabhängige Aktionen; Rust bildet sie auf `consoleui_core::Action` ab.
-export enum NavAction { up, down, left, right, confirm, back, menu }
+export enum NavAction { up, down, left, right, confirm, back, menu, search, secondary, prev-tab, next-tab }
 
 export enum NetworkState { offline, ethernet, wifi }
+
+export enum Screen { home, library, search }
+
+// Welche Taste ein Hinweis zeigt; das Symbol hängt vom ControllerStyle ab.
+export enum GlyphButton { dpad, confirm, back, north, west, menu, l1, r1, quit }
+
+export enum ControllerStyle { keyboard, playstation, xbox }
+
+export struct Hint {
+    button: GlyphButton,
+    label: string,
+}
 
 export struct AppTile {
     title: string,
@@ -18,4 +30,13 @@ export struct AppTile {
     logo: image,
     has-logo: bool,
     accent: color,
+    running: bool,
+}
+
+// Taste der Bildschirmtastatur; Position und Breite in Tastenbreiten
+export struct KeyCap {
+    label: string,
+    row: int,
+    x: float,
+    width: float,
 }

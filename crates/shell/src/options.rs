@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 pub const USAGE: &str = "\
 Verwendung: consoleui [OPTIONEN]
 
@@ -6,7 +8,20 @@ Verwendung: consoleui [OPTIONEN]
   --tiles <N>     Anzahl der Dummy-Kacheln (Standard: 12, nur mit --dummy)
   --fps           FPS- und Renderzeit-Anzeige einblenden
   --bench         Automatisch durch alle Kacheln scrollen, Messwerte ausgeben und beenden
-  -h, --help      Diese Hilfe anzeigen";
+  -h, --help      Diese Hilfe anzeigen
+
+Für die Entwicklung:
+  --start <SEITE>     Mit home, library oder search starten
+  --query <TEXT>      In der Suche diesen Text vorbelegen (mit --start search)
+  --snapshot <DATEI>  Nach kurzer Zeit ein PNG des Fensters speichern und beenden";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum StartScreen {
+    #[default]
+    Home,
+    Library,
+    Search,
+}
 
 #[derive(Debug, PartialEq)]
 pub struct Options {
@@ -16,11 +31,24 @@ pub struct Options {
     pub show_fps: bool,
     pub bench: bool,
     pub help: bool,
+    pub start: StartScreen,
+    pub query: Option<String>,
+    pub snapshot: Option<PathBuf>,
 }
 
 impl Default for Options {
     fn default() -> Self {
-        Self { windowed: false, dummy: false, tiles: 12, show_fps: false, bench: false, help: false }
+        Self {
+            windowed: false,
+            dummy: false,
+            tiles: 12,
+            show_fps: false,
+            bench: false,
+            help: false,
+            start: StartScreen::Home,
+            query: None,
+            snapshot: None,
+        }
     }
 }
 
@@ -36,15 +64,29 @@ impl Options {
                 "--bench" => options.bench = true,
                 "-h" | "--help" => options.help = true,
                 "--tiles" => {
-                    let value = args.next().ok_or_else(|| "--tiles erwartet eine Zahl".to_string())?;
+                    let value = value(&mut args, "--tiles")?;
                     options.tiles =
                         value.parse().map_err(|_| format!("Ungültige Kachelanzahl: {value}"))?;
                 }
+                "--start" => {
+                    options.start = match value(&mut args, "--start")?.as_str() {
+                        "home" => StartScreen::Home,
+                        "library" => StartScreen::Library,
+                        "search" => StartScreen::Search,
+                        other => return Err(format!("Unbekannte Seite: {other}")),
+                    }
+                }
+                "--query" => options.query = Some(value(&mut args, "--query")?),
+                "--snapshot" => options.snapshot = Some(value(&mut args, "--snapshot")?.into()),
                 other => return Err(format!("Unbekannte Option: {other}")),
             }
         }
         Ok(options)
     }
+}
+
+fn value(args: &mut impl Iterator<Item = String>, option: &str) -> Result<String, String> {
+    args.next().ok_or_else(|| format!("{option} erwartet einen Wert"))
 }
 
 #[cfg(test)]
@@ -65,6 +107,15 @@ mod tests {
         let options = parse(&["--windowed", "--dummy", "--tiles", "50", "--fps", "--bench"]).unwrap();
         assert!(options.windowed && options.dummy && options.show_fps && options.bench);
         assert_eq!(options.tiles, 50);
+    }
+
+    #[test]
+    fn parses_development_options() {
+        let options = parse(&["--start", "search", "--query", "red", "--snapshot", "/tmp/x.png"]).unwrap();
+        assert_eq!(options.start, StartScreen::Search);
+        assert_eq!(options.query.as_deref(), Some("red"));
+        assert_eq!(options.snapshot, Some(PathBuf::from("/tmp/x.png")));
+        assert!(parse(&["--start", "nirgendwo"]).is_err());
     }
 
     #[test]

@@ -7,6 +7,7 @@ edition.workspace = true
 consoleui-core.workspace = true
 slint = "1.18.1"
 gilrs = "0.11.2"
+png = "0.18.1"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 
 [build-dependencies]

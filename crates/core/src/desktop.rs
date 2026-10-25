@@ -5,6 +5,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::icons;
+use crate::launch;
 use crate::library::{AppEntry, AppKind, Artwork, Launch, palette_for};
 use crate::xdg;
 
@@ -44,7 +45,7 @@ impl DesktopEntry {
             && !self.has_category(EXCLUDED_CATEGORIES)
             // Steam legt für Spiele eigene Verknüpfungen an; die kommen schon über die Steam-Quelle.
             && self.exec.as_deref().is_some_and(|e| !e.contains("steam://rungameid"))
-            && self.try_exec.as_deref().is_none_or(program_exists)
+            && self.try_exec.as_deref().is_none_or(launch::program_exists)
     }
 }
 
@@ -220,15 +221,6 @@ pub fn exec_to_argv(exec: &str) -> Vec<String> {
     }
     args.retain(|a| !a.is_empty() && !a.starts_with("@@"));
     args
-}
-
-fn program_exists(program: &str) -> bool {
-    let path = Path::new(program);
-    if path.is_absolute() {
-        return path.is_file();
-    }
-    std::env::var_os("PATH")
-        .is_some_and(|paths| std::env::split_paths(&paths).any(|dir| dir.join(program).is_file()))
 }
 
 /// Icon-Theme aus den KDE-Einstellungen, sonst `hicolor`.

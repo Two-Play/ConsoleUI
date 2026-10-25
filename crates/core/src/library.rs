@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use chrono::NaiveDate;
 
 use crate::history::History;
+use crate::search::normalize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AppKind {
@@ -121,6 +122,72 @@ pub fn sort_by_recent(entries: &mut [AppEntry]) {
     });
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LibraryFilter {
+    #[default]
+    All,
+    Games,
+    Apps,
+}
+
+impl LibraryFilter {
+    pub fn next(self) -> Self {
+        match self {
+            Self::All => Self::Games,
+            Self::Games => Self::Apps,
+            Self::Apps => Self::All,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::All => "Alle",
+            Self::Games => "Spiele",
+            Self::Apps => "Apps",
+        }
+    }
+
+    fn matches(self, kind: AppKind) -> bool {
+        match self {
+            Self::All => true,
+            Self::Games => kind == AppKind::Game,
+            Self::Apps => kind == AppKind::App,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LibrarySort {
+    #[default]
+    Recent,
+    Alphabetical,
+}
+
+impl LibrarySort {
+    pub fn next(self) -> Self {
+        match self {
+            Self::Recent => Self::Alphabetical,
+            Self::Alphabetical => Self::Recent,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Recent => "Zuletzt genutzt",
+            Self::Alphabetical => "A–Z",
+        }
+    }
+}
+
+/// Indizes in `entries` für die Bibliothek. `entries` ist bereits nach letzter Nutzung sortiert.
+pub fn library_view(entries: &[AppEntry], filter: LibraryFilter, sort: LibrarySort) -> Vec<usize> {
+    let mut view: Vec<usize> = (0..entries.len()).filter(|&i| filter.matches(entries[i].kind)).collect();
+    if sort == LibrarySort::Alphabetical {
+        view.sort_by_cached_key(|&i| normalize(&entries[i].title));
+    }
+    view
+}
+
 /// Zeile unter dem Titel, z. B. „Zuletzt gespielt: gestern“.
 pub fn last_used_label(kind: AppKind, last: NaiveDate, today: NaiveDate) -> String {
     let verb = match kind {
@@ -183,6 +250,21 @@ mod tests {
         sort_by_recent(&mut apps);
         let titles: Vec<_> = apps.iter().map(|a| a.title.as_str()).collect();
         assert_eq!(titles, ["Pixel Harbor", "Frostline", "A", "b"]);
+    }
+
+    #[test]
+    fn library_view_filters_and_sorts() {
+        let mut apps = dummy_library(4);
+        apps[0].title = "Zebra".into();
+        apps[1].title = "Ärger".into();
+        apps[2].kind = AppKind::App;
+        apps[2].title = "Browser".into();
+        apps[3].kind = AppKind::App;
+        apps[3].title = "anno".into();
+        assert_eq!(library_view(&apps, LibraryFilter::All, LibrarySort::Recent), [0, 1, 2, 3]);
+        assert_eq!(library_view(&apps, LibraryFilter::Games, LibrarySort::Alphabetical), [1, 0]);
+        assert_eq!(library_view(&apps, LibraryFilter::Apps, LibrarySort::Alphabetical), [3, 2]);
+        assert_eq!(LibraryFilter::Apps.next(), LibraryFilter::All);
     }
 
     #[test]

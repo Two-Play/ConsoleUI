@@ -2,21 +2,26 @@
 
 pub mod accent;
 pub mod desktop;
+mod grid;
 mod history;
 mod icons;
 pub mod input;
 pub mod launch;
 mod library;
 mod nav;
+pub mod osk;
 pub mod running;
+pub mod search;
 pub mod status;
 pub mod steam;
 pub mod vdf;
 pub mod xdg;
 
+pub use grid::Grid;
 pub use history::History;
 pub use library::{
-    AppEntry, AppKind, Artwork, Launch, apply_history, dummy_library, last_used_label, palette_for, sort_by_recent,
+    AppEntry, AppKind, Artwork, Launch, LibraryFilter, LibrarySort, apply_history, dummy_library, last_used_label,
+    library_view, palette_for, sort_by_recent,
 };
 pub use nav::{Action, Carousel};
 

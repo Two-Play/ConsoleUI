@@ -46,6 +46,28 @@ pub fn to_tile(entry: &mut AppEntry, index: usize, today: NaiveDate) -> AppTile 
         cover: real_cover
             .unwrap_or_else(|| cover::generate(entry.accent, entry.accent2, index as u32, COVER_SIZE)),
         accent: Color::from_rgb_u8(entry.accent[0], entry.accent[1], entry.accent[2]),
+        running: false,
+    }
+}
+
+/// Letzte Kachel der Home-Reihe, öffnet die Bibliothek.
+pub fn library_tile(count: usize) -> AppTile {
+    let (accent, accent2) = ([0x3b, 0x41, 0x52], [0x8a, 0x93, 0xa8]);
+    let icon = Image::load_from_svg_data(include_bytes!("../ui/icons/library.svg")).unwrap_or_default();
+    AppTile {
+        title: "Bibliothek".into(),
+        subtitle: format!("{count} Spiele und Apps").into(),
+        kind: "ALLE APPS".into(),
+        action_label: "Öffnen".into(),
+        monogram: "".into(),
+        show_monogram: false,
+        cover: cover::generate(accent, accent2, 7, COVER_SIZE),
+        has_icon: true,
+        icon,
+        logo: Image::default(),
+        has_logo: false,
+        accent: Color::from_rgb_u8(accent[0], accent[1], accent[2]),
+        running: false,
     }
 }
 

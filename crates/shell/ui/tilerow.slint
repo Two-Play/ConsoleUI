@@ -1,0 +1,40 @@
+import { AppTile } from "types.slint";
+import { Theme } from "theme.slint";
+import { Tile } from "tile.slint";
+
+// Horizontale Kachelreihe: Die fokussierte Kachel bleibt links stehen, die Reihe gleitet darunter durch.
+export component TileRow inherits Rectangle {
+    in property <[AppTile]> tiles;
+    in property <int> focused;
+    in property <bool> pulse;
+    // Ohne aktive Reihe (z. B. Tastatur in der Suche) ist keine Kachel hervorgehoben.
+    in property <bool> active: true;
+    in property <length> tile;
+    in property <length> tile-focused;
+    in property <length> gap;
+
+    // Lage der fokussierten Kachel relativ zum Elternelement, für den Startbildschirm
+    out property <length> focus-x: root.x;
+    out property <length> focus-y: root.y;
+    out property <length> focus-size: root.tile-focused;
+
+    height: root.tile-focused;
+
+    for app[i] in root.tiles: Tile {
+        property <bool> is-focused: root.active && i == root.focused;
+        property <length> base: self.is-focused ? root.tile-focused : root.tile;
+        property <length> size: root.pulse && self.is-focused ? self.base * 0.94 : self.base;
+
+        data: app;
+        focused: self.is-focused;
+        width: self.size;
+        height: self.size;
+        x: (i - root.focused) * (root.tile + root.gap) + (i > root.focused && root.active ? root.tile-focused - root.tile : 0px) + (self.base - self.size) / 2;
+        y: (self.base - self.size) / 2;
+
+        animate x, y, width, height {
+            duration: Theme.focus-duration;
+            easing: ease-out-quart;
+        }
+    }
+}
