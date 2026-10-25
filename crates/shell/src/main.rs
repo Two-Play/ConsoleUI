@@ -3,19 +3,21 @@ use std::error::Error;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use consoleui_core::{Action, AppEntry, AppKind, Carousel, dummy_library};
-use slint::{Color, ModelRc, RenderingState, Timer, TimerMode, VecModel};
+use consoleui_core::{Action, AppEntry, History, apply_history, discover_library, dummy_library, sort_by_recent};
+use slint::{RenderingState, Timer, TimerMode};
 
 mod cover;
 mod options;
 mod perf;
+mod shell;
+mod tiles;
 
 use options::{Options, USAGE};
 use perf::FrameStats;
+use shell::Shell;
 
 slint::include_modules!();
 
-const COVER_SIZE: u32 = 384;
 const BENCH_STEP: Duration = Duration::from_millis(200);
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -31,19 +33,17 @@ fn main() -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
 
-    let library = dummy_library(options.tiles);
     let ui = AppWindow::new()?;
-    let tiles: Vec<AppTile> = library.iter().enumerate().map(|(i, entry)| to_tile(entry, i)).collect();
-    ui.set_tiles(ModelRc::new(VecModel::from(tiles)));
     ui.set_show_fps(options.show_fps || options.bench);
 
-    let carousel = Rc::new(RefCell::new(Carousel::new(library.len())));
+    let (entries, history, history_path) = load_library(&options);
+    let shell = Rc::new(RefCell::new(Shell::new(&ui, entries, history, history_path)));
     ui.on_action({
         let ui = ui.as_weak();
-        let carousel = carousel.clone();
+        let shell = shell.clone();
         move |nav| {
             if let Some(ui) = ui.upgrade() {
-                apply_action(&ui, &mut carousel.borrow_mut(), to_action(nav));
+                shell.borrow_mut().apply(&ui, to_action(nav));
             }
         }
     });
@@ -75,7 +75,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    let _bench = options.bench.then(|| start_bench(&ui, carousel.clone(), stats.clone()));
+    let _bench = options.bench.then(|| start_bench(&ui, shell.clone(), stats.clone()));
 
     if !options.windowed {
         ui.window().set_fullscreen(true);
@@ -84,20 +84,20 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn to_tile(entry: &AppEntry, index: usize) -> AppTile {
-    let (kind, action_label) = match entry.kind {
-        AppKind::Game => ("SPIEL", "Spielen"),
-        AppKind::App => ("APP", "Öffnen"),
-    };
-    AppTile {
-        title: entry.title.as_str().into(),
-        subtitle: entry.subtitle.as_str().into(),
-        kind: kind.into(),
-        action_label: action_label.into(),
-        monogram: entry.monogram().into(),
-        cover: cover::generate(entry.accent, entry.accent2, index as u32, COVER_SIZE),
-        accent: Color::from_rgb_u8(entry.accent[0], entry.accent[1], entry.accent[2]),
+/// Echte Bibliothek, sortiert nach letzter Nutzung. Ist nichts installiert, gibt es Dummy-Einträge.
+fn load_library(options: &Options) -> (Vec<AppEntry>, History, Option<std::path::PathBuf>) {
+    if !options.dummy {
+        let history_path = History::default_path();
+        let history = history_path.as_deref().map(History::load).unwrap_or_default();
+        let mut entries = discover_library();
+        if !entries.is_empty() {
+            apply_history(&mut entries, &history);
+            sort_by_recent(&mut entries);
+            return (entries, history, history_path);
+        }
+        eprintln!("Keine Spiele oder Apps gefunden, zeige Dummy-Einträge.");
     }
+    (dummy_library(options.tiles), History::default(), None)
 }
 
 fn to_action(nav: NavAction) -> Action {
@@ -112,25 +112,13 @@ fn to_action(nav: NavAction) -> Action {
     }
 }
 
-fn apply_action(ui: &AppWindow, carousel: &mut Carousel, action: Action) {
-    match action {
-        // Das eigentliche Starten der App folgt in Sprint 2 (Story 1.5).
-        Action::Confirm => ui.set_pulse(true),
-        _ => {
-            if carousel.apply(action) {
-                ui.set_focused(carousel.focused() as i32);
-            }
-        }
-    }
-}
-
 fn current_time() -> String {
     chrono::Local::now().format("%H:%M").to_string()
 }
 
 /// Scrollt einmal ganz nach rechts und zurück, gibt danach die Messwerte aus und beendet sich.
-fn start_bench(ui: &AppWindow, carousel: Rc<RefCell<Carousel>>, stats: Rc<RefCell<FrameStats>>) -> Timer {
-    let len = carousel.borrow().len();
+fn start_bench(ui: &AppWindow, shell: Rc<RefCell<Shell>>, stats: Rc<RefCell<FrameStats>>) -> Timer {
+    let len = shell.borrow().len();
     let steps = 2 * len.saturating_sub(1);
     let mut step = 0;
     let mut started: Option<Instant> = None;
@@ -149,7 +137,7 @@ fn start_bench(ui: &AppWindow, carousel: Rc<RefCell<Carousel>>, stats: Rc<RefCel
             return;
         }
         let action = if step + 1 < len { Action::Right } else { Action::Left };
-        apply_action(&ui, &mut carousel.borrow_mut(), action);
+        shell.borrow_mut().apply(&ui, action);
         step += 1;
     });
     timer

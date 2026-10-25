@@ -34,6 +34,11 @@ impl Carousel {
         self.focused
     }
 
+    /// Setzt den Fokus direkt; Werte außerhalb werden auf den letzten Eintrag begrenzt.
+    pub fn focus(&mut self, index: usize) {
+        self.focused = index.min(self.len.saturating_sub(1));
+    }
+
     /// Wendet eine Aktion an und gibt zurück, ob sich der Fokus geändert hat.
     pub fn apply(&mut self, action: Action) -> bool {
         let target = match action {
@@ -73,6 +78,18 @@ mod tests {
         c.apply(Action::Right);
         assert!(!c.apply(Action::Right));
         assert_eq!(c.focused(), 1);
+    }
+
+    #[test]
+    fn focus_is_clamped() {
+        let mut c = Carousel::new(3);
+        c.focus(1);
+        assert_eq!(c.focused(), 1);
+        c.focus(10);
+        assert_eq!(c.focused(), 2);
+        let mut empty = Carousel::new(0);
+        empty.focus(4);
+        assert_eq!(empty.focused(), 0);
     }
 
     #[test]

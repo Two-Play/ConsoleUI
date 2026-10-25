@@ -29,7 +29,16 @@ export component Tile inherits Rectangle {
             image-fit: cover;
         }
 
-        Text {
+        if root.data.has-icon: Image {
+            width: parent.width * 0.58;
+            height: self.width;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            source: root.data.icon;
+            image-fit: contain;
+        }
+
+        if root.data.show-monogram: Text {
             width: 100%;
             height: 100%;
             text: root.data.monogram;

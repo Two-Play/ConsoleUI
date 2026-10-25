@@ -160,6 +160,27 @@ Ein echter Weichzeichner (Blur) für Hintergründe ist in Slint nicht eingebaut.
 deshalb ein vorab verkleinertes oder weichgezeichnetes Bild. Auf schwacher Hardware (Steam
 Deck o. Ä.) sollten wir später den Skia-Renderer vergleichen (Story 6.5).
 
+### Sprint 2 – „Echte Apps“ (umgesetzt: 2.1, 2.2, 2.3, 1.3, 1.5, 2.6)
+
+- **Steam (2.2):** eigener VDF-Parser, alle Bibliotheken aus `libraryfolders.vdf`, nur vollständig
+  installierte Spiele. Proton, Runtimes, Redistributables und Soundtracks werden ausgefiltert,
+  Duplikate über mehrere Bibliotheken zusammengeführt. Start über `steam steam://rungameid/<id>`.
+- **Desktop-Apps (2.1):** eigener `.desktop`-Parser mit deutschen Namen. Aufgenommen werden die
+  Kategorien Game/AudioVideo/Audio/Video/Network/Graphics, ausgeschlossen
+  Settings/System/Development/Office. Steam-eigene Spielverknüpfungen werden übersprungen, Icons
+  kommen aus dem KDE-Theme, sonst aus hicolor oder pixmaps.
+- **Artwork (2.3):** Steam-Cover, Logo (ersetzt den Titeltext) und Hero aus `appcache/librarycache`,
+  sowohl im neuen als auch im alten Format. Die Akzentfarbe wird aus dem Cover berechnet.
+- **Hintergrund (1.3):** Das Hero-Bild wird erst beim Fokussieren geladen und über zwei Ebenen
+  überblendet (500 ms).
+- **Starten (1.5):** Die Kachel zoomt auf Vollbild („wird gestartet …“), der Prozess läuft in einer
+  eigenen Prozessgruppe, und nach 2,6 s kehrt die Shell zurück. Die echte Fokus-Übergabe folgt mit 4.3.
+- **Historie (2.6):** `~/.local/share/consoleui/history.json`. Gestartete Apps rutschen nach vorn,
+  die Reihe ist nach „zuletzt genutzt“ sortiert, danach alphabetisch.
+- Messwert mit echter Bibliothek (69 Kacheln, Release): Ø 105 fps, Renderzeit Ø 6,3 ms, max 17,7 ms.
+- Bekannt: Einige AppImage-Icons ohne Dateiendung lassen sich nicht laden. Die Kachel zeigt dann
+  das Monogramm. Mit 69 Einträgen wird die Reihe lang, was für die Bibliothek (2.4) spricht.
+
 ## Risiken / offene Fragen
 
 - **gamescope-Fokussteuerung** ist kaum dokumentiert und auf XWayland bzw. Steam ausgelegt → deshalb Spike 0.3 früh einplanen. Falls das nicht klappt, wird Epic 7 wichtiger.

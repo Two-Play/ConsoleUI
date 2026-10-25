@@ -19,6 +19,18 @@ export component AppWindow inherits Window {
     in property <bool> show-fps: false;
     in property <string> fps-text;
 
+    // Hintergrundbild: zwei Ebenen, Rust lädt das neue Bild in die verdeckte und schaltet dann um.
+    in property <image> hero-a;
+    in property <image> hero-b;
+    in property <bool> hero-front-a: true;
+
+    // Startbildschirm: Die fokussierte Kachel zoomt auf Vollbild und schließt sich nach `launch-hold`.
+    in-out property <bool> launching: false;
+    in property <string> launch-title;
+    in property <string> launch-status;
+    in property <image> launch-image;
+    in property <color> launch-accent;
+
     callback action(NavAction);
     callback quit();
 
@@ -43,6 +55,14 @@ export component AppWindow inherits Window {
         running: root.pulse;
         triggered => {
             root.pulse = false;
+        }
+    }
+
+    Timer {
+        interval: Theme.launch-hold;
+        running: root.launching;
+        triggered => {
+            root.launching = false;
         }
     }
 
@@ -101,6 +121,44 @@ export component AppWindow inherits Window {
             background: @radial-gradient(circle, root.glow.with-alpha(0.45) 0%, transparent 65%);
         }
 
+        // Hero-Artwork mit Überblendung
+        Image {
+            width: 100%;
+            height: 100%;
+            source: root.hero-a;
+            image-fit: cover;
+            opacity: root.hero-front-a ? 1 : 0;
+            animate opacity {
+                duration: Theme.background-duration;
+                easing: ease-in-out;
+            }
+        }
+
+        Image {
+            width: 100%;
+            height: 100%;
+            source: root.hero-b;
+            image-fit: cover;
+            opacity: root.hero-front-a ? 0 : 1;
+            animate opacity {
+                duration: Theme.background-duration;
+                easing: ease-in-out;
+            }
+        }
+
+        // Abdunkeln von links und unten, damit Text auf jedem Artwork lesbar bleibt
+        Rectangle {
+            width: 100%;
+            height: 100%;
+            background: @linear-gradient(90deg, Theme.base.with-alpha(0.9) 0%, Theme.base.with-alpha(0.5) 45%, Theme.base.with-alpha(0.15) 100%);
+        }
+
+        Rectangle {
+            width: 100%;
+            height: 100%;
+            background: @linear-gradient(180deg, Theme.base.with-alpha(0.5) 0%, transparent 30%, transparent 55%, Theme.base 100%);
+        }
+
         // Top-Bar
         Text {
             x: root.margin;
@@ -157,69 +215,81 @@ export component AppWindow inherits Window {
         }
 
         // Infos zur fokussierten App
-        Text {
+        VerticalLayout {
             x: root.margin;
             y: root.info-y;
-            text: root.current.kind;
-            color: Theme.text-dim;
-            font-size: 18px * s;
-            font-weight: 600;
-            letter-spacing: 3px * s;
-        }
-
-        Text {
-            x: root.margin;
-            y: root.info-y + 28px * s;
-            text: root.current.title;
-            color: Theme.text;
-            font-size: 64px * s;
-            font-weight: 800;
-        }
-
-        Text {
-            x: root.margin;
-            y: root.info-y + 112px * s;
-            text: root.current.subtitle;
-            color: Theme.text-dim;
-            font-size: 26px * s;
-        }
-
-        play-button := Rectangle {
-            x: root.margin;
-            y: root.info-y + 176px * s;
-            width: 220px * s;
-            height: 64px * s;
-            border-radius: self.height / 2;
-            background: Theme.text;
+            width: root.width - 2 * root.margin;
+            height: root.height - root.info-y;
+            alignment: start;
+            spacing: 8px * s;
 
             Text {
-                width: 100%;
-                height: 100%;
-                text: root.current.action-label;
-                color: Theme.base;
-                font-size: 24px * s;
-                font-weight: 700;
-                horizontal-alignment: center;
-                vertical-alignment: center;
+                text: root.current.kind;
+                color: Theme.text-dim;
+                font-size: 18px * s;
+                font-weight: 600;
+                letter-spacing: 3px * s;
             }
-        }
 
-        Rectangle {
-            x: play-button.x + play-button.width + 20px * s;
-            y: play-button.y;
-            width: play-button.height;
-            height: play-button.height;
-            border-radius: self.height / 2;
-            background: Theme.surface;
+            if root.current.has-logo: Image {
+                height: 130px * s;
+                source: root.current.logo;
+                image-fit: contain;
+                horizontal-alignment: left;
+            }
+
+            if !root.current.has-logo: Text {
+                text: root.current.title;
+                color: Theme.text;
+                font-size: 64px * s;
+                font-weight: 800;
+            }
 
             Text {
-                width: 100%;
-                height: 100%;
-                text: "•••";
-                color: Theme.text;
-                font-size: 20px * s;
-                horizontal-alignment: center;
-                vertical-alignment: center;
+                text: root.current.subtitle;
+                color: Theme.text-dim;
+                font-size: 26px * s;
+            }
+
+            HorizontalLayout {
+                alignment: start;
+                spacing: 20px * s;
+                padding-top: 22px * s;
+
+                Rectangle {
+                    width: 220px * s;
+                    height: 64px * s;
+                    border-radius: self.height / 2;
+                    background: Theme.text;
+
+                    Text {
+                        width: 100%;
+                        height: 100%;
+                        text: root.current.action-label;
+                        color: Theme.base;
+                        font-size: 24px * s;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+
+                Rectangle {
+                    width: 64px * s;
+                    height: 64px * s;
+                    border-radius: self.height / 2;
+                    background: Theme.surface;
+
+                    Text {
+                        width: 100%;
+                        height: 100%;
+                        text: "•••";
+                        color: Theme.text;
+                        font-size: 20px * s;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
             }
         }
 
@@ -227,9 +297,77 @@ export component AppWindow inherits Window {
         Text {
             x: root.margin;
             y: root.height - 64px * s;
-            text: "◀ ▶  Navigieren        ⏎  Auswählen        Strg+Q  Beenden";
+            text: "◀ ▶  Navigieren        ⏎  Starten        Strg+Q  Beenden";
             color: Theme.text-dim;
             font-size: 18px * s;
+        }
+
+        // Startbildschirm; liegt geschlossen unsichtbar genau über der fokussierten Kachel.
+        Rectangle {
+            x: root.margin;
+            y: root.row-y;
+            width: root.tile-focused;
+            height: root.tile-focused;
+            border-radius: root.tile-focused * 0.12;
+            background: root.launch-accent;
+            opacity: 0;
+            clip: true;
+
+            Image {
+                width: 100%;
+                height: 100%;
+                source: root.launch-image;
+                image-fit: cover;
+            }
+
+            Rectangle {
+                width: 100%;
+                height: 100%;
+                background: @linear-gradient(180deg, transparent 40%, #000000cc 100%);
+            }
+
+            VerticalLayout {
+                alignment: end;
+                padding: root.margin;
+                spacing: 8px * s;
+
+                Text {
+                    text: root.launch-title;
+                    color: Theme.text;
+                    font-size: 56px * s;
+                    font-weight: 800;
+                }
+
+                Text {
+                    text: root.launch-status;
+                    color: Theme.text-dim;
+                    font-size: 26px * s;
+                }
+            }
+
+            states [
+                open when root.launching: {
+                    x: 0;
+                    y: 0;
+                    width: root.width;
+                    height: root.height;
+                    border-radius: 0;
+                    opacity: 1;
+                    in {
+                        animate x, y, width, height, border-radius {
+                            duration: Theme.launch-duration;
+                            easing: ease-in-out-quart;
+                        }
+                        animate opacity { duration: 100ms; }
+                    }
+                    out {
+                        animate x, y, width, height, border-radius, opacity {
+                            duration: Theme.launch-duration;
+                            easing: ease-in-out-quart;
+                        }
+                    }
+                }
+            ]
         }
 
         if root.show-fps: Rectangle {

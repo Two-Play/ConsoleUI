@@ -1,19 +1,49 @@
+use std::path::PathBuf;
+
+use chrono::NaiveDate;
+
+use crate::history::History;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AppKind {
     Game,
     App,
 }
 
-/// Ein Eintrag der App-Übersicht. In Sprint 2 kommen die Einträge aus Steam und `.desktop`-Dateien.
+/// Wie ein Eintrag gestartet wird.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Launch {
+    /// Dummy-Einträge: nur die Animation, kein Prozess.
+    None,
+    Steam(u32),
+    /// Programm und Argumente, bereits ohne `.desktop`-Feldcodes.
+    Command(Vec<String>),
+}
+
+/// Pfade zu Bildern auf der Platte; geladen werden sie erst in der Shell.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Artwork {
+    pub cover: Option<PathBuf>,
+    pub hero: Option<PathBuf>,
+    pub logo: Option<PathBuf>,
+    pub icon: Option<PathBuf>,
+}
+
+/// Ein Eintrag der App-Übersicht (Steam-Spiel, Desktop-App oder Dummy).
 #[derive(Debug, Clone, PartialEq)]
 pub struct AppEntry {
+    /// Eindeutig über alle Quellen, z. B. `steam:730` oder `desktop:firefox.desktop`.
     pub id: String,
     pub title: String,
-    pub subtitle: String,
+    pub description: String,
     pub kind: AppKind,
     /// Akzentfarben (RGB) für Platzhalter-Cover und Hintergrund.
     pub accent: [u8; 3],
     pub accent2: [u8; 3],
+    pub launch: Launch,
+    pub artwork: Artwork,
+    /// Letzte Nutzung als Unix-Zeit in Sekunden.
+    pub last_used: Option<u64>,
 }
 
 impl AppEntry {
@@ -27,7 +57,7 @@ impl AppEntry {
     }
 }
 
-/// Titel, Untertitel, Art, Akzentfarbe, zweite Akzentfarbe
+/// Titel, Beschreibung, Art, Akzentfarbe, zweite Akzentfarbe
 type DummyEntry = (&'static str, &'static str, AppKind, [u8; 3], [u8; 3]);
 
 const DUMMY: &[DummyEntry] = &[
@@ -45,23 +75,65 @@ const DUMMY: &[DummyEntry] = &[
     ("Einstellungen", "System", AppKind::App, [0x44, 0x4a, 0x55], [0xa9, 0xb1, 0xbd]),
 ];
 
+/// Feste Akzentfarben pro Schlüssel, für Einträge ohne eigenes Artwork.
+pub fn palette_for(key: &str) -> ([u8; 3], [u8; 3]) {
+    // FNV-1a: stabil über Programmläufe, anders als `DefaultHasher`.
+    let hash = key.bytes().fold(0x811c_9dc5_u32, |h, b| (h ^ b as u32).wrapping_mul(0x0100_0193));
+    let (_, _, _, accent, accent2) = DUMMY[hash as usize % DUMMY.len()];
+    (accent, accent2)
+}
+
 /// Erzeugt `count` Dummy-Einträge. Ab dem 13. Eintrag wiederholt sich die Liste mit Nummer im Titel.
 pub fn dummy_library(count: usize) -> Vec<AppEntry> {
     (0..count)
         .map(|i| {
-            let (title, subtitle, kind, accent, accent2) = DUMMY[i % DUMMY.len()];
+            let (title, description, kind, accent, accent2) = DUMMY[i % DUMMY.len()];
             let round = i / DUMMY.len();
             let title = if round == 0 { title.to_string() } else { format!("{title} {}", round + 1) };
             AppEntry {
-                id: format!("dummy-{i}"),
+                id: format!("dummy:{i}"),
                 title,
-                subtitle: subtitle.to_string(),
+                description: description.to_string(),
                 kind,
                 accent,
                 accent2,
+                launch: Launch::None,
+                artwork: Artwork::default(),
+                last_used: None,
             }
         })
         .collect()
+}
+
+/// Übernimmt die eigene Historie, wenn sie neuer ist als die Angabe der Quelle (z. B. Steam).
+pub fn apply_history(entries: &mut [AppEntry], history: &History) {
+    for entry in entries {
+        entry.last_used = entry.last_used.max(history.get(&entry.id));
+    }
+}
+
+/// Zuletzt genutzte zuerst, danach alphabetisch.
+pub fn sort_by_recent(entries: &mut [AppEntry]) {
+    entries.sort_by(|a, b| {
+        b.last_used
+            .cmp(&a.last_used)
+            .then_with(|| a.title.to_lowercase().cmp(&b.title.to_lowercase()))
+    });
+}
+
+/// Zeile unter dem Titel, z. B. „Zuletzt gespielt: gestern“.
+pub fn last_used_label(kind: AppKind, last: NaiveDate, today: NaiveDate) -> String {
+    let verb = match kind {
+        AppKind::Game => "gespielt",
+        AppKind::App => "geöffnet",
+    };
+    let when = match (today - last).num_days() {
+        ..=0 => "heute".to_string(),
+        1 => "gestern".to_string(),
+        days @ 2..=6 => format!("vor {days} Tagen"),
+        _ => format!("am {}", last.format("%d.%m.%Y")),
+    };
+    format!("Zuletzt {verb}: {when}")
 }
 
 #[cfg(test)]
@@ -91,5 +163,35 @@ mod tests {
         assert_eq!(app.monogram(), "É");
         app.title = "".into();
         assert_eq!(app.monogram(), "");
+    }
+
+    #[test]
+    fn palette_is_stable() {
+        assert_eq!(palette_for("steam:730"), palette_for("steam:730"));
+    }
+
+    #[test]
+    fn sorts_recent_first_then_alphabetically() {
+        let mut apps = dummy_library(4);
+        apps[0].title = "b".into();
+        apps[1].title = "A".into();
+        apps[2].last_used = Some(10);
+        apps[3].last_used = Some(20);
+        let mut history = History::default();
+        history.record(&apps[2].id, 30);
+        apply_history(&mut apps, &history);
+        sort_by_recent(&mut apps);
+        let titles: Vec<_> = apps.iter().map(|a| a.title.as_str()).collect();
+        assert_eq!(titles, ["Pixel Harbor", "Frostline", "A", "b"]);
+    }
+
+    #[test]
+    fn last_used_labels() {
+        let today = NaiveDate::from_ymd_opt(2026, 10, 25).unwrap();
+        let day = |d| NaiveDate::from_ymd_opt(2026, 10, d).unwrap();
+        assert_eq!(last_used_label(AppKind::Game, day(25), today), "Zuletzt gespielt: heute");
+        assert_eq!(last_used_label(AppKind::App, day(24), today), "Zuletzt geöffnet: gestern");
+        assert_eq!(last_used_label(AppKind::Game, day(20), today), "Zuletzt gespielt: vor 5 Tagen");
+        assert_eq!(last_used_label(AppKind::Game, day(1), today), "Zuletzt gespielt: am 01.10.2026");
     }
 }

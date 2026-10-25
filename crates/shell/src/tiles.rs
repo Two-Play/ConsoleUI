@@ -1,0 +1,63 @@
+//! Wandelt `AppEntry` in die `AppTile`-Struktur der UI um und lädt dabei die Bilder.
+
+use std::path::Path;
+
+use chrono::{DateTime, Local, NaiveDate};
+use consoleui_core::{AppEntry, AppKind, accent, last_used_label};
+use slint::{Color, Image};
+
+use crate::{AppTile, cover};
+
+const COVER_SIZE: u32 = 384;
+
+pub fn load(path: &Path) -> Option<Image> {
+    Image::load_from_path(path)
+        .map_err(|err| eprintln!("Bild {} konnte nicht geladen werden: {err:?}", path.display()))
+        .ok()
+}
+
+/// Lädt Cover, Icon und Logo. Bei echtem Cover wird die Akzentfarbe des Eintrags daraus abgeleitet.
+pub fn to_tile(entry: &mut AppEntry, index: usize, today: NaiveDate) -> AppTile {
+    let real_cover = entry.artwork.cover.as_deref().and_then(load);
+    if let Some((primary, secondary)) =
+        real_cover.as_ref().and_then(Image::to_rgba8).and_then(|px| accent::from_rgba(px.as_bytes()))
+    {
+        entry.accent = primary;
+        entry.accent2 = secondary;
+    }
+    let icon = if real_cover.is_none() { entry.artwork.icon.as_deref().and_then(load) } else { None };
+    let logo = entry.artwork.logo.as_deref().and_then(load);
+    let (kind, action_label) = match entry.kind {
+        AppKind::Game => ("SPIEL", "Spielen"),
+        AppKind::App => ("APP", "Öffnen"),
+    };
+
+    AppTile {
+        title: entry.title.as_str().into(),
+        subtitle: subtitle(entry, today).into(),
+        kind: kind.into(),
+        action_label: action_label.into(),
+        monogram: entry.monogram().into(),
+        show_monogram: real_cover.is_none() && icon.is_none(),
+        has_icon: icon.is_some(),
+        icon: icon.unwrap_or_default(),
+        has_logo: logo.is_some(),
+        logo: logo.unwrap_or_default(),
+        cover: real_cover
+            .unwrap_or_else(|| cover::generate(entry.accent, entry.accent2, index as u32, COVER_SIZE)),
+        accent: Color::from_rgb_u8(entry.accent[0], entry.accent[1], entry.accent[2]),
+    }
+}
+
+/// „Zuletzt gespielt: …“, sonst die Beschreibung des Eintrags.
+pub fn subtitle(entry: &AppEntry, today: NaiveDate) -> String {
+    entry
+        .last_used
+        .and_then(|t| DateTime::from_timestamp(t as i64, 0))
+        .map(|utc| last_used_label(entry.kind, utc.with_timezone(&Local).date_naive(), today))
+        .unwrap_or_else(|| entry.description.clone())
+}
+
+pub fn today() -> NaiveDate {
+    Local::now().date_naive()
+}

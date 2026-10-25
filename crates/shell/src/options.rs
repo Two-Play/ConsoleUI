@@ -2,7 +2,8 @@ pub const USAGE: &str = "\
 Verwendung: consoleui [OPTIONEN]
 
   --windowed      Im Fenster statt im Vollbild starten
-  --tiles <N>     Anzahl der Dummy-Kacheln (Standard: 12)
+  --dummy         Erfundene Einträge statt echter Steam- und Desktop-Apps anzeigen
+  --tiles <N>     Anzahl der Dummy-Kacheln (Standard: 12, nur mit --dummy)
   --fps           FPS- und Renderzeit-Anzeige einblenden
   --bench         Automatisch durch alle Kacheln scrollen, Messwerte ausgeben und beenden
   -h, --help      Diese Hilfe anzeigen";
@@ -10,6 +11,7 @@ Verwendung: consoleui [OPTIONEN]
 #[derive(Debug, PartialEq)]
 pub struct Options {
     pub windowed: bool,
+    pub dummy: bool,
     pub tiles: usize,
     pub show_fps: bool,
     pub bench: bool,
@@ -18,7 +20,7 @@ pub struct Options {
 
 impl Default for Options {
     fn default() -> Self {
-        Self { windowed: false, tiles: 12, show_fps: false, bench: false, help: false }
+        Self { windowed: false, dummy: false, tiles: 12, show_fps: false, bench: false, help: false }
     }
 }
 
@@ -29,6 +31,7 @@ impl Options {
         while let Some(arg) = args.next() {
             match arg.as_str() {
                 "--windowed" => options.windowed = true,
+                "--dummy" => options.dummy = true,
                 "--fps" => options.show_fps = true,
                 "--bench" => options.bench = true,
                 "-h" | "--help" => options.help = true,
@@ -59,8 +62,8 @@ mod tests {
 
     #[test]
     fn parses_all_flags() {
-        let options = parse(&["--windowed", "--tiles", "50", "--fps", "--bench"]).unwrap();
-        assert!(options.windowed && options.show_fps && options.bench);
+        let options = parse(&["--windowed", "--dummy", "--tiles", "50", "--fps", "--bench"]).unwrap();
+        assert!(options.windowed && options.dummy && options.show_fps && options.bench);
         assert_eq!(options.tiles, 50);
     }
 

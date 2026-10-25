@@ -7,6 +7,13 @@ export struct AppTile {
     kind: string,
     action-label: string,
     monogram: string,
+    // Nur bei Platzhalter-Covern ohne Icon
+    show-monogram: bool,
+    // Echtes Cover oder erzeugter Farbverlauf
     cover: image,
+    icon: image,
+    has-icon: bool,
+    logo: image,
+    has-logo: bool,
     accent: color,
 }
