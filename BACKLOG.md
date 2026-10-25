@@ -114,23 +114,45 @@ Schätzung in Story Points (SP): 1, 2, 3, 5, 8, 13. Ein Sprint dauert 2 Wochen.
 | 6.5 | Performance pass: load images asynchronously, thumbnail cache, frame-time overlay for debugging | 5 |
 | 6.6 | i18n: UI strings in English as the source language, German translation (e.g. Slint's `@tr()` with gettext catalogs), language follows `LANG` and can be changed on the settings page; remaining German strings in the code are moved to English | 5 |
 
-## Epic 7 (optional, Phase 3) – Eigener Smithay-Compositor (Hybrid)
+## Epic 7 (optional, phase 3) – Own Smithay compositor (hybrid)
 
-**Ansatz:** Wir wollen nicht alles nachbauen, was gamescope kann. Volle Gleichwertigkeit
-(FSR/NIS, HDR, Frame-Limiter, viele Sonderfälle für einzelne Spiele) wären grob 110–170 SP und
-danach viel Pflege. Unser eigener Smithay-Compositor übernimmt die Teile, für die wir heute
-gamescope umgehen müssen: Shell, Overlays, Eingabe, Fokus und die Übergänge zwischen Shell und App.
-Spiele laufen direkt im Compositor (über XWayland). Spiele, die Upscaling, HDR oder einen
-FPS-Limiter brauchen, starten wir in einem **verschachtelten gamescope** (`gamescope -- <spiel>`,
-gamescope als Wayland-Client). Diese teuren Funktionen bekommen wir so pro Spiel von gamescope.
+**Approach:** We do not rebuild everything gamescope can do. Full parity (FSR/NIS, HDR, frame
+limiter, many per-game special cases) would be roughly 110–170 SP plus a lot of maintenance. Our own
+Smithay compositor takes over the parts we currently have to work around in gamescope: shell,
+overlays, input, focus and the transitions between shell and app. Games run directly in the
+compositor (through XWayland). Games that need upscaling, HDR or an FPS limiter are started in a
+**nested gamescope** (`gamescope -- <game>`, gamescope as a client), so we get those expensive
+features from gamescope per game (Story 7.10, done in Sprint 8).
 
-Was dadurch wegfällt: `STEAM_GAME`-Atome und die Prozess-Zuordnung in `src/gamescope.rs`,
-der `EVIOCGRAB` in `src/grab.rs`, das 1 px schmalere Benachrichtigungsfenster und der Fokus,
-den gamescope nach dem Overlay nicht zurückgibt. Die Shell bleibt ein normaler Client. Der Modus
-mit gamescope (`CONSOLEUI_GAMESCOPE=steam`) bleibt als Fallback erhalten.
+What goes away: the `STEAM_GAME` atoms and the process mapping in `src/gamescope.rs`, the
+`EVIOCGRAB` in `src/grab.rs`, the notification window that is 1 px narrower than the root window,
+and the focus that gamescope does not hand back after the overlay. The shell stays a normal client.
+The gamescope mode (`CONSOLEUI_GAMESCOPE=steam`) remains as a fallback.
+
+Spike results and the plan for 7.2: [docs/spike-smithay.md](docs/spike-smithay.md). Estimates below
+are updated after the spike.
 
 | ID | Story | SP |
 |---|---|---|
+| 7.1 | Spike: build Smithay's `anvil` example, run the shell (Slint, Wayland) and a nested `gamescope` inside it — **done (Sprint 8)** | 5 |
+| 7.2 | Minimal compositor `crates/compositor`: DRM/KMS + libinput + libseat (`--drm`) and winit (`--winit`, development), the shell as fullscreen client, control socket (`CONSOLEUI_COMPOSITOR`), relative-pointer/pointer-constraints/`drm_syncobj`, own session file next to the gamescope session | 13 |
+| 7.3 | XWayland basics: `X11Wm`, fullscreen games, override-redirect windows, window → launched app mapping (reuses `consoleui_core::ownership`, fallback for windows without `_NET_WM_PID`) | 13 |
+| 7.4 | Robust XWayland for Steam and games: Steam client, launcher and splash windows, focus changes, special cases from tests with real games | 13 |
+| 7.5 | Focus and input in the compositor: Guide button always goes to the shell, the game gets no input while the quick menu is open (replaces `grab.rs`), keyboard focus returns cleanly | 5 |
+| 7.6 | Shell as overlay above running apps: quick menu and toasts as shell toplevels placed on top by the compositor (Slint has no layer-shell), replaces the `OverlayWindow`/`NotificationWindow` tricks | 5 |
+| 7.7 | Animated transitions between shell and app in the compositor (tile zooms into the real game image, animated return) | 8 |
+| 7.8 | Direct scanout for the game in front (zero-copy, low latency), falling back to composition while an overlay is open | 5 |
+| 7.9 | VRR (adaptive sync) and tearing for games, simple frame pacing (Smithay has VRR, but no tearing-control/async page flip yet) | 13 |
+| 7.10 | Nested gamescope per entry (resolution, FSR/NIS/integer, FPS limit, HDR, fullscreen) from the context menu — **done (Sprint 8)**, not for Steam games | 5 |
+| 7.11 | Multiple monitors/hotplug (choose the output, switch to the remaining one on unplug) | 5 |
+| 7.12 | Screenshot via button combination (compositor reads back the frame into a PNG, toast with the path) | 3 |
+
+About 98 SP in total, 7.1–7.6 (≈ 54 SP) as the first goal: a session that runs as well without
+gamescope as it does today. Deliberately **not** in the compositor: own upscaling, HDR and color
+management, FPS limiter — the nested gamescope (7.10) provides those. **Before 7.2:** decide the
+project license (no license file yet; niri and cosmic-comp are GPL, anvil/smallvil are MIT).
+
+---|---|---|
 | 7.1 | Spike: Smithay-Beispiel `anvil` bauen und auf einem TTY starten; prüfen, ob die Shell (Slint, Wayland) und `gamescope` verschachtelt darin laufen | 5 |
 | 7.2 | Minimaler Compositor: DRM/KMS + libinput + libseat, die Shell als Vollbild-Client, eigene Session-Datei neben der gamescope-Session | 13 |
 | 7.3 | XWayland-Grundlagen: `X11Wm`, Vollbild-Spiele, Fenster ohne Rahmen (Override-Redirect), Zuordnung Fenster → gestartete App (wiederverwendet `consoleui_core::ownership`) | 13 |
@@ -150,18 +172,19 @@ Farbmanagement, FPS-Limiter. Das liefert das verschachtelte gamescope (7.10).
 
 ---
 
-## Sprint-Plan (Vorschlag)
+## Sprint plan (proposal)
 
-| Sprint | Ziel | Stories |
+| Sprint | Goal | Stories |
 |---|---|---|
-| **1** | „Es bewegt sich“: Home-Screen mit Dummy-Daten und flüssiger Navigation | 0.1, 0.2, 0.4, 1.1, 1.2, 3.2 |
-| **2** | „Echte Apps“: Desktop- und Steam-Apps erkennen, mit Covern anzeigen und starten | 2.1, 2.2, 2.3, 1.3, 1.5, 2.6 |
-| **3** | „Couch-tauglich“: Gamepad-Steuerung und Konsolen-Session mit gamescope | 3.1, 0.3, 4.1, 4.2, 4.3, 1.4 |
-| **4** | „Bibliothek“: Grid, Suche, laufende Apps | 2.4, 2.5, 4.4, 4.5, 3.3 |
-| **5** | „System“: Power, Lautstärke, Quick-Menü | 5.1, 5.2, 3.4, 4.6 |
-| **6** | „Polish“: Animationen, Einstellungen, Performance | 6.x, 5.5, 5.6, 1.6 |
-| 7+ | WLAN/Bluetooth, danach entscheiden: Smithay-Compositor ja/nein | 5.3, 5.4, Epic 7 |
-| Epic 7 (falls ja) | „Eigener Compositor“: Spike, dann Session ohne gamescope, dann Übergänge und Latenz | 7.1–7.3 → 7.4–7.6 → 7.7–7.12 |
+| **1** | "It moves": home screen with dummy data and smooth navigation | 0.1, 0.2, 0.4, 1.1, 1.2, 3.2 |
+| **2** | "Real apps": detect desktop and Steam apps, show them with covers and launch them | 2.1, 2.2, 2.3, 1.3, 1.5, 2.6 |
+| **3** | "Couch-ready": gamepad control and console session with gamescope | 3.1, 0.3, 4.1, 4.2, 4.3, 1.4 |
+| **4** | "Library": grid, search, running apps | 2.4, 2.5, 4.4, 4.5, 3.3 |
+| **5** | "System": power, volume, quick menu | 5.1, 5.2, 3.4, 4.6 |
+| **6** | "Polish": animations, settings, performance | 6.x, 5.5, 5.6, 1.6 |
+| **7** | Wi-Fi/Bluetooth, context menu, notifications over games, performance | 5.3, 5.4, 2.7, 5.6, 6.3, 6.5 |
+| **8** | "Hybrid start": Smithay spike, nested gamescope per entry, i18n | 7.1, 7.10, 6.6 |
+| 9+ | Own compositor: session without gamescope, then transitions and latency | 7.2–7.3 → 7.4–7.6 → 7.7–7.9, 7.11, 7.12 |
 
 ## Sprint-Ergebnisse
 
@@ -452,6 +475,55 @@ Deck o. Ä.) sollten wir später den Skia-Renderer vergleichen (Story 6.5).
   höchstens 7 ms.
 - **Nicht getestet:** die Parallaxe in Bewegung (Snapshots zeigen nur den Endzustand), 4K-Ausgabe
   (dort ist ein 1920er-Hero etwas weicher).
+
+### Sprint 8 – "Hybrid start" (done: 7.1, 7.10, 6.6)
+
+Three agents worked in parallel in their own worktrees; the branches were merged into `main`.
+
+- **Spike Smithay (7.1):** [docs/spike-smithay.md](docs/spike-smithay.md). anvil (Smithay git main
+  `24647fc8d001`) builds in about 2 min and ran nested with its winit backend in KDE (never on a TTY).
+  - Works: the shell natively on Wayland (dmabuf, presentation feedback, `--actions`/`--snapshot`),
+    X11 clients via anvil's XWayland (`X11Wm`, glxgears ≈ 110 fps, launched by the shell, came to
+    the front, shell back after exit), nested gamescope via SDL on Wayland (FSR, 60 fps).
+  - Problems: gamescope's native Wayland backend needs `zwp_relative_pointer_manager_v1` (anvil only
+    offers it with udev); gamescope's X11/SDL path never showed a window; anvil ignores
+    `set_fullscreen` before the first commit; glxgears has no `_NET_WM_PID` (7.3 needs a fallback);
+    Smithay has no tearing-control/async page flip yet (VRR is there); Slint has no layer-shell, so
+    overlays are shell toplevels placed by the compositor.
+  - For the udev backend these packages are missing on this machine: `libinput-devel
+    mesa-libgbm-devel libseat-devel libdrm-devel libdisplay-info-devel libei-devel`.
+  - Plan for 7.2: `crates/compositor` based on anvil, `--winit`/`--drm`, starts the shell with
+    `CONSOLEUI_COMPOSITOR=<control socket>` (line-delimited JSON, types in `consoleui-core`).
+    Estimates updated in Epic 7. **Open:** project license (niri/cosmic-comp are GPL).
+- **Nested gamescope per entry (7.10):** context menu → "Gamescope options…" opens a card in the
+  settings style: start in gamescope on/off, resolution (native/720p/800p/1080p/1440p, width follows
+  the output's aspect ratio), upscaler (off/FSR/NIS/integer), FPS limit (off/30/40/60/90), HDR,
+  fullscreen; the bottom line previews the prefix. Saved per entry in `game_options.json`. The
+  launch runs `gamescope <args> -- <command>` in the same systemd scope, so stopping, exit tracking
+  and window ownership work unchanged. Steam games are not supported (Steam starts the game itself;
+  the only ways are Steam's own config files) — the card points to `gamescope … -- %command%` in
+  Steam's launch options instead. `ENABLE_GAMESCOPE_WSI` is removed for the nested gamescope
+  (it showed a "Gamescope WSI Layer Error" inside the session).
+  - Tested: unit tests, snapshots, desktop launch with `glxgears` (process tree and scope checked,
+    quitting via the quick menu), in the gamescope session the nested window was tagged and in front.
+  - **Not tested:** glxgears visible inside the gamescope session after the WSI fix (GPU fault, see
+    below), HDR, NIS/integer quality, real entries, real gamepad.
+- **i18n (6.6):** English is the source language, German comes from one gettext catalog
+  `lang/de/LC_MESSAGES/consoleui.po` (≈ 226 messages), bundled into Slint (`@tr`) and embedded in
+  `consoleui_core::i18n` for Rust strings (`tr`/`trf`/`trn`) — no runtime gettext, no `.mo` files.
+  The language follows `LANGUAGE`/`LC_ALL`/`LC_MESSAGES`/`LANG`, or the new settings row
+  "Language: Automatic / English / Deutsch", and switches without restart. The on-screen keyboard is
+  QWERTZ for German and QWERTY for English; desktop names (`Name[de]`) follow the language. A test
+  fails on missing, untranslated or stale catalog entries. Remaining German comments and log
+  messages were translated to English.
+  - Tested: snapshots of all screens in both languages (software renderer), runtime switch.
+  - **Not tested:** overlay/notification windows in gamescope, the real D-Bus backend's error texts,
+    real gamepad. Known gaps: entry names loaded at startup keep the old language until restart;
+    the German search heading is now "Suchen" (shares the msgid with the △ hint).
+- **GPU fault:** a nested gamescope run in the Smithay spike (gamescope over anvil's XWayland)
+  triggered NVIDIA `Xid 51 BAD_TSG` at 12:32; afterwards every new Vulkan device failed
+  (`NV_ERR_RESET_REQUIRED`) until a reboot. After the reboot: re-run the 7.10 test in the gamescope
+  session and the spike's nested-gamescope tests on NVIDIA (X11/SDL path last and alone).
 
 ## Risiken / offene Fragen
 

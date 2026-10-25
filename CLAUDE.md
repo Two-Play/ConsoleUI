@@ -109,6 +109,13 @@ Cargo workspace (edition 2024, `default-members` = the shell):
     requests) and builds plain view rows.
   - `status.rs` reads network/battery from sysfs; `system.rs` wraps `wpctl` (volume) and
     `systemctl suspend|reboot|poweroff`; `accent::from_rgba` derives tile colors from covers.
+  - `game_options.rs` (Story 7.10): per-entry nested gamescope options (`GameOptions`: resolution,
+    upscaler, FPS limit, HDR, fullscreen); `wrap()` puts `gamescope <args> --` in front of
+    `Launch::Command` launches (Steam entries are not supported, Steam starts the game itself),
+    `GameOptionsPanel` is the panel state, `GameOptionsStore` persists to `game_options.json` next to
+    `collection.json`. `launch::plan` removes `ENABLE_GAMESCOPE_WSI` for a nested gamescope.
+  - `i18n.rs` (Story 6.6): `Language` (from `LANGUAGE`/`LC_ALL`/`LC_MESSAGES`/`LANG` or the settings
+    row), `tr`/`trf`/`trn`/`tr_noop`, backed by the embedded German catalog (see "Translations" below).
 - `crates/shell` (binary `consoleui`): Slint UI plus glue.
   - `ui/main.slint`: `AppWindow`, the home screen. All sizes scale from a 1920×1080 reference via the
     `s` factor; tiles are positioned absolutely and animated (`animate x, y, width, height`).
@@ -145,8 +152,10 @@ Cargo workspace (edition 2024, `default-members` = the shell):
     `OverlayWindow` (`ui/overlay.slint`, transparent, gets `STEAM_OVERLAY` and is remapped before first
     use); otherwise it is the `QuickMenu` layer inside `AppWindow`.
   - `src/context.rs`: context menu (Menu/Tab on a focused entry in home and library: pin/unpin, hide,
-    show again, quit, and the library sort). Shown as the `ContextMenu` layer (`ui/contextmenu.slint`)
-    in `AppWindow`; its hints come from `Shell::update_hints`.
+    show again, gamescope options, quit, and the library sort). Shown as the `ContextMenu` layer
+    (`ui/contextmenu.slint`) in `AppWindow`; its hints come from `Shell::update_hints`. "Gamescope
+    options…" opens the `GameOptionsPanel` layer (`ui/gameoptions.slint`, reuses `SettingRow`);
+    `Shell::launch` wraps the launch with the gamescope root size or the window size as output.
   - Toasts (`Shell::toast`): while an app is in front in gamescope they go to `NotificationWindow`
     (`ui/notification.slint`): `STEAM_OVERLAY` without `STEAM_INPUT_FOCUS`, 1 px narrower than the root
     window, so gamescope treats it as its notification window (always on top, never focused). gamescope
@@ -178,6 +187,24 @@ gamescope otherwise only while the shell is in front (`shell_in_front`; gamescop
 focus back after the overlay, so `window-active` is unreliable there and `restore_keyboard_focus` fixes
 it for the keyboard), on the desktop only while the window is focused (`window-active`). `--actions`
 script steps bypass the gating.
+
+Translations: English is the source language; the only catalog is `lang/de/LC_MESSAGES/consoleui.po`
+(gettext, no `msgctxt`, plural rule `n != 1`). Slint uses it as bundled translations (`build.rs`,
+`@tr("Text")`, `@tr("Filter: {}", v)`, `@tr("{n} item" | "{n} items" % count)`); Rust embeds the same
+file via `consoleui_core::i18n` (`tr("Text")`, `trf("Connected to {}", &[&name])`,
+`trn("{n} x", "{n} xs", n, &[])`, `tr_noop` in `const` tables). Arguments must be string literals. For a
+new string add `msgid`/`msgstr` to the catalog and run `cargo test -p consoleui-core i18n`
+(`catalog_matches_sources` fails on missing, untranslated or stale entries and placeholder mismatches).
+One msgid has exactly one German text; use a different English text if the German must differ.
+`Shell::apply_language` switches the language at runtime (the on-screen keyboard is QWERTZ for German,
+QWERTY for English).
+
+The Smithay compositor (Epic 7) is planned in `docs/spike-smithay.md`: a separate `crates/compositor`,
+code may be taken from anvil/smallvil (MIT) but not from niri/cosmic-comp (GPL) until a project
+license is decided.
+
+If the GPU renderer fails (e.g. the NVIDIA driver needs a reset after a gamescope crash),
+`SLINT_BACKEND=winit-software` still renders `--snapshot` PNGs.
 
 Note: `[profile.dev]` uses `opt-level = 1` and dependencies use `opt-level = 3`, so debug builds
 render smoothly.
