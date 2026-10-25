@@ -23,9 +23,9 @@
 
 ## 🎯 Vision
 
-Linux has great games and great hardware, but no *console experience*: you still need a mouse
-and keyboard to pick a game, join Wi-Fi, switch a profile or find software that works with a
-controller.
+Thanks to Proton, thousands of Windows games now run well on Linux, and the hardware is more
+than capable. What is missing is a *console experience*: you still need a mouse and keyboard to
+pick a game, join Wi-Fi, switch a profile or find software that works with a controller.
 
 **ConsoleUI is building that missing layer, as an open ecosystem:**
 

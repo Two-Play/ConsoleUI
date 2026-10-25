@@ -26,7 +26,7 @@ use consoleui_core::{
     Action, AppEntry, AppKind, Carousel, Collection, Grid, History, Launch, LibraryFilter, LibrarySort, apply_history,
     compare_recent, home_view, library_view, localize_entries, search, steam,
 };
-use slint::{ComponentHandle, Image, ModelRc, VecModel};
+use slint::{ComponentHandle, Image, Model, ModelRc, VecModel};
 
 use crate::audio::Audio;
 use crate::backdrop::Backdrop;
@@ -40,8 +40,8 @@ use crate::network::Network;
 use crate::profiles::{self as profile_view, ProfileStart};
 use crate::quick::{ForegroundApp, QuickAction, QuickMenu, QuickOutcome};
 use crate::{
-    AppTile, AppWindow, ControllerStyle, Glass, GlyphButton, Hint, KeyCap, NotificationWindow, OverlayWindow, Screen,
-    SettingRow, Theme, tiles,
+    AppTile, AppWindow, ControllerStyle, Glass, GlyphButton, Hint, KeyCap, NotificationWindow, OverlayWindow,
+    QuickItem, Screen, SettingRow, Theme, tiles,
 };
 
 /// Number of entries the home row shows before the library tile (pinned ones always all).
@@ -179,6 +179,14 @@ pub struct Shell {
     backdrop: Backdrop,
     /// Counts toasts up so that an older hide timer does not close a newer toast
     toast_generation: Rc<Cell<u64>>,
+    /// Counts quick menu openings up, so that the hide timer of a closing menu does not hide the
+    /// window of one opened again meanwhile
+    quick_generation: Rc<Cell<u64>>,
+    /// The quick menu's cards; kept across actions so that only changed cards are updated and the
+    /// focus animates instead of the whole row being rebuilt
+    quick_items: Rc<VecModel<QuickItem>>,
+    /// The quick menu was last shown open (`show_quick`)
+    quick_shown: bool,
     /// "Controller battery low" warning already shown
     battery_warned: bool,
     /// Wi-Fi and Bluetooth sub-pages of the settings
@@ -305,6 +313,9 @@ impl Shell {
             music: Music::start(),
             backdrop: Backdrop::new(),
             toast_generation: Rc::default(),
+            quick_generation: Rc::default(),
+            quick_items: Rc::default(),
+            quick_shown: false,
             battery_warned: false,
             network: Network::default(),
             profiles: start.profiles,
@@ -1499,8 +1510,23 @@ impl Shell {
     /// main window.
     fn show_quick(&mut self, ui: &AppWindow, open: bool) {
         let Some(quick) = &self.quick else { return };
-        let items = ModelRc::new(VecModel::from(quick.items()));
+        let new_items = quick.items();
+        if new_items.len() == self.quick_items.row_count() {
+            for (row, item) in new_items.into_iter().enumerate() {
+                if self.quick_items.row_data(row).as_ref() != Some(&item) {
+                    self.quick_items.set_row_data(row, item);
+                }
+            }
+        } else {
+            self.quick_items.set_vec(new_items);
+        }
+        let items = ModelRc::from(self.quick_items.clone());
         let (title, focused) = (quick.title(), quick.focused() as i32);
+        if open && !self.quick_shown {
+            self.quick_generation.set(self.quick_generation.get() + 1);
+        }
+        self.quick_shown = open;
+        let generation = self.quick_generation.clone();
         // In our compositor the app in front gets no input while the menu is open (Story 7.5).
         if let Some(compositor) = &mut self.compositor {
             compositor.set_overlay(open);
@@ -1519,9 +1545,9 @@ impl Shell {
                 // Slint's winit backend created the Wayland toplevel up front (hidden, without a
                 // buffer) and does not draw it on `show()` by itself.
                 overlay.window().request_redraw();
-                open_overlay_later(&overlay);
+                open_overlay_later(&overlay, generation);
             } else if !open {
-                close_overlay(&overlay);
+                close_overlay(&overlay, generation);
                 // Opened as a layer before the compositor's `Welcome` arrived
                 ui.set_quick_open(false);
             }
@@ -1545,9 +1571,9 @@ impl Shell {
         overlay.set_controller_style(ui.get_controller_style());
         if open && !overlay.get_open() {
             show_overlay_window(gamescope);
-            open_overlay_later(&gamescope.overlay);
+            open_overlay_later(&gamescope.overlay, generation);
         } else if !open {
-            close_overlay(&gamescope.overlay);
+            close_overlay(&gamescope.overlay, generation);
         }
     }
 
@@ -1982,22 +2008,31 @@ fn show_overlay_window(gamescope: &mut GamescopeUi) {
     }
 }
 
-/// Opens the quick menu only after the window is shown, so the bar slides in.
-fn open_overlay_later(overlay: &OverlayWindow) {
+/// Opens the quick menu only after the window is shown, so the bar slides in (unless it was
+/// closed again within that time).
+fn open_overlay_later(overlay: &OverlayWindow, generation: Rc<Cell<u64>>) {
     let weak = overlay.as_weak();
+    let opened = generation.get();
     slint::Timer::single_shot(Duration::from_millis(30), move || {
-        if let Some(overlay) = weak.upgrade() {
+        if let Some(overlay) = weak.upgrade()
+            && generation.get() == opened
+        {
             overlay.set_open(true);
         }
     });
 }
 
 /// Slides the quick menu out and then hides its window, unless it was opened again meanwhile.
-fn close_overlay(overlay: &OverlayWindow) {
+/// `open` alone cannot tell: a menu opened again is shown at once but sets `open` only 30 ms
+/// later, and the window must not be hidden in between.
+fn close_overlay(overlay: &OverlayWindow, generation: Rc<Cell<u64>>) {
     overlay.set_open(false);
     let weak = overlay.as_weak();
+    let closed = generation.get();
     slint::Timer::single_shot(Duration::from_millis(450), move || {
-        if let Some(overlay) = weak.upgrade().filter(|o| !o.get_open()) {
+        if let Some(overlay) = weak.upgrade().filter(|o| !o.get_open())
+            && generation.get() == closed
+        {
             let _ = overlay.hide();
         }
     });
