@@ -8,12 +8,13 @@ Usage: consoleui [OPTIONS]
   --windowed      Start in a window instead of fullscreen
   --dummy         Show made-up entries instead of real Steam and desktop apps
   --tiles <N>     Number of dummy tiles (default: 12, only with --dummy)
+  --profile <NAME>  Play as this profile (ID or name) without asking who is playing
   --fps           Show the FPS and render-time overlay
   --bench         Scroll through all tiles automatically, print measurements and exit
   -h, --help      Show this help
 
 For development:
-  --start <PAGE>      Start with home, library, settings or search
+  --start <PAGE>      Start with home, library, settings, search or profiles
   --query <TEXT>      Prefill this text in the search (with --start search)
   --snapshot <FILE>   Save a PNG of the window after a short time and exit
   --actions <LIST>    Simulate input, e.g. \"right,confirm,wait:3000,guide\"
@@ -29,6 +30,8 @@ pub enum StartScreen {
     Library,
     Settings,
     Search,
+    /// The "Who's playing?" screen, even with only one profile
+    Profiles,
 }
 
 /// One step of `--actions`
@@ -54,6 +57,7 @@ pub struct Options {
     pub actions: Vec<ScriptStep>,
     pub dummy_launch: Option<String>,
     pub fake_network: bool,
+    pub profile: Option<String>,
 }
 
 impl Default for Options {
@@ -71,6 +75,7 @@ impl Default for Options {
             actions: Vec::new(),
             dummy_launch: None,
             fake_network: false,
+            profile: None,
         }
     }
 }
@@ -97,9 +102,11 @@ impl Options {
                         "library" => StartScreen::Library,
                         "settings" => StartScreen::Settings,
                         "search" => StartScreen::Search,
+                        "profiles" => StartScreen::Profiles,
                         other => return Err(format!("Unknown page: {other}")),
                     }
                 }
+                "--profile" => options.profile = Some(value(&mut args, "--profile")?),
                 "--query" => options.query = Some(value(&mut args, "--query")?),
                 "--snapshot" => options.snapshot = Some(value(&mut args, "--snapshot")?.into()),
                 "--actions" => options.actions = parse_script(&value(&mut args, "--actions")?)?,
@@ -173,6 +180,10 @@ mod tests {
         assert_eq!(options.query.as_deref(), Some("red"));
         assert_eq!(options.snapshot, Some(PathBuf::from("/tmp/x.png")));
         assert!(parse(&["--start", "nirgendwo"]).is_err());
+        let options = parse(&["--start", "profiles", "--profile", "Anna"]).unwrap();
+        assert_eq!(options.start, StartScreen::Profiles);
+        assert_eq!(options.profile.as_deref(), Some("Anna"));
+        assert!(parse(&["--profile"]).is_err());
     }
 
     #[test]

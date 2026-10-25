@@ -3,6 +3,7 @@
 //! the control socket).
 
 use std::cell::Cell;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -14,14 +15,16 @@ use consoleui_core::launch::{self, ProcessHandle};
 use consoleui_core::netpages::Page;
 use consoleui_core::osk::{KeyboardEvent, OnScreenKeyboard};
 use consoleui_core::ownership::{self, FIRST_DESKTOP_APP_ID, Owner, SHELL_APP_ID};
+use consoleui_core::profile_picker::{PickerOutcome, ProfilePicker};
+use consoleui_core::profiles::{self, ProfilePaths, Profiles};
 use consoleui_core::protocol::{CompositorMessage, Rect, ShellMessage, Transition};
 use consoleui_core::running::{MIN_HOLD, Phase, RunningApp};
 use consoleui_core::settings::{GlyphChoice, Setting, Settings};
 use consoleui_core::sound::Sound;
 use consoleui_core::system;
 use consoleui_core::{
-    Action, AppEntry, AppKind, Carousel, Collection, Grid, History, Launch, LibraryFilter, LibrarySort, compare_recent,
-    home_view, library_view, localize_entries, search, steam,
+    Action, AppEntry, AppKind, Carousel, Collection, Grid, History, Launch, LibraryFilter, LibrarySort, apply_history,
+    compare_recent, home_view, library_view, localize_entries, search, steam,
 };
 use slint::{ComponentHandle, Image, ModelRc, VecModel};
 
@@ -33,6 +36,7 @@ use crate::hero::Heroes;
 use crate::loader::Library;
 use crate::music::Music;
 use crate::network::Network;
+use crate::profiles::{self as profile_view, ProfileStart};
 use crate::quick::{ForegroundApp, QuickAction, QuickMenu, QuickOutcome};
 use crate::{
     AppTile, AppWindow, ControllerStyle, GlyphButton, Hint, KeyCap, NotificationWindow, OverlayWindow, Screen,
@@ -170,6 +174,20 @@ pub struct Shell {
     battery_warned: bool,
     /// Wi-Fi and Bluetooth sub-pages of the settings
     network: Network,
+
+    /// All profiles (Story 5.7); history, collection, game options and settings belong to the
+    /// active one
+    profiles: Profiles,
+    /// `$XDG_DATA_HOME/consoleui` (`None`: nothing is saved)
+    profiles_root: Option<PathBuf>,
+    /// ID of the active profile
+    profile: String,
+    /// Open "Who's playing?" screen
+    picker: Option<ProfilePicker>,
+    /// Made-up entries: nothing of the library is saved for them
+    dummy: bool,
+    /// `last_used` as discovered (Steam's own), before a profile's history is applied
+    discovered_last_used: HashMap<String, Option<u64>>,
 }
 
 /// How long a toast stays visible
@@ -191,6 +209,8 @@ struct Feedback {
     query_len: usize,
     settings: Settings,
     network: [usize; 5],
+    /// Profile screen open, and its focus
+    profiles: Option<[usize; 4]>,
 }
 
 /// How long the launch screen stays under an app our compositor zooms in (a bit longer than the
@@ -207,9 +227,9 @@ impl Shell {
         gamescope: Option<GamescopeUi>,
         compositor: Option<Compositor>,
         compositor_ui: Option<CompositorUi>,
-        settings: Settings,
-        settings_path: Option<PathBuf>,
+        start: ProfileStart,
     ) -> Self {
+        let settings_path = start.paths().map(|paths| paths.settings);
         let keyboard = OnScreenKeyboard::default();
         show_keys(ui, &keyboard);
 
@@ -264,7 +284,7 @@ impl Shell {
             gamescope,
             compositor,
             compositor_ui,
-            settings,
+            settings: start.settings,
             settings_path,
             settings_row: 0,
             audio: Audio::start(),
@@ -272,7 +292,14 @@ impl Shell {
             toast_generation: Rc::default(),
             battery_warned: false,
             network: Network::default(),
+            profiles: start.profiles,
+            profiles_root: start.root,
+            profile: start.active,
+            picker: None,
+            dummy: false,
+            discovered_last_used: HashMap::new(),
         };
+        shell.show_profiles(ui);
         shell.apply_settings(ui);
         shell.send_keyboard_layout();
         shell.refresh(ui);
@@ -285,14 +312,110 @@ impl Shell {
         self.tiles = library.entries.iter().enumerate().map(|(i, loaded)| tiles::to_tile(loaded, i, today)).collect();
         self.entries = library.entries.into_iter().map(|loaded| loaded.entry).collect();
         self.library_tile = tiles::library_tile(self.entries.len());
-        self.history = library.history;
-        self.history_path = library.history_path;
-        self.collection = library.collection;
-        self.collection_path = library.collection_path;
-        self.game_options = library.game_options;
-        self.game_options_path = library.game_options_path;
+        self.dummy = library.dummy;
+        self.discovered_last_used = self.entries.iter().map(|e| (e.id.clone(), e.last_used)).collect();
+        self.load_profile_data();
         self.heroes.invalidate();
         self.refresh(ui);
+    }
+
+    // --- Profiles (Story 5.7) -------------------------------------------------------------
+
+    fn profile_paths(&self) -> Option<ProfilePaths> {
+        self.profiles_root.as_deref().map(|root| ProfilePaths::new(root, &self.profile))
+    }
+
+    /// Loads history, collection and game options of the active profile (not for dummy entries)
+    /// and sorts the entries by its history.
+    fn load_profile_data(&mut self) {
+        let paths = self.profile_paths().filter(|_| !self.dummy);
+        self.history_path = paths.as_ref().map(|p| p.history.clone());
+        self.history = self.history_path.as_deref().map(History::load).unwrap_or_default();
+        self.collection_path = paths.as_ref().map(|p| p.collection.clone());
+        self.collection = self.collection_path.as_deref().map(Collection::load).unwrap_or_default();
+        self.game_options_path = paths.map(|p| p.game_options);
+        self.game_options = self.game_options_path.as_deref().map(GameOptionsStore::load).unwrap_or_default();
+        for entry in &mut self.entries {
+            entry.last_used = self.discovered_last_used.get(&entry.id).copied().flatten();
+        }
+        apply_history(&mut self.entries, &self.history);
+        self.resort();
+        for index in 0..self.tiles.len() {
+            self.relabel_tile(index);
+        }
+    }
+
+    /// Opens the profile screen; `startup`: "Who's playing?" before the shell, without a way back.
+    pub fn open_profiles(&mut self, ui: &AppWindow, startup: bool) {
+        self.close_context(ui);
+        self.close_game_options(ui);
+        self.picker = Some(ProfilePicker::new(&self.profiles, Some(&self.profile), startup));
+        self.show_profiles(ui);
+        self.sync(ui);
+    }
+
+    /// Number of profiles; with more than one the shell asks who is playing at the start.
+    pub fn profile_count(&self) -> usize {
+        self.profiles.len()
+    }
+
+    fn show_profiles(&self, ui: &AppWindow) {
+        let view = self.picker.as_ref().map(|picker| picker.view(&self.profiles));
+        ui.set_profile_view(profile_view::to_view(view, self.profiles.get(&self.profile)));
+    }
+
+    fn save_profiles(&self) {
+        if let Some(root) = &self.profiles_root
+            && let Err(err) = self.profiles.save(root)
+        {
+            eprintln!("Cannot save the profiles ({}): {err}", root.display());
+        }
+    }
+
+    fn apply_picker(&mut self, ui: &AppWindow, action: Action) {
+        let Some(picker) = self.picker.as_mut() else { return };
+        match picker.apply(&mut self.profiles, action) {
+            PickerOutcome::Stay => {}
+            PickerOutcome::Close => self.picker = None,
+            PickerOutcome::Select(id) => self.switch_profile(ui, id),
+            PickerOutcome::Changed => self.save_profiles(),
+            PickerOutcome::Deleted(id) => {
+                self.save_profiles();
+                if let Some(root) = &self.profiles_root
+                    && let Err(err) = profiles::remove_files(root, &id)
+                {
+                    eprintln!("Cannot delete the files of profile {id}: {err}");
+                }
+            }
+        }
+        self.show_profiles(ui);
+    }
+
+    /// Continues as profile `id`: its settings (language, accent, ...), history, pinned entries
+    /// and game options replace the current ones. Running apps keep running.
+    fn switch_profile(&mut self, ui: &AppWindow, id: String) {
+        self.picker = None;
+        self.profiles.set_last(&id);
+        self.save_profiles();
+        if id == self.profile {
+            return;
+        }
+        self.profile = id;
+        self.settings_path = self.profile_paths().map(|paths| paths.settings);
+        self.settings = self.settings_path.as_deref().map(Settings::load).unwrap_or_default();
+        self.load_profile_data();
+        self.screen = Screen::Home;
+        self.home.focus(0);
+        self.grid.focus(0);
+        self.settings_row = 0;
+        self.heroes.invalidate();
+        self.apply_settings(ui);
+        self.apply_language(ui);
+        self.send_keyboard_layout();
+        if let Some(profile) = self.profiles.get(&self.profile) {
+            let title = trf("Hello, {}!", &[&profile.name]);
+            self.toast(ui, "☺", &title, tr("Your games and settings are loaded."));
+        }
     }
 
     /// Shows a toast at the top right; a new one replaces the old one. If an app is in front in
@@ -456,6 +579,7 @@ impl Shell {
             query_len: self.query.len(),
             settings: self.settings,
             network: self.network.pages.feedback(),
+            profiles: self.picker.as_ref().map(ProfilePicker::feedback),
         }
     }
 
@@ -465,6 +589,8 @@ impl Shell {
         }
         let sound = if after.quick_open != before.quick_open {
             if after.quick_open { Sound::Open } else { Sound::Back }
+        } else if after.profiles.is_some() != before.profiles.is_some() {
+            if after.profiles.is_some() { Sound::Open } else { Sound::Confirm }
         } else if after.context_open != before.context_open && !after.launching {
             if after.context_open { Sound::Open } else { Sound::Back }
         } else if after.launching && !before.launching {
@@ -492,6 +618,11 @@ impl Shell {
             self.close_context(ui);
             self.close_game_options(ui);
             self.open_quick(ui);
+            return;
+        }
+        if self.picker.is_some() {
+            self.apply_picker(ui, action);
+            self.sync(ui);
             return;
         }
         if ui.get_launching() {
@@ -754,6 +885,10 @@ impl Shell {
     pub fn type_text(&mut self, ui: &AppWindow, text: &str) -> bool {
         let printable =
             !text.is_empty() && text.chars().all(|c| !c.is_control() && !('\u{e000}'..='\u{f8ff}').contains(&c));
+        if printable && self.quick.is_none() && self.picker.as_mut().is_some_and(|p| p.type_text(text)) {
+            self.show_profiles(ui);
+            return true;
+        }
         if printable && self.screen == Screen::Settings && self.quick.is_none() && self.network.pages.type_text(text) {
             ui.set_net_view(self.network.view());
             return true;
@@ -771,6 +906,10 @@ impl Shell {
     }
 
     pub fn erase_text(&mut self, ui: &AppWindow) {
+        if self.picker.as_mut().is_some_and(ProfilePicker::erase) {
+            self.show_profiles(ui);
+            return;
+        }
         if self.screen == Screen::Settings && self.network.pages.erase() {
             ui.set_net_view(self.network.view());
             return;
@@ -945,6 +1084,38 @@ impl Shell {
             AppKind::App => tr("Open"),
         };
         let mut hints = Vec::new();
+        if let Some(picker) = &self.picker {
+            if picker.is_typing() {
+                if keyboard {
+                    hints.push(hint(GlyphButton::Dpad, tr("Type or pick keys")));
+                } else {
+                    hints.push(hint(GlyphButton::Confirm, tr("Type")));
+                    hints.push(hint(GlyphButton::West, tr("Delete")));
+                    hints.push(hint(GlyphButton::North, tr("Space")));
+                }
+                hints.push(hint(GlyphButton::Back, tr("Cancel")));
+            } else if picker.is_menu_open() {
+                hints.push(hint(GlyphButton::Updown, tr("Select")));
+                hints.push(hint(GlyphButton::Confirm, tr("OK")));
+                hints.push(hint(GlyphButton::Back, tr("Close")));
+            } else if !picker.is_confirming() {
+                let view = picker.view(&self.profiles);
+                let add = view.tiles.get(view.focused).is_some_and(|t| t.add);
+                hints.push(hint(GlyphButton::Dpad, tr("Navigate")));
+                if add {
+                    hints.push(hint(GlyphButton::Confirm, tr("Add profile")));
+                } else {
+                    hints.push(hint(GlyphButton::Confirm, tr("Choose")));
+                    hints.push(hint(GlyphButton::Menu, tr("Options")));
+                }
+                if !picker.is_startup() {
+                    hints.push(hint(GlyphButton::Back, tr("Back")));
+                }
+                hints.push(hint(GlyphButton::Guide, tr("Control center")));
+            }
+            ui.set_hints(ModelRc::new(VecModel::from(hints)));
+            return;
+        }
         if self.context.is_some() {
             hints.push(hint(GlyphButton::Updown, tr("Select")));
             hints.push(hint(GlyphButton::Confirm, tr("OK")));
@@ -1191,7 +1362,8 @@ impl Shell {
             let entry = self.entries.iter().find(|e| e.id == running.entry_id)?;
             Some(ForegroundApp { app_id, entry_id: entry.id.clone(), title: entry.title.clone() })
         });
-        self.quick = Some(QuickMenu::new(foreground));
+        let profile = self.profiles.get(&self.profile).map(|p| p.name.clone()).unwrap_or_default();
+        self.quick = Some(QuickMenu::new(foreground, profile));
         self.show_quick(ui, true);
     }
 
@@ -1209,6 +1381,13 @@ impl Shell {
                         self.screen = Screen::Home;
                         self.sync(ui);
                         self.show_shell(ui);
+                    }
+                    QuickAction::SwitchProfile => {
+                        // Like "Home": the app goes to the background, then the profile screen opens.
+                        self.screen = Screen::Home;
+                        self.sync(ui);
+                        self.show_shell(ui);
+                        self.open_profiles(ui, false);
                     }
                     QuickAction::Quit(entry_id) => self.quit_running(&entry_id),
                     QuickAction::Volume => {}

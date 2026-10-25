@@ -12,6 +12,8 @@ pub enum QuickAction {
     Home,
     /// Quit the running app (entry ID)
     Quit(String),
+    /// Open the profile screen (Story 5.7)
+    SwitchProfile,
     Volume,
     Power(PowerAction),
     Logout,
@@ -38,6 +40,8 @@ pub struct QuickMenu {
     armed: bool,
     volume: Option<Volume>,
     app_title: Option<String>,
+    /// Name of the active profile
+    profile: String,
 }
 
 /// What should happen after an input in the quick menu
@@ -48,20 +52,21 @@ pub enum QuickOutcome {
 }
 
 impl QuickMenu {
-    pub fn new(foreground: Option<ForegroundApp>) -> Self {
+    pub fn new(foreground: Option<ForegroundApp>, profile: String) -> Self {
         let mut actions = Vec::new();
         let app_title = foreground.as_ref().map(|app| app.title.clone());
         if let Some(app) = foreground {
             actions.extend([QuickAction::Resume(app.app_id), QuickAction::Home, QuickAction::Quit(app.entry_id)]);
         }
         actions.extend([
+            QuickAction::SwitchProfile,
             QuickAction::Volume,
             QuickAction::Power(PowerAction::Suspend),
             QuickAction::Power(PowerAction::Reboot),
             QuickAction::Power(PowerAction::PowerOff),
             QuickAction::Logout,
         ]);
-        Self { actions, focused: 0, armed: false, volume: system::volume(), app_title }
+        Self { actions, focused: 0, armed: false, volume: system::volume(), app_title, profile }
     }
 
     pub fn focused(&self) -> usize {
@@ -125,6 +130,7 @@ impl QuickMenu {
                     QuickAction::Resume(_) => ("▶", tr("Resume"), self.app_title.clone().unwrap_or_default()),
                     QuickAction::Home => ("⌂", tr("Home"), tr("Go to Home").to_string()),
                     QuickAction::Quit(_) => ("■", tr("Quit"), self.app_title.clone().unwrap_or_default()),
+                    QuickAction::SwitchProfile => ("☺", tr("Switch profile"), self.profile.clone()),
                     QuickAction::Volume => ("♪", tr("Volume"), self.volume_text()),
                     QuickAction::Power(PowerAction::Suspend) => ("☾", tr("Sleep"), String::new()),
                     QuickAction::Power(PowerAction::Reboot) => ("↻", tr("Restart"), String::new()),
