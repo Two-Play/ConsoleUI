@@ -5,7 +5,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use crate::library::{AppEntry, AppKind, Artwork, Launch, palette_for};
+use crate::library::{AppEntry, AppKind, Artwork, Launch, Names, palette_for};
 use crate::vdf;
 use crate::xdg;
 
@@ -57,6 +57,7 @@ fn to_entry(root: &Path, manifest: Manifest) -> AppEntry {
         id,
         title: manifest.name,
         description: "Steam".into(),
+        names: Names::Fixed,
         kind: AppKind::Game,
         accent,
         accent2,

@@ -1,10 +1,13 @@
+use std::cmp::Ordering;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use chrono::NaiveDate;
 
 use crate::collection::Collection;
+use crate::desktop::DesktopNames;
 use crate::history::History;
-use crate::i18n::{tr, tr_noop, trf, trn};
+use crate::i18n::{self, Language, tr, tr_noop, trf, trn};
 use crate::search::normalize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -32,13 +35,29 @@ pub struct Artwork {
     pub icon: Option<PathBuf>,
 }
 
+/// Where the title and description of an entry come from, so they can follow a runtime language
+/// switch ([`AppEntry::localize`], Story 6.6) without discovering the library again.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub enum Names {
+    /// Fixed texts (Steam games: Steam has no localized names in the manifests)
+    #[default]
+    Fixed,
+    /// Dummy entry: row `index` of the dummy table; `round` > 0 adds a number to the title.
+    Dummy { index: usize, round: usize },
+    /// Localized keys of a `.desktop` file; shared, so cloning the entry stays cheap.
+    Desktop(Arc<DesktopNames>),
+}
+
 /// An entry of the app overview (Steam game, desktop app or dummy).
 #[derive(Debug, Clone, PartialEq)]
 pub struct AppEntry {
     /// Unique across all sources, e.g. `steam:730` or `desktop:firefox.desktop`.
     pub id: String,
+    /// Title and description in the current language (resolved from `names`). Search, sorting
+    /// and every other display use these.
     pub title: String,
     pub description: String,
+    pub names: Names,
     pub kind: AppKind,
     /// Accent colors (RGB) for placeholder covers and the background.
     pub accent: [u8; 3],
@@ -58,10 +77,31 @@ impl AppEntry {
             .map(|c| c.to_uppercase().collect())
             .unwrap_or_default()
     }
+
+    /// Resolves `title` and `description` again for `language`; `desktop_langs` are the locale
+    /// codes for `.desktop` keys ([`i18n::desktop_languages`]). Returns whether anything changed.
+    pub fn localize(&mut self, language: Language, desktop_langs: &[String]) -> bool {
+        let (title, description) = match &self.names {
+            Names::Fixed => return false,
+            Names::Dummy { index, round } => dummy_texts(*index, *round, language),
+            Names::Desktop(names) => names.resolve(desktop_langs),
+        };
+        let changed = title != self.title || description != self.description;
+        self.title = title;
+        self.description = description;
+        changed
+    }
+}
+
+/// Resolves all entries for `language` (after a language switch). Returns whether any title or
+/// description changed; the order may then be stale (see [`compare_recent`]).
+pub fn localize_entries(entries: &mut [AppEntry], language: Language) -> bool {
+    let desktop_langs = i18n::desktop_languages(language, crate::xdg::languages());
+    entries.iter_mut().fold(false, |changed, entry| entry.localize(language, &desktop_langs) | changed)
 }
 
 /// Title, description, kind, accent color, second accent color. App titles and all descriptions
-/// are translated when the entries are created.
+/// are translated by [`dummy_texts`].
 type DummyEntry = (&'static str, &'static str, AppKind, [u8; 3], [u8; 3]);
 
 const DUMMY: &[DummyEntry] = &[
@@ -87,18 +127,26 @@ pub fn palette_for(key: &str) -> ([u8; 3], [u8; 3]) {
     (accent, accent2)
 }
 
+/// Title and description of a dummy entry in `language`; game titles are names and stay as they are.
+fn dummy_texts(index: usize, round: usize, language: Language) -> (String, String) {
+    let (title, description, kind, _, _) = DUMMY[index];
+    let title = if kind == AppKind::App { i18n::tr_in(language, title) } else { title };
+    let title = if round == 0 { title.to_string() } else { format!("{title} {}", round + 1) };
+    (title, i18n::tr_in(language, description).to_string())
+}
+
 /// Creates `count` dummy entries. From the 13th entry on the list repeats with a number in the title.
 pub fn dummy_library(count: usize) -> Vec<AppEntry> {
     (0..count)
         .map(|i| {
-            let (title, description, kind, accent, accent2) = DUMMY[i % DUMMY.len()];
-            let round = i / DUMMY.len();
-            let title = if kind == AppKind::App { tr(title) } else { title };
-            let title = if round == 0 { title.to_string() } else { format!("{title} {}", round + 1) };
+            let (index, round) = (i % DUMMY.len(), i / DUMMY.len());
+            let (_, _, kind, accent, accent2) = DUMMY[index];
+            let (title, description) = dummy_texts(index, round, i18n::language());
             AppEntry {
                 id: format!("dummy:{i}"),
                 title,
-                description: tr(description).to_string(),
+                description,
+                names: Names::Dummy { index, round },
                 kind,
                 accent,
                 accent2,
@@ -119,11 +167,12 @@ pub fn apply_history(entries: &mut [AppEntry], history: &History) {
 
 /// Most recently used first, then alphabetical.
 pub fn sort_by_recent(entries: &mut [AppEntry]) {
-    entries.sort_by(|a, b| {
-        b.last_used
-            .cmp(&a.last_used)
-            .then_with(|| a.title.to_lowercase().cmp(&b.title.to_lowercase()))
-    });
+    entries.sort_by(compare_recent);
+}
+
+/// The order of [`sort_by_recent`], for sorting something that holds entries.
+pub fn compare_recent(a: &AppEntry, b: &AppEntry) -> Ordering {
+    b.last_used.cmp(&a.last_used).then_with(|| a.title.to_lowercase().cmp(&b.title.to_lowercase()))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -249,6 +298,44 @@ mod tests {
         assert_eq!(app.monogram(), "É");
         app.title = "".into();
         assert_eq!(app.monogram(), "");
+    }
+
+    #[test]
+    fn dummy_entries_follow_the_language() {
+        let mut apps = dummy_library(DUMMY.len() + 8);
+        let english: Vec<_> = apps.iter().map(|a| (a.title.clone(), a.description.clone())).collect();
+        assert!(localize_entries(&mut apps, Language::German));
+        assert_eq!((apps[0].title.as_str(), apps[0].description.as_str()), ("Nebula Drift", "Weltraum-Rennspiel"));
+        assert_eq!(apps[7].title, "Mediathek");
+        assert_eq!(apps[DUMMY.len() + 7].title, "Mediathek 2");
+        assert!(localize_entries(&mut apps, Language::English));
+        let back: Vec<_> = apps.iter().map(|a| (a.title.clone(), a.description.clone())).collect();
+        assert_eq!(back, english);
+        assert!(!localize_entries(&mut apps, Language::English));
+    }
+
+    #[test]
+    fn desktop_entries_follow_the_language() {
+        let content = "[Desktop Entry]\nType=Application\nName=Files\nName[de]=Dateien\nComment=Browse\n";
+        let names = crate::desktop::parse("files.desktop", content).unwrap().names;
+        let mut entry = dummy_library(1).remove(0);
+        (entry.title, entry.description) = names.resolve(&["en".into()]);
+        entry.names = Names::Desktop(Arc::new(names));
+        let id = entry.id.clone();
+        assert!(entry.localize(Language::German, &["de".into()]));
+        assert_eq!((entry.title.as_str(), entry.description.as_str()), ("Dateien", "Browse"));
+        assert!(entry.localize(Language::English, &["en".into()]));
+        assert_eq!(entry.title, "Files");
+        assert_eq!(entry.id, id);
+    }
+
+    #[test]
+    fn fixed_names_stay() {
+        let mut entry = dummy_library(1).remove(0);
+        entry.names = Names::Fixed;
+        entry.title = "Counter-Strike 2".into();
+        assert!(!entry.localize(Language::German, &["de".into()]));
+        assert_eq!(entry.title, "Counter-Strike 2");
     }
 
     #[test]

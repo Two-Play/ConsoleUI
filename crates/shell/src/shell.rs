@@ -17,8 +17,8 @@ use consoleui_core::settings::{GlyphChoice, Setting, Settings};
 use consoleui_core::sound::Sound;
 use consoleui_core::system;
 use consoleui_core::{
-    Action, AppEntry, AppKind, Carousel, Collection, Grid, History, Launch, LibraryFilter, LibrarySort, home_view,
-    library_view, search, steam,
+    Action, AppEntry, AppKind, Carousel, Collection, Grid, History, Launch, LibraryFilter, LibrarySort, compare_recent,
+    home_view, library_view, localize_entries, search, steam,
 };
 use slint::{ComponentHandle, Image, ModelRc, VecModel};
 
@@ -572,12 +572,18 @@ impl Shell {
     }
 
     /// Switches the language (Story 6.6). Slint updates its `@tr()` texts by itself; everything
-    /// built in Rust is rebuilt here. Names and descriptions of the entries (`Name[de]` of desktop
-    /// files, dummy entries) were read in the old language and follow on the next start.
+    /// built in Rust is rebuilt here, including the names and descriptions of the entries
+    /// (`Name[de]` of desktop files, dummy entries), which are re-resolved from the variants kept
+    /// on `AppEntry`: no rediscovery and no image reloading. Search results and the A-Z library
+    /// follow in `refresh`, since they are computed from the entries' current titles.
     fn apply_language(&mut self, ui: &AppWindow) {
-        select_language(self.settings.language.resolve());
+        let language = self.settings.language.resolve();
+        select_language(language);
         self.keyboard = OnScreenKeyboard::default();
         show_keys(ui, &self.keyboard);
+        if localize_entries(&mut self.entries, language) {
+            self.resort();
+        }
         for index in 0..self.tiles.len() {
             self.relabel_tile(index);
         }
@@ -1367,10 +1373,21 @@ impl Shell {
         true
     }
 
+    /// Sorts `entries` (and `tiles` with them) by last use and title again, e.g. after the titles
+    /// changed with the language. Stable, so equal entries keep their order.
+    fn resort(&mut self) {
+        let mut pairs: Vec<(AppEntry, AppTile)> =
+            std::mem::take(&mut self.entries).into_iter().zip(std::mem::take(&mut self.tiles)).collect();
+        pairs.sort_by(|a, b| compare_recent(&a.0, &b.0));
+        (self.entries, self.tiles) = pairs.into_iter().unzip();
+    }
+
     /// Texts of a tile that depend on its state and the language
     fn relabel_tile(&mut self, index: usize) {
         let entry = &self.entries[index];
         let tile = &mut self.tiles[index];
+        tile.title = entry.title.as_str().into();
+        tile.monogram = entry.monogram().into();
         tile.kind = tiles::kind_label(entry.kind).into();
         tile.action_label = tiles::action_label(entry.kind, tile.running).into();
         tile.subtitle = if tile.running { tr("Running now").into() } else { tiles::subtitle(entry, tiles::today()).into() };
