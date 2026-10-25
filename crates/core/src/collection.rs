@@ -1,4 +1,4 @@
-//! Angeheftete und ausgeblendete Einträge (Kontextmenü), gespeichert als JSON.
+//! Pinned and hidden entries (context menu), stored as JSON.
 
 use std::fs;
 use std::io;
@@ -12,9 +12,9 @@ use crate::xdg;
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Collection {
-    /// Eintrags-IDs in Anheft-Reihenfolge (zuerst angeheftet = ganz vorn)
+    /// Entry IDs in pin order (pinned first = at the very front)
     pinned: Vec<String>,
-    /// Eintrags-IDs, die in Home, Bibliothek und Suche nicht erscheinen
+    /// Entry IDs that do not appear in home, library and search
     hidden: Vec<String>,
 }
 
@@ -24,18 +24,18 @@ impl Collection {
         xdg::data_home().map(|dir| dir.join("consoleui/collection.json"))
     }
 
-    /// Eine fehlende oder kaputte Datei ergibt eine leere Sammlung.
+    /// A missing or broken file results in an empty collection.
     pub fn load(path: &Path) -> Self {
         match fs::read_to_string(path) {
             Ok(content) => serde_json::from_str(&content).unwrap_or_else(|err| {
-                eprintln!("Sammlung {} ist ungültig und wird ignoriert: {err}", path.display());
+                eprintln!("Collection {} is invalid and ignored: {err}", path.display());
                 Self::default()
             }),
             Err(_) => Self::default(),
         }
     }
 
-    /// Schreibt zuerst in eine temporäre Datei, damit ein Absturz die Sammlung nicht zerstört.
+    /// Writes to a temporary file first, so a crash does not destroy the collection.
     pub fn save(&self, path: &Path) -> io::Result<()> {
         if let Some(dir) = path.parent() {
             fs::create_dir_all(dir)?;
@@ -53,7 +53,7 @@ impl Collection {
         self.hidden.iter().any(|h| h == id)
     }
 
-    /// Hängt den Eintrag hinten an die angehefteten an (ausgeblendete werden dabei wieder sichtbar).
+    /// Appends the entry to the pinned ones (hidden ones become visible again).
     pub fn pin(&mut self, id: &str) {
         self.hidden.retain(|h| h != id);
         if !self.is_pinned(id) {
@@ -65,7 +65,7 @@ impl Collection {
         self.pinned.retain(|p| p != id);
     }
 
-    /// Ausblenden löst auch das Anheften.
+    /// Hiding also unpins.
     pub fn hide(&mut self, id: &str) {
         self.unpin(id);
         if !self.is_hidden(id) {
@@ -82,9 +82,9 @@ impl Collection {
     }
 }
 
-/// Indizes in `entries` für die Home-Reihe: zuerst alle angehefteten in Anheft-Reihenfolge, dann
-/// die übrigen in der Reihenfolge von `entries` (zuletzt genutzt), bis `count` Einträge erreicht
-/// sind. Ausgeblendete fehlen.
+/// Indices into `entries` for the home row: first all pinned ones in pin order, then the
+/// remaining ones in the order of `entries` (recently used) until `count` entries are
+/// reached. Hidden ones are left out.
 pub fn home_view(entries: &[AppEntry], collection: &Collection, count: usize) -> Vec<usize> {
     let mut view: Vec<usize> =
         collection.pinned.iter().filter_map(|id| entries.iter().position(|e| &e.id == id)).collect();
@@ -130,7 +130,7 @@ mod tests {
         c.hide("dummy:0");
         assert_eq!(home_view(&entries, &c, 4), [4, 2, 1, 3]);
         assert_eq!(home_view(&entries, &c, 10), [4, 2, 1, 3, 5]);
-        // Angeheftete erscheinen immer, auch über die Anzahl hinaus.
+        // Pinned ones always appear, even beyond the count.
         assert_eq!(home_view(&entries, &c, 1), [4, 2]);
     }
 

@@ -35,18 +35,18 @@ use shell::{GamescopeUi, Shell};
 slint::include_modules!();
 
 const BENCH_STEP: Duration = Duration::from_millis(200);
-/// Abfrage-Intervall für Gamepads (gilrs liefert Events nur auf Nachfrage).
+/// Poll interval for gamepads (gilrs delivers events only on request).
 const GAMEPAD_POLL: Duration = Duration::from_millis(8);
 const SNAPSHOT_DELAY: Duration = Duration::from_millis(1500);
 const SCRIPT_START_DELAY: Duration = Duration::from_millis(800);
 const SCRIPT_TICK: Duration = Duration::from_millis(20);
 const SNAPSHOT_AFTER_SCRIPT: Duration = Duration::from_millis(700);
-/// Die Boot-Animation steht mindestens so lange, auch wenn die Bibliothek schneller geladen ist.
+/// The boot animation stays at least this long, even if the library loads faster.
 const MIN_BOOT: Duration = Duration::from_millis(1200);
 const LOADER_POLL: Duration = Duration::from_millis(30);
-/// Wie oft geprüft wird, ob die gestartete App noch läuft.
+/// How often to check whether the launched app is still running.
 const WATCH_INTERVAL: Duration = Duration::from_millis(500);
-/// Wie oft Antworten des Netzwerk-Threads (WLAN/Bluetooth) abgeholt werden
+/// How often responses of the network thread (Wi-Fi/Bluetooth) are collected
 const NETWORK_POLL: Duration = Duration::from_millis(100);
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -73,7 +73,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Slint's translations exist only once a component has been created.
     shell::select_language(language);
 
-    // Die Bibliothek lädt im Hintergrund, während die Boot-Animation läuft.
+    // The library loads in the background while the boot animation runs.
     let library = loader::spawn(LoadOptions {
         dummy: options.dummy,
         tiles: options.tiles,
@@ -81,8 +81,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     });
     let boot_started = Instant::now();
 
-    // In der gamescope-Session (Steam-Modus) steuert die Shell die Fenster selbst und zeigt das
-    // Quick-Menü als eigenes Overlay-Fenster.
+    // In the gamescope session (Steam mode) the shell controls the windows itself and shows the
+    // quick menu as its own overlay window.
     let gamescope = match gamescope::Gamescope::connect() {
         Some(control) => {
             Some(GamescopeUi::new(control, OverlayWindow::new()?, NotificationWindow::new()?))
@@ -149,7 +149,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             let mut grab: Option<grab::Grab> = None;
             move || {
                 let Some(ui) = ui.upgrade() else { return };
-                // Steuerzentrale offen: Controller exklusiv lesen, damit das Spiel nichts mitbekommt.
+                // Control center open: read controllers exclusively so the game notices nothing.
                 let exclusive = shell.borrow().wants_exclusive_input();
                 if exclusive && grab.is_none() {
                     grab = Some(grab::Grab::acquire(&gamepads.borrow().names()));
@@ -219,8 +219,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    // Sobald die Bibliothek da ist: übernehmen, Boot-Animation ausblenden und erst dann
-    // Benchmark, Skript und Snapshot starten (sie sollen die fertige Oberfläche sehen).
+    // Once the library is there: take it over, hide the boot animation and only then start the
+    // benchmark, script and snapshot (they should see the finished UI).
     let after_boot: Rc<RefCell<Vec<Timer>>> = Rc::default();
     let loader_timer = Timer::default();
     loader_timer.start(TimerMode::Repeated, LOADER_POLL, {
@@ -230,7 +230,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let after_boot = after_boot.clone();
         let mut tasks = Some(ReadyTasks::from(&options));
         move || {
-            // Nur einmal: danach ist `tasks` leer und der Timer tut nichts mehr.
+            // Only once: afterwards `tasks` is empty and the timer does nothing.
             if tasks.is_none() {
                 return;
             }
@@ -260,7 +260,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-/// Was nach dem Booten passieren soll (aus den Kommandozeilen-Optionen)
+/// What should happen after booting (from the command-line options)
 struct ReadyTasks {
     screen: Screen,
     query: Option<String>,
@@ -288,10 +288,10 @@ impl From<&Options> for ReadyTasks {
 }
 
 impl ReadyTasks {
-    /// Startet Benchmark, Skript und Snapshot; die Timer müssen am Leben bleiben.
+    /// Starts benchmark, script and snapshot; the timers must stay alive.
     fn start(self, ui: &AppWindow, shell: Rc<RefCell<Shell>>, stats: Rc<RefCell<FrameStats>>) -> Vec<Timer> {
         let mut timers = Vec::new();
-        // Mit Skript erst nach dessen letztem Schritt (plus Zeit für die Animationen) fotografieren
+        // With a script, take the picture only after its last step (plus time for the animations)
         let snapshot_delay = SNAPSHOT_DELAY.max(script_duration(&self.actions) + SNAPSHOT_AFTER_SCRIPT);
         if self.bench {
             timers.push(start_bench(ui, shell.clone(), stats));
@@ -302,7 +302,7 @@ impl ReadyTasks {
         if let Some(path) = self.snapshot {
             let timer = Timer::default();
             let ui = ui.as_weak();
-            // Etwas warten, bis Seitenwechsel und Hero-Überblendung fertig sind.
+            // Wait a bit until the page change and hero crossfade are done.
             timer.start(TimerMode::SingleShot, snapshot_delay, move || {
                 if let Some(ui) = ui.upgrade() {
                     match ui.window().take_snapshot().map_err(Box::<dyn Error>::from).and_then(|px| save_png(&path, &px)) {
@@ -318,7 +318,7 @@ impl ReadyTasks {
     }
 }
 
-/// Ungefähre Laufzeit eines `--actions`-Skripts (Startverzögerung, Wartezeiten, ein Tick pro Schritt)
+/// Approximate duration of an `--actions` script (start delay, waits, one tick per step)
 fn script_duration(steps: &[ScriptStep]) -> Duration {
     if steps.is_empty() {
         return Duration::ZERO;
@@ -327,12 +327,12 @@ fn script_duration(steps: &[ScriptStep]) -> Duration {
     SCRIPT_START_DELAY + SCRIPT_TICK * steps.len() as u32 + Duration::from_millis(waits)
 }
 
-/// Spielt `--actions` ab (für Tests ohne echte Eingabe). Die Aktionen gehen direkt an die Shell,
-/// unabhängig vom Fensterfokus.
+/// Plays back `--actions` (for tests without real input). The actions go straight to the shell,
+/// regardless of the window focus.
 fn run_script(ui: &AppWindow, shell: Rc<RefCell<Shell>>, steps: Vec<ScriptStep>) -> Timer {
     let ui = ui.as_weak();
     let mut next = 0;
-    // Kurz warten, bis das Fenster steht
+    // Wait briefly until the window is up
     let mut due = Instant::now() + SCRIPT_START_DELAY;
     let timer = Timer::default();
     timer.start(TimerMode::Repeated, SCRIPT_TICK, move || {
@@ -343,7 +343,7 @@ fn run_script(ui: &AppWindow, shell: Rc<RefCell<Shell>>, steps: Vec<ScriptStep>)
         match steps.get(next) {
             Some(ScriptStep::Wait(ms)) => due = Instant::now() + Duration::from_millis(*ms),
             Some(ScriptStep::Action(action)) => shell.borrow_mut().apply(&ui, *action),
-            // Entwicklungshilfe für Tests der Hinweise (auch über laufenden Apps)
+            // Development aid for testing toasts (also over running apps)
             Some(ScriptStep::Toast) => shell.borrow_mut().toast(&ui, "◆", "Test notice", "From --actions (development)"),
             None => return,
         }
@@ -378,7 +378,7 @@ fn to_action(nav: NavAction) -> Action {
     }
 }
 
-/// Uhr, Netzwerk, Akku und Controller in der Top-Bar sowie die passenden Tastensymbole.
+/// Clock, network, battery and controller in the top bar, plus the matching button glyphs.
 fn update_status(ui: &AppWindow, gamepads: Option<&RefCell<Gamepads>>, shell: &Shell) {
     ui.set_clock(chrono::Local::now().format("%H:%M").to_string().into());
 
@@ -405,13 +405,13 @@ fn update_status(ui: &AppWindow, gamepads: Option<&RefCell<Gamepads>>, shell: &S
     }
 }
 
-/// Scrollt einmal ganz nach rechts und zurück, gibt danach die Messwerte aus und beendet sich.
+/// Scrolls once all the way right and back, then prints the measurements and exits.
 fn start_bench(ui: &AppWindow, shell: Rc<RefCell<Shell>>, stats: Rc<RefCell<FrameStats>>) -> Timer {
     let len = shell.borrow().home_len();
     let steps = 2 * len.saturating_sub(1);
     let mut step = 0;
     let mut started: Option<Instant> = None;
-    // Längste Verarbeitung einer Eingabe im UI-Thread (dort darf nichts Teures passieren)
+    // Longest processing of an input on the UI thread (nothing expensive may happen there)
     let mut worst_step = Duration::ZERO;
     let ui = ui.as_weak();
 

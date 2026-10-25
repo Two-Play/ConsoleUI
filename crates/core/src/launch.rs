@@ -9,18 +9,18 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::library::Launch;
 use crate::ownership::Owner;
 
-/// Wie ein gestarteter Prozess wieder beendet wird.
+/// How a launched process is stopped again.
 #[derive(Debug, Clone, PartialEq)]
 enum Stopper {
     None,
-    /// Transiente systemd-Scope-Unit: erwischt auch Kindprozesse, die sich vom Starter lösen.
-    /// Die PID dient als Rückfall, solange systemd die Unit noch nicht registriert hat.
+    /// Transient systemd scope unit: also catches child processes that detach from the launcher.
+    /// The PID serves as fallback while systemd has not registered the unit yet.
     Scope { unit: String, pid: u32 },
-    /// Fallback ohne systemd: die eigene Prozessgruppe.
+    /// Fallback without systemd: the own process group.
     ProcessGroup(u32),
 }
 
-/// Meldet, ob ein gestarteter Prozess beendet ist, und kann ihn beenden.
+/// Reports whether a launched process has exited, and can stop it.
 #[derive(Debug, Clone)]
 pub struct ProcessHandle {
     exited: Arc<AtomicBool>,
@@ -28,7 +28,7 @@ pub struct ProcessHandle {
 }
 
 impl ProcessHandle {
-    /// Für Starts ohne Prozess (Dummy-Einträge).
+    /// For launches without a process (dummy entries).
     pub fn finished() -> Self {
         Self { exited: Arc::new(AtomicBool::new(true)), stopper: Stopper::None }
     }
@@ -37,7 +37,7 @@ impl ProcessHandle {
         self.exited.load(Ordering::Relaxed)
     }
 
-    /// Woran sich die Prozesse dieser App erkennen lassen (für die Fensterzuordnung in gamescope).
+    /// How the processes of this app are recognized (for window assignment in gamescope).
     pub fn owner(&self) -> Option<Owner> {
         match &self.stopper {
             Stopper::None => None,
@@ -46,7 +46,7 @@ impl ProcessHandle {
         }
     }
 
-    /// Bittet die App per SIGTERM, sich zu beenden.
+    /// Asks the app via SIGTERM to quit.
     pub fn stop(&self) -> io::Result<()> {
         if self.has_exited() {
             return Ok(());
@@ -111,14 +111,14 @@ fn without_outer_wsi((mut command, scope): (Command, Option<String>), program: &
     (command, scope)
 }
 
-/// Startet die App losgelöst von der Shell (eigene Prozessgruppe, damit Strg+C im Terminal sie
-/// nicht mitbeendet). Ein Hintergrund-Thread wartet auf das Ende, damit kein Zombie bleibt.
+/// Starts the app detached from the shell (own process group, so Ctrl+C in the terminal does
+/// not stop it too). A background thread waits for the exit so no zombie remains.
 pub fn spawn(launch: &Launch) -> io::Result<ProcessHandle> {
     if let Launch::Command(argv) = launch
         && let Some(program) = argv.first()
         && !program_exists(program)
     {
-        return Err(io::Error::new(io::ErrorKind::NotFound, format!("{program} nicht gefunden")));
+        return Err(io::Error::new(io::ErrorKind::NotFound, format!("{program} not found")));
     }
     let unit = systemd_run_available().then(unique_unit_name);
     let Some((mut command, scope)) = plan(launch, unit.as_deref()) else { return Ok(ProcessHandle::finished()) };
@@ -147,7 +147,7 @@ fn unique_unit_name() -> String {
     format!("consoleui-app-{millis}")
 }
 
-/// systemd-run braucht den Benutzer-Bus; ohne ihn (z. B. ohne systemd) starten wir direkt.
+/// systemd-run needs the user bus; without it (e.g. without systemd) we start directly.
 fn systemd_run_available() -> bool {
     program_exists("systemd-run")
         && std::env::var_os("XDG_RUNTIME_DIR").is_some_and(|dir| Path::new(&dir).join("bus").exists())

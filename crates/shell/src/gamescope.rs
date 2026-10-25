@@ -1,7 +1,7 @@
-//! Steuerung von gamescope im Steam-Modus (`-e`) über X11-Atome, siehe docs/spike-gamescope.md:
-//! Fenster bekommen per `STEAM_GAME` eine App-ID, `GAMESCOPECTRL_BASELAYER_APPID` legt fest, wer
-//! vorne ist, und das Quick-Menü ist ein Fenster mit `STEAM_OVERLAY`, Hinweise über Spielen ein
-//! schmaleres ohne `STEAM_INPUT_FOCUS` (Benachrichtigungsfenster).
+//! Control of gamescope in Steam mode (`-e`) via X11 atoms, see docs/spike-gamescope.md:
+//! windows get an app ID via `STEAM_GAME`, `GAMESCOPECTRL_BASELAYER_APPID` decides who is in
+//! front, the quick menu is a window with `STEAM_OVERLAY`, and toasts over games use a narrower
+//! one without `STEAM_INPUT_FOCUS` (notification window).
 
 use std::collections::HashMap;
 use std::error::Error;
@@ -12,7 +12,7 @@ use x11rb::CURRENT_TIME;
 use x11rb::rust_connection::RustConnection;
 use x11rb::wrapper::ConnectionExt as _;
 
-/// `_NET_WM_WINDOW_OPACITY` für voll deckend
+/// `_NET_WM_WINDOW_OPACITY` for fully opaque
 const OPAQUE: u32 = u32::MAX;
 
 struct Atoms {
@@ -28,19 +28,19 @@ pub struct Gamescope {
     conn: RustConnection,
     root: Window,
     atoms: Atoms,
-    /// Fenster mit bekannter App-ID (von uns oder von Steam selbst gesetzt)
+    /// Windows with a known app ID (set by us or by Steam itself)
     known: HashMap<Window, u32>,
-    /// Eigene Fenster, die keine App-ID bekommen (Overlay und Benachrichtigungsfenster)
+    /// Own windows that get no app ID (overlay and notification window)
     ignored: Vec<Window>,
 }
 
 impl Gamescope {
-    /// Nur in der Konsolen-Session aktiv; `session/consoleui-session` setzt `CONSOLEUI_GAMESCOPE=steam`.
+    /// Only active in the console session; `session/consoleui-session` sets `CONSOLEUI_GAMESCOPE=steam`.
     pub fn connect() -> Option<Self> {
         if std::env::var("CONSOLEUI_GAMESCOPE").as_deref() != Ok("steam") {
             return None;
         }
-        Self::try_connect().map_err(|err| eprintln!("gamescope-Steuerung nicht verfügbar: {err}")).ok()
+        Self::try_connect().map_err(|err| eprintln!("gamescope control not available: {err}")).ok()
     }
 
     fn try_connect() -> Result<Self, Box<dyn Error>> {
@@ -58,13 +58,13 @@ impl Gamescope {
         Ok(Self { conn, root, atoms, known: HashMap::new(), ignored: Vec::new() })
     }
 
-    /// Reihenfolge der App-IDs, die gamescope zeigen soll; die erste vorhandene ist vorne.
+    /// Order of the app IDs gamescope should show; the first one present is in front.
     pub fn set_baselayer(&self, app_ids: &[u32]) {
         report(self.change_cardinal(self.root, self.atoms.baselayer, app_ids));
     }
 
-    /// Tastaturfokus auf ein Fenster setzen. gamescope gibt ihn nach dem Schließen des Overlays
-    /// nicht von selbst an die Shell zurück, obwohl sie vorne ist.
+    /// Sets the keyboard focus to a window. gamescope does not hand it back to the shell by itself
+    /// after the overlay closes, although the shell is in front.
     pub fn focus(&self, window: Window) {
         report((|| {
             self.conn.set_input_focus(InputFocus::POINTER_ROOT, window, CURRENT_TIME)?;
@@ -73,17 +73,17 @@ impl Gamescope {
         })());
     }
 
-    /// Gibt der App den Tastaturfokus zurück, falls er nicht in einem ihrer Fenster (oder deren
-    /// Unterfenstern) liegt. Nach dem Schließen des Overlays landet er sonst bei einem internen
-    /// Fenster von gamescope, und das Spiel bekommt keine Tastatureingaben mehr.
+    /// Gives the keyboard focus back to the app unless it is in one of its windows (or their
+    /// subwindows). After the overlay closes it otherwise ends up on an internal gamescope window,
+    /// and the game gets no more keyboard input.
     pub fn focus_app(&self, app_id: u32) {
         let windows: Vec<Window> =
             self.known.iter().filter(|&(_, &id)| id == app_id).map(|(&window, _)| window).collect();
         let Some(&first) = windows.first() else { return };
         let result = (|| -> Result<(), Box<dyn Error>> {
             let mut current = self.conn.get_input_focus()?.reply()?.focus;
-            // Vom fokussierten Fenster bis zur Wurzel hochgehen: Liegt eines der App-Fenster auf dem
-            // Weg, ist alles in Ordnung (Spiele fokussieren oft ein Unterfenster).
+            // Walk up from the focused window to the root: if one of the app's windows is on the way,
+            // everything is fine (games often focus a subwindow).
             while current != self.root && current > 1 {
                 if windows.contains(&current) {
                     return Ok(());
@@ -97,22 +97,22 @@ impl Gamescope {
         report(result);
     }
 
-    /// Fenster als Overlay vorbereiten. gamescope liest die Atome beim Mappen, deshalb muss das
-    /// Fenster danach (neu) angezeigt werden.
+    /// Prepares a window as an overlay. gamescope reads the atoms when mapping, so the window must
+    /// be (re)shown afterwards.
     pub fn prepare_overlay(&mut self, window: Window) {
         self.ignored.push(window);
         report((|| {
             self.change_cardinal(window, self.atoms.steam_overlay, &[1])?;
-            // 1: Tastatur und Maus gehen an das Overlay, solange es offen ist.
+            // 1: keyboard and mouse go to the overlay while it is open.
             self.change_cardinal(window, self.atoms.steam_input_focus, &[1])?;
             self.change_cardinal(window, self.atoms.opacity, &[OPAQUE])
         })());
     }
 
-    /// Fenster als Benachrichtigungsfenster vorbereiten (Hinweise über Spielen): `STEAM_OVERLAY`
-    /// ohne `STEAM_INPUT_FOCUS`. Ist es zusätzlich schmaler als das Root-Fenster, wählt gamescope
-    /// es nicht als interaktives Overlay, sondern als `notificationWindow`: immer obenauf, nie
-    /// fokussiert. Wie beim Overlay danach (neu) mappen.
+    /// Prepares a window as notification window (toasts over games): `STEAM_OVERLAY` without
+    /// `STEAM_INPUT_FOCUS`. If it is also narrower than the root window, gamescope picks it not as
+    /// an interactive overlay but as `notificationWindow`: always on top, never focused. As with
+    /// the overlay, (re)map it afterwards.
     pub fn prepare_notification(&mut self, window: Window) {
         self.ignored.push(window);
         report((|| {
@@ -122,20 +122,20 @@ impl Gamescope {
         })());
     }
 
-    /// Größe des Root-Fensters (in gamescope die Spielauflösung)
+    /// Size of the root window (in gamescope the game resolution)
     pub fn root_size(&self) -> Option<(u32, u32)> {
         let geometry = self.conn.get_geometry(self.root).ok()?.reply().ok()?;
         Some((geometry.width.into(), geometry.height.into()))
     }
 
-    /// Gibt neuen, sichtbaren Fenstern eine App-ID. `resolve` ordnet die PID eines Fensters einer
-    /// App zu; Fenster ohne Zuordnung bekommen `fallback` (die gerade startende App) oder werden beim
-    /// nächsten Durchlauf erneut versucht. Gibt die App-IDs der neu markierten Fenster zurück.
+    /// Gives new, visible windows an app ID. `resolve` maps a window's PID to an app; windows
+    /// without a match get `fallback` (the app being launched) or are retried on the next pass.
+    /// Returns the app IDs of the newly tagged windows.
     pub fn tag_windows(&mut self, resolve: impl Fn(u32) -> Option<u32>, fallback: Option<u32>) -> Vec<u32> {
         match self.try_tag_windows(resolve, fallback) {
             Ok(tagged) => tagged,
             Err(err) => {
-                eprintln!("gamescope: Fenster konnten nicht zugeordnet werden: {err}");
+                eprintln!("gamescope: cannot assign windows: {err}");
                 Vec::new()
             }
         }
@@ -190,7 +190,7 @@ fn report(result: Result<(), Box<dyn Error>>) {
     }
 }
 
-/// X11-Fenster-ID eines Slint-Fensters (erst nach dem ersten Anzeigen vorhanden).
+/// X11 window ID of a Slint window (exists only after it was first shown).
 pub fn x11_window_id(window: &slint::Window) -> Option<Window> {
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
     let handle = window.window_handle();

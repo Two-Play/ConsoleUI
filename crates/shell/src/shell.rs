@@ -1,5 +1,5 @@
-//! Zustand der Shell: Einträge, Bildschirme, Fokus, Historie, laufende Apps und die Verbindung
-//! zur UI (Hauptfenster, in gamescope zusätzlich Overlay-Fenster und Fenstersteuerung).
+//! Shell state: entries, screens, focus, history, running apps and the connection to the UI
+//! (main window; in gamescope also the overlay window and window control).
 
 use std::cell::Cell;
 use std::path::PathBuf;
@@ -31,7 +31,7 @@ use crate::network::Network;
 use crate::quick::{ForegroundApp, QuickAction, QuickMenu, QuickOutcome};
 use crate::{AppTile, AppWindow, ControllerStyle, GlyphButton, Hint, KeyCap, NotificationWindow, OverlayWindow, Screen, SettingRow, Theme, tiles};
 
-/// So viele Einträge zeigt die Home-Reihe vor der Bibliothekskachel (Angeheftete immer alle).
+/// Number of entries the home row shows before the library tile (pinned ones always all).
 const HOME_COUNT: usize = 12;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,28 +45,28 @@ enum Stop {
     Steam(u32),
 }
 
-/// Eine gestartete App, solange sie läuft (oder gerade startet).
+/// A launched app, as long as it is running (or still starting).
 struct Running {
     entry_id: String,
-    /// App-ID für gamescope (`STEAM_GAME`)
+    /// App ID for gamescope (`STEAM_GAME`)
     app_id: u32,
     app: RunningApp,
     stop: Stop,
-    /// Woran ihre Prozesse erkennbar sind (für die Fensterzuordnung)
+    /// How its processes are recognized (for window assignment)
     owner: Option<Owner>,
-    /// Schon ein Fenster in gamescope zugeordnet?
+    /// Already assigned a window in gamescope?
     has_window: bool,
 }
 
-/// Nur in der gamescope-Session: Fenstersteuerung, das Overlay-Fenster für das Quick-Menü und das
-/// Benachrichtigungsfenster für Hinweise über laufenden Apps.
+/// Only in the gamescope session: window control, the overlay window for the quick menu and the
+/// notification window for toasts over running apps.
 pub struct GamescopeUi {
     pub control: Gamescope,
     pub overlay: OverlayWindow,
-    /// X11-ID, für die das Overlay vorbereitet ist (ändert sich, falls Slint das Fenster neu anlegt)
+    /// X11 ID the overlay is prepared for (changes if Slint recreates the window)
     overlay_window: Option<u32>,
     notification: NotificationWindow,
-    /// Wie `overlay_window`, für das Benachrichtigungsfenster
+    /// Like `overlay_window`, for the notification window
     notification_window: Option<u32>,
 }
 
@@ -78,7 +78,7 @@ impl GamescopeUi {
 
 pub struct Shell {
     entries: Vec<AppEntry>,
-    /// Kachel je Eintrag, in derselben Reihenfolge wie `entries`
+    /// Tile per entry, in the same order as `entries`
     tiles: Vec<AppTile>,
     library_tile: AppTile,
     home_model: Rc<VecModel<AppTile>>,
@@ -87,26 +87,26 @@ pub struct Shell {
 
     screen: Screen,
     home: Carousel,
-    /// Indizes in `entries` für die Home-Reihe (Angeheftete zuerst, ohne Ausgeblendete)
+    /// Indices into `entries` for the home row (pinned first, without hidden ones)
     home_entries: Vec<usize>,
     grid: Grid,
-    /// Indizes in `entries` für die Bibliothek (gefiltert und sortiert)
+    /// Indices into `entries` for the library (filtered and sorted)
     library: Vec<usize>,
     filter: LibraryFilter,
     sort: LibrarySort,
 
     query: String,
-    /// Indizes in `entries` für die Suchtreffer
+    /// Indices into `entries` for the search results
     results: Vec<usize>,
     result_row: Carousel,
     keyboard: OnScreenKeyboard,
     search_area: SearchArea,
-    /// Wohin „Zurück“ aus der Suche führt
+    /// Where "Back" from the search leads
     search_origin: Screen,
 
     history: History,
     history_path: Option<PathBuf>,
-    /// Angeheftete und ausgeblendete Einträge
+    /// Pinned and hidden entries
     collection: Collection,
     collection_path: Option<PathBuf>,
     /// Open context menu for the focused entry
@@ -116,16 +116,16 @@ pub struct Shell {
     game_options_path: Option<PathBuf>,
     /// Open options panel (from the context menu)
     game_options_panel: Option<GameOptionsPanel>,
-    /// Hero-Bilder, im Hintergrund dekodiert und begrenzt zwischengespeichert
+    /// Hero images, decoded in the background and cached with a limit
     heroes: Heroes,
 
     running: Vec<Running>,
     next_app_id: u32,
-    /// App, die in gamescope gerade vorne ist (`None`: die Shell)
+    /// App currently in front in gamescope (`None`: the shell)
     foreground: Option<u32>,
-    /// Zeitpunkt eines fehlgeschlagenen Starts; der Startbildschirm zeigt den Fehler kurz an.
+    /// Time of a failed launch; the launch screen shows the error briefly.
     failed_launch: Option<Instant>,
-    /// Eintrags-ID, deren Beenden gerade bestätigt werden soll
+    /// Entry ID whose quitting is waiting for confirmation
     confirm_quit: Option<String>,
     quick: Option<QuickMenu>,
     gamescope: Option<GamescopeUi>,
@@ -134,20 +134,20 @@ pub struct Shell {
     settings_path: Option<PathBuf>,
     settings_row: usize,
     audio: Option<Audio>,
-    /// Zählt Hinweise hoch, damit ein älterer Ausblend-Timer keinen neueren Hinweis schließt
+    /// Counts toasts up so that an older hide timer does not close a newer toast
     toast_generation: Rc<Cell<u64>>,
-    /// Warnung „Controller-Akku schwach“ schon gezeigt
+    /// "Controller battery low" warning already shown
     battery_warned: bool,
-    /// Unterseiten WLAN und Bluetooth der Einstellungen
+    /// Wi-Fi and Bluetooth sub-pages of the settings
     network: Network,
 }
 
-/// So lange bleibt ein Hinweis stehen
+/// How long a toast stays visible
 const TOAST_DURATION: Duration = Duration::from_millis(3500);
-/// Unter diesem Akkustand warnt die Shell einmal
+/// Below this battery level the shell warns once
 const LOW_BATTERY: u8 = 15;
 
-/// Was sich durch eine Eingabe geändert hat, um den passenden Klang zu wählen
+/// What an input changed, to pick the matching sound
 #[derive(PartialEq)]
 struct Feedback {
     screen: Screen,
@@ -163,11 +163,11 @@ struct Feedback {
     network: [usize; 5],
 }
 
-/// Startwerte der Animationsdauern in Millisekunden (wie in `theme.slint`)
+/// Initial animation durations in milliseconds (as in `theme.slint`)
 const DURATIONS: [i64; 5] = [220, 500, 120, 450, 200];
 
 impl Shell {
-    /// Startet ohne Einträge; die Bibliothek kommt per [`Shell::set_library`], sobald sie geladen ist.
+    /// Starts without entries; the library arrives via [`Shell::set_library`] once it is loaded.
     pub fn new(
         ui: &AppWindow,
         gamescope: Option<GamescopeUi>,
@@ -185,7 +185,7 @@ impl Shell {
         ui.set_results(ModelRc::from(results_model.clone()));
 
         if let Some(gamescope) = &gamescope {
-            // Im Steam-Modus ist ohne Baselayer gar nichts zu sehen.
+            // In Steam mode nothing at all is visible without a baselayer.
             gamescope.control.set_baselayer(&[SHELL_APP_ID]);
         }
 
@@ -238,7 +238,7 @@ impl Shell {
         shell
     }
 
-    /// Übernimmt die im Hintergrund geladene Bibliothek.
+    /// Takes over the library loaded in the background.
     pub fn set_library(&mut self, ui: &AppWindow, library: Library) {
         let today = tiles::today();
         self.tiles = library.entries.iter().enumerate().map(|(i, loaded)| tiles::to_tile(loaded, i, today)).collect();
@@ -254,8 +254,8 @@ impl Shell {
         self.refresh(ui);
     }
 
-    /// Zeigt einen Hinweis oben rechts; ein neuer ersetzt den alten. Ist in gamescope eine App
-    /// vorne, erscheint er im Benachrichtigungsfenster über ihr, sonst im Hauptfenster.
+    /// Shows a toast at the top right; a new one replaces the old one. If an app is in front in
+    /// gamescope, it appears in the notification window above it, otherwise in the main window.
     pub fn toast(&mut self, ui: &AppWindow, symbol: &str, title: &str, text: &str) {
         let generation = self.toast_generation.get() + 1;
         self.toast_generation.set(generation);
@@ -270,7 +270,7 @@ impl Shell {
                 notification.set_shown(true);
             } else {
                 show_notification_window(gamescope);
-                // Erst nach dem Anzeigen einblenden, damit der Hinweis hereingleitet.
+                // Fade in only after showing, so the toast slides in.
                 let weak = gamescope.notification.as_weak();
                 let current = self.toast_generation.clone();
                 slint::Timer::single_shot(Duration::from_millis(30), move || {
@@ -304,7 +304,7 @@ impl Shell {
         });
     }
 
-    /// Blendet einen Hinweis im Benachrichtigungsfenster aus (falls einer zu sehen ist).
+    /// Hides a toast in the notification window (if one is visible).
     fn hide_notification(&self) {
         if let Some(gamescope) = &self.gamescope
             && gamescope.notification.get_shown()
@@ -313,7 +313,7 @@ impl Shell {
         }
     }
 
-    /// Warnt einmal, wenn der Controller-Akku knapp wird; lädt er wieder, wird neu gewarnt.
+    /// Warns once when the controller battery runs low; after charging it warns again.
     pub fn check_controller_battery(&mut self, ui: &AppWindow, percent: Option<u8>) {
         match percent {
             Some(p) if p <= LOW_BATTERY && !self.battery_warned => {
@@ -325,12 +325,12 @@ impl Shell {
         }
     }
 
-    /// Gewünschte Tastensymbole aus den Einstellungen (`Auto`: nach dem Controller).
+    /// Button glyphs chosen in the settings (`Auto`: by the controller).
     pub fn glyph_choice(&self) -> GlyphChoice {
         self.settings.glyphs
     }
 
-    /// Startbildschirm setzen (Entwickler-Option `--start`).
+    /// Sets the start screen (developer option `--start`).
     pub fn open(&mut self, ui: &AppWindow, screen: Screen) {
         match screen {
             Screen::Search => self.open_search(ui),
@@ -339,20 +339,20 @@ impl Shell {
         self.sync(ui);
     }
 
-    /// Anzahl der Einträge in der Home-Reihe (inklusive Bibliothekskachel), für den Benchmark.
+    /// Number of entries in the home row (including the library tile), for the benchmark.
     pub fn home_len(&self) -> usize {
         self.home_entries.len() + 1
     }
 
-    /// Solange die Steuerzentrale offen ist, liest die Shell die Controller exklusiv.
+    /// While the control center is open, the shell reads the controllers exclusively.
     pub fn wants_exclusive_input(&self) -> bool {
         self.quick.is_some()
     }
 
-    /// Ob eine Controller-Eingabe an die Shell geht. gilrs liest die Geräte direkt, also bekäme die
-    /// Shell sonst auch Tasten, die für das Spiel vorne gedacht sind. Im Quick-Menü gilt alles,
-    /// die PS-Taste immer. In gamescope entscheidet, ob die Shell vorne ist (der X11-Fokus ist dort
-    /// nach dem Overlay unzuverlässig), auf dem Desktop der Fensterfokus.
+    /// Whether a controller input goes to the shell. gilrs reads the devices directly, so the shell
+    /// would otherwise also get buttons meant for the game in front. In the quick menu everything
+    /// counts, the PS button always. In gamescope it depends on whether the shell is in front (the X11
+    /// focus is unreliable there after the overlay), on the desktop on the window focus.
     pub fn accepts_gamepad(&self, ui: &AppWindow, action: Action) -> bool {
         if self.quick.is_some() {
             return true;
@@ -363,8 +363,8 @@ impl Shell {
         action == Action::Guide || self.shell_in_front(ui)
     }
 
-    /// In gamescope: Die Shell ist zu sehen, solange keine App vorne ist, der Startbildschirm läuft
-    /// oder die App vorne noch kein Fenster hat.
+    /// In gamescope: the shell is visible while no app is in front, the launch screen is running
+    /// or the app in front has no window yet.
     fn shell_in_front(&self, ui: &AppWindow) -> bool {
         match self.foreground {
             None => true,
@@ -440,7 +440,7 @@ impl Shell {
             return;
         }
         if ui.get_launching() {
-            // „Zurück“ holt die Übersicht, die App läuft weiter und bleibt verfolgt.
+            // "Back" brings up the overview; the app keeps running and stays tracked.
             if action == Action::Back {
                 self.show_shell(ui);
             }
@@ -508,7 +508,7 @@ impl Shell {
                 self.grid.focus(0);
                 self.refresh_library(ui);
             }
-            // Sortierung steht seit dem Kontextmenü (Story 2.7) dort mit drin.
+            // Sorting has been part of the context menu since Story 2.7.
             Action::Menu => self.open_context(ui),
             _ => {
                 self.grid.apply(action, ui.get_library_columns().max(1) as usize);
@@ -545,7 +545,7 @@ impl Shell {
         }
     }
 
-    /// Überträgt Einstellungen in die UI: Akzentfarbe, Animationsdauern, Einstellungszeilen.
+    /// Pushes settings to the UI: accent color, animation durations, settings rows.
     fn apply_settings(&self, ui: &AppWindow) {
         let [r, g, b] = self.settings.accent.rgb();
         let accent = slint::Color::from_rgb_u8(r, g, b);
@@ -603,15 +603,15 @@ impl Shell {
         ui.set_settings_rows(ModelRc::new(VecModel::from(rows)));
     }
 
-    // --- WLAN und Bluetooth (Stories 5.3/5.4) ----------------------------------------------
+    // --- Wi-Fi and Bluetooth (Stories 5.3/5.4) ---------------------------------------------
 
-    /// Startet den Netzwerk-Thread (`fake`: simuliert, ändert nichts am System) und liest einmal.
+    /// Starts the network thread (`fake`: simulated, changes nothing on the system) and reads once.
     pub fn start_network(&mut self, fake: bool) {
         self.network.start(fake);
         self.network.send(vec![consoleui_core::network::Request::Refresh]);
     }
 
-    /// Läuft per Timer: Antworten des Netzwerk-Threads übernehmen und Hinweise zeigen.
+    /// Runs on a timer: takes over responses of the network thread and shows toasts.
     pub fn poll_network(&mut self, ui: &AppWindow) {
         let (changed, notices) = self.network.poll(self.screen == Screen::Settings);
         for notice in notices {
@@ -660,8 +660,8 @@ impl Shell {
         }
     }
 
-    /// Eingabe über die echte Tastatur in der Suche. Steuerzeichen und Sondertasten (Slint meldet
-    /// sie als Zeichen aus dem Private-Use-Bereich) werden abgelehnt.
+    /// Input from the real keyboard in the search. Control characters and special keys (Slint reports
+    /// them as characters from the Private Use Area) are rejected.
     pub fn type_text(&mut self, ui: &AppWindow, text: &str) -> bool {
         let printable = !text.is_empty()
             && text.chars().all(|c| !c.is_control() && !('\u{e000}'..='\u{f8ff}').contains(&c));
@@ -714,7 +714,7 @@ impl Shell {
         self.home_entries.get(self.home.focused()).copied()
     }
 
-    /// Index in `entries` des Eintrags, der auf dem aktuellen Bildschirm fokussiert ist.
+    /// Index in `entries` of the entry focused on the current screen.
     fn focused_entry(&self) -> Option<usize> {
         match self.screen {
             Screen::Home => self.home_entry(),
@@ -728,9 +728,9 @@ impl Shell {
         self.running.iter().find(|r| r.entry_id == self.entries[index].id)
     }
 
-    // --- Modelle und Anzeige ---------------------------------------------------------------
+    // --- Models and display ----------------------------------------------------------------
 
-    /// Baut alle Kachelmodelle neu auf (nach Start, Ende einer App oder Umsortierung).
+    /// Rebuilds all tile models (after a launch, an app exit or a re-sort).
     fn refresh(&mut self, ui: &AppWindow) {
         for (tile, entry) in self.tiles.iter_mut().zip(&self.entries) {
             tile.pinned = self.collection.is_pinned(&entry.id);
@@ -769,7 +769,7 @@ impl Shell {
         ui.set_search_query(self.query.as_str().into());
     }
 
-    /// Überträgt Bildschirm, Fokus, Hintergrund und Hinweise in die UI.
+    /// Pushes screen, focus, background and hints to the UI.
     fn sync(&mut self, ui: &AppWindow) {
         ui.set_screen(self.screen);
         ui.set_home_focused(self.home.focused() as i32);
@@ -782,8 +782,8 @@ impl Shell {
         self.update_hints(ui);
     }
 
-    /// Blendet den Hero des fokussierten Eintrags ein (sobald er dekodiert ist), lädt die
-    /// Nachbarn vorab und verschiebt den Hintergrund leicht mit dem Fokus (Parallaxe, Story 6.3).
+    /// Fades in the hero of the focused entry (once it is decoded), prefetches the neighbours
+    /// and shifts the background slightly with the focus (parallax, Story 6.3).
     fn show_hero(&mut self, ui: &AppWindow) {
         let layout = self.focus_layout(ui);
         let entry = self.focused_entry().map(|i| &self.entries[i]);
@@ -813,7 +813,7 @@ impl Shell {
         ui.set_hero_parallax(parallax);
     }
 
-    /// Fokus auf dem aktuellen Bildschirm: (Position, Anzahl Kacheln, Kacheln pro Zeile).
+    /// Focus on the current screen: (position, number of tiles, tiles per row).
     fn focus_layout(&self, ui: &AppWindow) -> Option<(usize, usize, usize)> {
         match self.screen {
             Screen::Home => Some((self.home.focused(), self.home_len(), self.home_len())),
@@ -825,7 +825,7 @@ impl Shell {
         }
     }
 
-    /// Index in `entries` der Kachel an Position `pos` des aktuellen Bildschirms.
+    /// Index in `entries` of the tile at position `pos` of the current screen.
     fn entry_at(&self, pos: usize) -> Option<usize> {
         match self.screen {
             Screen::Home => (pos < self.tiles.len().min(HOME_COUNT)).then_some(pos),
@@ -835,7 +835,7 @@ impl Shell {
         }
     }
 
-    /// Bild für den Startbildschirm: der Hero, falls schon dekodiert, sonst das Cover.
+    /// Image for the launch screen: the hero if already decoded, otherwise the cover.
     fn launch_image(&self, index: usize) -> Image {
         self.heroes.cached(&self.entries[index].id).unwrap_or_else(|| self.tiles[index].cover.clone())
     }
@@ -932,8 +932,8 @@ impl Shell {
 
     // --- Context menu ---------------------------------------------------------------------
 
-    /// Öffnet das Kontextmenü für den fokussierten Eintrag (in der Bibliothek auch ohne Eintrag,
-    /// wegen der Sortierung). Auf der Bibliothekskachel in Home passiert nichts.
+    /// Opens the context menu for the focused entry (in the library also without an entry,
+    /// because of the sorting). Nothing happens on the library tile in home.
     fn open_context(&mut self, ui: &AppWindow) {
         let entry = self.focused_entry().map(|i| {
             let id = self.entries[i].id.clone();
@@ -1084,7 +1084,7 @@ impl Shell {
         (size.width > 0 && size.height > 0).then_some((size.width, size.height))
     }
 
-    // --- Quick-Menü ------------------------------------------------------------------------
+    // --- Quick menu ------------------------------------------------------------------------
 
     fn open_quick(&mut self, ui: &AppWindow) {
         let foreground = self.foreground.and_then(|app_id| {
@@ -1130,7 +1130,7 @@ impl Shell {
         self.quick = None;
     }
 
-    /// Zeigt das Quick-Menü im Overlay-Fenster (gamescope) oder als Ebene im Hauptfenster.
+    /// Shows the quick menu in the overlay window (gamescope) or as a layer in the main window.
     fn show_quick(&mut self, ui: &AppWindow, open: bool) {
         let Some(quick) = &self.quick else { return };
         let items = ModelRc::new(VecModel::from(quick.items()));
@@ -1149,7 +1149,7 @@ impl Shell {
         overlay.set_controller_style(ui.get_controller_style());
         if open && !overlay.get_open() {
             show_overlay_window(gamescope);
-            // Erst nach dem Anzeigen öffnen, damit die Leiste hereingleitet.
+            // Open only after showing, so the bar slides in.
             let weak = gamescope.overlay.as_weak();
             slint::Timer::single_shot(Duration::from_millis(30), move || {
                 if let Some(overlay) = weak.upgrade() {
@@ -1167,7 +1167,7 @@ impl Shell {
         }
     }
 
-    // --- Starten, Verfolgen, Beenden -------------------------------------------------------
+    // --- Launching, tracking, quitting -----------------------------------------------------
 
     fn launch(&mut self, ui: &AppWindow, index: usize) {
         // If the app is already running, it only comes to the front again.
@@ -1220,8 +1220,8 @@ impl Shell {
         }
     }
 
-    /// Holt eine laufende App nach vorn. Ohne gamescope geht das nicht; dann zeigt der
-    /// Startbildschirm, dass sie läuft.
+    /// Brings a running app to the front. Without gamescope this is not possible; then the
+    /// launch screen shows that it is running.
     fn bring_to_front(&mut self, ui: &AppWindow, app_id: u32) {
         if self.gamescope.is_some() {
             self.set_foreground(Some(app_id));
@@ -1239,7 +1239,7 @@ impl Shell {
         ui.set_launching(true);
     }
 
-    /// Die Shell nach vorn holen; laufende Apps laufen im Hintergrund weiter.
+    /// Brings the shell to the front; running apps keep running in the background.
     fn show_shell(&mut self, ui: &AppWindow) {
         ui.set_launching(false);
         self.set_foreground(None);
@@ -1255,7 +1255,7 @@ impl Shell {
         }
     }
 
-    /// Fokus in Home, Bibliothek und Suche auf den Eintrag setzen (nach dem Umsortieren).
+    /// Sets the focus in home, library and search to the entry (after re-sorting).
     fn focus_entry(&mut self, id: &str) {
         if let Some(pos) = self.home_entries.iter().position(|&i| self.entries[i].id == id) {
             self.home.focus(pos);
@@ -1268,8 +1268,8 @@ impl Shell {
         }
     }
 
-    /// Läuft regelmäßig: ordnet in gamescope neue Fenster ihren Apps zu und prüft, welche Apps
-    /// beendet sind. Ist die App vorne fertig, kommt die Shell mit Animation zurück.
+    /// Runs periodically: in gamescope, assigns new windows to their apps and checks which apps
+    /// have exited. If the app in front is done, the shell comes back with an animation.
     pub fn watch_running(&mut self, ui: &AppWindow) {
         if let Some(failed) = self.failed_launch
             && failed.elapsed() >= MIN_HOLD
@@ -1311,8 +1311,8 @@ impl Shell {
         self.refresh(ui);
     }
 
-    /// Ist die Shell vorne, hat aber keinen Tastaturfokus (passiert nach dem Overlay), holt sie ihn sich.
-    /// Ebenso für die App vorne, deren Fenster den Fokus nach dem Overlay sonst nicht zurückbekommt.
+    /// If the shell is in front but has no keyboard focus (happens after the overlay), it takes it.
+    /// Likewise for the app in front, whose window otherwise does not get the focus back after the overlay.
     fn restore_keyboard_focus(&self, ui: &AppWindow) {
         let Some(gamescope) = &self.gamescope else { return };
         if self.quick.is_some() {
@@ -1329,14 +1329,14 @@ impl Shell {
         }
     }
 
-    /// gamescope zeigt im Steam-Modus nur Fenster mit App-ID; die vergibt die Shell hier.
+    /// In Steam mode gamescope only shows windows with an app ID; the shell assigns them here.
     fn tag_windows(&mut self, ui: &AppWindow) {
         let Some(gamescope) = &mut self.gamescope else { return };
         let own_pid = std::process::id();
         let apps: Vec<(u32, Owner)> =
             self.running.iter().filter_map(|r| r.owner.clone().map(|owner| (r.app_id, owner))).collect();
-        // Fenster ohne erkennbaren Besitzer (z. B. Steam selbst beim ersten Start) gehören zur
-        // zuletzt gestarteten App, die noch kein Fenster hat.
+        // Windows without a recognizable owner (e.g. Steam itself on first start) belong to the
+        // most recently launched app that has no window yet.
         let fallback = self.running.iter().rev().find(|r| !r.has_window).map(|r| r.app_id);
         let tagged = gamescope.control.tag_windows(
             |pid| {
@@ -1351,7 +1351,7 @@ impl Shell {
         for app_id in tagged {
             if let Some(running) = self.running.iter_mut().find(|r| r.app_id == app_id) {
                 running.has_window = true;
-                // Das Spiel ist jetzt zu sehen; der Startbildschirm darunter wird nicht mehr gebraucht.
+                // The game is visible now; the launch screen below it is no longer needed.
                 if self.foreground == Some(app_id) {
                     ui.set_launching(false);
                 }
@@ -1392,7 +1392,7 @@ impl Shell {
         self.update_hints(ui);
     }
 
-    /// Bittet die App, sich zu beenden. Das Badge verschwindet, sobald `watch_running` das Ende sieht.
+    /// Asks the app to quit. The badge disappears as soon as `watch_running` sees it exit.
     fn quit_running(&mut self, entry_id: &str) {
         let Some(running) = self.running.iter().find(|r| r.entry_id == entry_id) else { return };
         let result = match &running.stop {
@@ -1404,8 +1404,8 @@ impl Shell {
         }
     }
 
-    /// Speichert den Start in der Historie und schiebt den Eintrag nach vorn. Das passiert unter
-    /// dem Startbildschirm, deshalb sieht man die Umsortierung nicht.
+    /// Records the launch in the history and moves the entry to the front. This happens under
+    /// the launch screen, so the re-sort is not visible.
     fn record_launch(&mut self, index: usize) {
         let now = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or_default();
         let mut entry = self.entries.remove(index);
@@ -1440,9 +1440,9 @@ fn show_keys(ui: &AppWindow, keyboard: &OnScreenKeyboard) {
     ui.set_keys(ModelRc::new(VecModel::from(keys)));
 }
 
-/// Zeigt das Overlay-Fenster. Beim ersten Mal (oder wenn Slint das Fenster neu angelegt hat)
-/// bekommt es zuerst die Overlay-Atome und wird dann neu gemappt, weil gamescope sie nur beim
-/// Mappen liest.
+/// Shows the overlay window. The first time (or when Slint has recreated the window) it first
+/// gets the overlay atoms and is then remapped, because gamescope reads them only when
+/// mapping.
 fn show_overlay_window(gamescope: &mut GamescopeUi) {
     let overlay = &gamescope.overlay;
     overlay.window().set_fullscreen(true);
@@ -1461,11 +1461,11 @@ fn show_overlay_window(gamescope: &mut GamescopeUi) {
     }
 }
 
-/// Zeigt das Benachrichtigungsfenster. gamescope wählt es nur als Benachrichtigung (statt als
-/// interaktives Overlay), wenn es schmaler als das Root-Fenster ist. Es wird zentriert und auf die
-/// Ausgabe skaliert, die eigene Position zählt nicht; deshalb ist es genau ein Pixel schmaler als
-/// der Bildschirm und volle Höhe (Maßstab 1), und der Hinweis steht darin oben rechts. Die Größe
-/// ist fest (min = max in den Size-Hints), sonst zieht gamescope es auf Bildschirmgröße.
+/// Shows the notification window. gamescope picks it as a notification (instead of an
+/// interactive overlay) only if it is narrower than the root window. It is centered and scaled
+/// to the output, its own position does not matter; hence it is exactly one pixel narrower than
+/// the screen and full height (scale 1), with the toast at its top right. The size is fixed
+/// (min = max in the size hints), otherwise gamescope stretches it to the screen size.
 fn show_notification_window(gamescope: &mut GamescopeUi) {
     let notification = &gamescope.notification;
     if let Some((width, height)) = gamescope.control.root_size() {
@@ -1488,7 +1488,7 @@ fn show_notification_window(gamescope: &mut GamescopeUi) {
     }
 }
 
-/// Blendet den Hinweis aus und versteckt das Fenster danach, sofern inzwischen kein neuer kam.
+/// Hides the toast and then unmaps the window, unless a new one arrived in the meantime.
 fn hide_notification_window(notification: &NotificationWindow) {
     notification.set_shown(false);
     let weak = notification.as_weak();

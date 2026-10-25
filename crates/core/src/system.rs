@@ -1,10 +1,10 @@
-//! Lautstärke (PipeWire über `wpctl`) und Energieaktionen (logind über `systemctl`).
+//! Volume (PipeWire via `wpctl`) and power actions (logind via `systemctl`).
 
 use std::io;
 use std::process::Command;
 
 const SINK: &str = "@DEFAULT_AUDIO_SINK@";
-/// Schrittweite für Lauter/Leiser in Prozent
+/// Step for volume up/down in percent
 pub const VOLUME_STEP: u8 = 5;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -18,14 +18,14 @@ pub fn volume() -> Option<Volume> {
     parse_volume(&String::from_utf8_lossy(&output.stdout))
 }
 
-/// `wpctl get-volume` gibt z. B. „Volume: 0.30“ oder „Volume: 0.45 [MUTED]“ aus.
+/// `wpctl get-volume` prints e.g. "Volume: 0.30" or "Volume: 0.45 [MUTED]".
 fn parse_volume(output: &str) -> Option<Volume> {
     let rest = output.trim().strip_prefix("Volume:")?.trim();
     let value: f32 = rest.split_whitespace().next()?.parse().ok()?;
     Some(Volume { percent: (value * 100.0).round().clamp(0.0, 100.0) as u8, muted: rest.contains("[MUTED]") })
 }
 
-/// Lauter (`up = true`) oder leiser um [`VOLUME_STEP`], höchstens 100 %.
+/// Volume up (`up = true`) or down by [`VOLUME_STEP`], at most 100 %.
 pub fn change_volume(up: bool) -> io::Result<()> {
     let step = format!("{VOLUME_STEP}%{}", if up { '+' } else { '-' });
     run(Command::new("wpctl").args(["set-volume", "-l", "1.0", SINK, &step]))
@@ -52,14 +52,14 @@ impl PowerAction {
     }
 }
 
-/// logind erlaubt das für die aktive lokale Sitzung ohne root (polkit).
+/// logind allows this for the active local session without root (polkit).
 pub fn power(action: PowerAction) -> io::Result<()> {
     run(Command::new("systemctl").arg(action.verb()))
 }
 
 fn run(command: &mut Command) -> io::Result<()> {
     let status = command.status()?;
-    if status.success() { Ok(()) } else { Err(io::Error::other(format!("{command:?} fehlgeschlagen ({status})"))) }
+    if status.success() { Ok(()) } else { Err(io::Error::other(format!("{command:?} failed ({status})"))) }
 }
 
 #[cfg(test)]

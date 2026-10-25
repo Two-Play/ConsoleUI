@@ -1,20 +1,20 @@
-//! Erzeugt kurze UI-Klänge als PCM (s16, Stereo, 48 kHz), ganz ohne Sounddateien.
+//! Generates short UI sounds as PCM (s16, stereo, 48 kHz), without any sound files.
 
 pub const SAMPLE_RATE: u32 = 48_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Sound {
-    /// Fokus wandert weiter
+    /// Focus moves on
     Move,
-    /// Bestätigen, Starten
+    /// Confirm, launch
     Confirm,
-    /// Zurück, Schließen
+    /// Back, close
     Back,
-    /// Steuerzentrale oder neue Seite öffnet sich
+    /// Control center or a new page opens
     Open,
 }
 
-/// Ein Ton: Start- und Endfrequenz (Glissando), Dauer und Lautstärke.
+/// A tone: start and end frequency (glissando), duration and volume.
 struct Tone {
     from_hz: f32,
     to_hz: f32,
@@ -38,20 +38,20 @@ fn tones(sound: Sound) -> &'static [Tone] {
     }
 }
 
-/// PCM-Daten als Bytes (little-endian, links/rechts abwechselnd), bereit für `pw-cat --raw`.
+/// PCM data as bytes (little-endian, alternating left/right), ready for `pw-cat --raw`.
 pub fn render(sound: Sound) -> Vec<u8> {
     let mut bytes = Vec::new();
     let mut phase = 0.0f32;
     for tone in tones(sound) {
         let samples = (SAMPLE_RATE * tone.ms / 1000) as usize;
-        // Kurzes Ein- und Ausblenden verhindert Knacken.
+        // A short fade in and out prevents clicks.
         let fade = (SAMPLE_RATE as usize / 1000 * 4).min(samples / 2).max(1);
         for i in 0..samples {
             let t = i as f32 / samples as f32;
             let hz = tone.from_hz + (tone.to_hz - tone.from_hz) * t;
             phase = (phase + hz / SAMPLE_RATE as f32).fract();
             let envelope = (i.min(samples - 1 - i) as f32 / fade as f32).min(1.0) * (1.0 - t * 0.5);
-            // Sinus plus etwas Oberton klingt weicher als ein reiner Piep.
+            // Sine plus a little overtone sounds softer than a pure beep.
             let wave = (phase * std::f32::consts::TAU).sin() * 0.85 + (phase * 2.0 * std::f32::consts::TAU).sin() * 0.15;
             let sample = (wave * envelope * tone.gain * i16::MAX as f32) as i16;
             let le = sample.to_le_bytes();

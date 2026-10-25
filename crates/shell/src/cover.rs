@@ -1,7 +1,7 @@
 use slint::{Image, Rgba8Pixel, SharedPixelBuffer};
 
-/// Erzeugt ein Platzhalter-Cover (Farbverlauf mit Lichtfleck und Streifen),
-/// bis in Sprint 2 echte Artworks geladen werden. `seed` variiert das Muster pro Kachel.
+/// Creates a placeholder cover (gradient with a light spot and stripes),
+/// until real artwork is loaded in Sprint 2. `seed` varies the pattern per tile.
 pub fn generate(from: [u8; 3], to: [u8; 3], seed: u32, size: u32) -> Image {
     let mut buffer = SharedPixelBuffer::<Rgba8Pixel>::new(size, size);
     let (cx, cy) = (0.2 + 0.6 * unit(seed, 1), 0.15 + 0.5 * unit(seed, 2));
@@ -30,7 +30,7 @@ pub fn generate(from: [u8; 3], to: [u8; 3], seed: u32, size: u32) -> Image {
     Image::from_rgba8(buffer)
 }
 
-/// Deterministische Pseudozufallszahl in [0, 1).
+/// Deterministic pseudo-random number in [0, 1).
 fn unit(seed: u32, salt: u32) -> f32 {
     let mut h = seed.wrapping_mul(0x9E37_79B9) ^ salt.wrapping_mul(0x85EB_CA6B);
     h ^= h >> 15;

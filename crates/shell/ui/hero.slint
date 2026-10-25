@@ -1,16 +1,16 @@
 import { Theme } from "theme.slint";
 
-// Eine Ebene des Hero-Hintergrunds. Etwas größer als das Fenster, damit sie mit dem Fokus seitlich
-// mitwandern kann (Parallaxe, Story 6.3) und beim Einblenden aus einem leichten Zoom zurückgleitet.
-// Animiert wird nur nach einer Änderung; im Ruhezustand zeichnet nichts neu. Mit „Animationen aus“
-// sind alle Dauern 0 und Rust setzt `parallax` auf 0.
+// One layer of the hero background. Slightly larger than the window, so it can move sideways
+// with the focus (parallax, Story 6.3) and glide back from a slight zoom when fading in.
+// It animates only after a change; at rest nothing redraws. With "Animations off" all
+// durations are 0 and Rust sets `parallax` to 0.
 export component HeroLayer {
     in property <image> source;
     in property <bool> front;
-    // -1 (Fokus ganz links) … 1 (ganz rechts)
+    // -1 (focus far left) … 1 (far right)
     in property <float> parallax;
 
-    // Überstand gegenüber dem Fenster; reicht für die Verschiebung um 3 % je Richtung.
+    // Overhang beyond the window; enough for the shift of 3 % in each direction.
     property <float> overscan: 1.06;
     property <float> zoom: 1.05;
     property <float> shift: root.parallax;
@@ -28,7 +28,7 @@ export component HeroLayer {
                     easing: ease-out;
                 }
             }
-            // Beim Ausblenden bleibt der Zoom stehen und springt erst unsichtbar zurück.
+            // When fading out, the zoom stays and only jumps back while invisible.
             out {
                 animate zoom {
                     delay: Theme.background-duration;
@@ -41,7 +41,7 @@ export component HeroLayer {
     Image {
         width: root.width * root.overscan * root.zoom;
         height: root.height * root.overscan * root.zoom;
-        // Fokus rechts → Hintergrund wandert nach links (Tiefenwirkung).
+        // Focus on the right → background moves to the left (depth effect).
         x: (root.width - self.width) / 2 - root.shift * root.width * (root.overscan - 1) / 2;
         y: (root.height - self.height) / 2;
         source: root.source;

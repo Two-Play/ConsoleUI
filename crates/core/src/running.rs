@@ -1,24 +1,24 @@
-//! Verfolgt eine gestartete App, damit die Shell weiß, wann sie zurückkommen soll (Story 4.3).
+//! Tracks a launched app so the shell knows when to come back (Story 4.3).
 
 use std::collections::HashSet;
 use std::time::{Duration, Instant};
 
 use crate::launch::ProcessHandle;
 
-/// Mindestdauer des Startbildschirms, auch wenn der Prozess sofort endet
-/// (z. B. weil die App schon lief und nur ein Fenster öffnet).
+/// Minimum duration of the launch screen, even if the process exits immediately
+/// (e.g. because the app was already running and only opens a window).
 pub const MIN_HOLD: Duration = Duration::from_millis(2600);
-/// So lange warten wir, bis Steam ein Spiel als laufend meldet, bevor wir aufgeben.
+/// How long we wait for Steam to report a game as running before giving up.
 pub const STEAM_START_TIMEOUT: Duration = Duration::from_secs(90);
 
-/// Lücke ohne Spielprozess, die noch nicht als Ende zählt (z. B. Launcher beendet, Spiel startet).
+/// Gap without a game process that does not count as exit yet (e.g. launcher exited, game starting).
 pub const STEAM_EXIT_GRACE: Duration = Duration::from_secs(2);
 
 #[derive(Debug)]
 enum Liveness {
     Process(ProcessHandle),
-    /// `steam://` kehrt sofort zurück; ob das Spiel läuft, zeigen seine Prozesse
-    /// (siehe [`crate::steam::running_games`]).
+    /// `steam://` returns immediately; whether the game is running is shown by its processes
+    /// (see [`crate::steam::running_games`]).
     Steam { app_id: u32, seen: bool, missing_since: Option<Instant> },
 }
 
@@ -28,7 +28,7 @@ pub struct RunningApp {
     started: Instant,
 }
 
-/// Phase für die Anzeige im Startbildschirm.
+/// Phase for the display on the launch screen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Phase {
     Starting,
@@ -45,7 +45,7 @@ impl RunningApp {
         Self { liveness: Liveness::Steam { app_id, seen: false, missing_since: None }, started: now }
     }
 
-    /// `steam_games` sind die App-IDs mit laufenden Prozessen ([`crate::steam::running_games`]).
+    /// `steam_games` are the app IDs with running processes ([`crate::steam::running_games`]).
     pub fn phase(&mut self, now: Instant, steam_games: &HashSet<u32>) -> Phase {
         let elapsed = now.saturating_duration_since(self.started);
         let alive = match &mut self.liveness {
@@ -102,10 +102,10 @@ mod tests {
         assert_eq!(app.phase(t(5_000), &games(&[])), Phase::Starting);
         assert_eq!(app.phase(t(10_000), &games(&[730])), Phase::Running);
         assert_eq!(app.phase(t(500_000), &games(&[730, 440])), Phase::Running);
-        // Kurze Lücke (Launcher → Spiel) ist noch kein Ende …
+        // A short gap (launcher → game) is not an exit yet …
         assert_eq!(app.phase(t(500_500), &games(&[])), Phase::Running);
         assert_eq!(app.phase(t(501_000), &games(&[730])), Phase::Running);
-        // … zwei Sekunden ohne Prozess schon.
+        // … two seconds without a process is.
         assert_eq!(app.phase(t(502_000), &games(&[])), Phase::Running);
         assert_eq!(app.phase(t(502_000) + STEAM_EXIT_GRACE, &games(&[])), Phase::Finished);
     }

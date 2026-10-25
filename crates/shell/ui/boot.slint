@@ -1,12 +1,12 @@
 import { Theme } from "theme.slint";
 
-// Startbildschirm beim Hochfahren: Logo mit pulsierendem Lichtschein und Ladepunkten. Blendet aus,
-// sobald die Bibliothek geladen ist.
+// Boot screen: logo with a pulsing glow and loading dots. Fades out once the library is
+// loaded.
 export component BootScreen inherits Rectangle {
     in property <bool> active: true;
     in property <float> s: 1;
 
-    // Läuft nur, solange der Bildschirm zu sehen ist, damit danach keine Frames mehr anfallen.
+    // Runs only while the screen is visible, so no more frames are produced afterwards.
     property <duration> tick: self.visible ? animation-tick() : 0ms;
     property <float> wave: (sin(root.tick / 900ms * 360deg) + 1) / 2;
 
@@ -18,7 +18,7 @@ export component BootScreen inherits Rectangle {
         easing: ease-in-out;
     }
 
-    // Lichtschein hinter dem Logo
+    // Glow behind the logo
     Rectangle {
         width: 900px * root.s;
         height: self.width;
@@ -42,7 +42,7 @@ export component BootScreen inherits Rectangle {
         }
     }
 
-    // Drei Ladepunkte, zeitversetzt
+    // Three loading dots, staggered
     for i in 3: Rectangle {
         property <float> phase: (sin((root.tick / 700ms - i * 0.18) * 360deg) + 1) / 2;
         width: 12px * root.s;

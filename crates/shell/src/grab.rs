@@ -1,6 +1,6 @@
-//! Exklusiver Zugriff auf die Controller, solange die Steuerzentrale offen ist: `EVIOCGRAB` sperrt
-//! das evdev-Gerät für alle anderen Leser (das Spiel, aber auch gilrs). Die Shell liest die Events
-//! dann selbst. Spiele, die den Controller über hidraw lesen (z. B. Steam Input), sieht das nicht.
+//! Exclusive access to the controllers while the control center is open: `EVIOCGRAB` locks the
+//! evdev device for all other readers (the game, but also gilrs). The shell then reads the events
+//! itself. Games that read the controller via hidraw (e.g. Steam Input) are not affected.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::Read;
@@ -16,7 +16,7 @@ use consoleui_core::input::{DirectionRepeat, Stick, StickChange, is_direction};
 const EVIOCGRAB: libc::c_ulong = 0x4004_4590;
 /// `_IOR('E', 0x40 + abs, struct input_absinfo)`
 const EVIOCGABS_BASE: libc::c_ulong = 0x8018_4540;
-/// `struct input_event` auf 64-Bit: timeval (16) + type (2) + code (2) + value (4)
+/// `struct input_event` on 64-bit: timeval (16) + type (2) + code (2) + value (4)
 const EVENT_SIZE: usize = 24;
 
 #[repr(C)]
@@ -32,7 +32,7 @@ struct AbsInfo {
 
 struct Device {
     file: File,
-    /// (min, max) für ABS_X und ABS_Y
+    /// (min, max) for ABS_X and ABS_Y
     range: [(i32, i32); 2],
     axes: [f32; 2],
     hat: [f32; 2],
@@ -46,7 +46,7 @@ pub struct Grab {
 }
 
 impl Grab {
-    /// Sperrt alle evdev-Geräte mit einem der Namen (so wie gilrs sie meldet).
+    /// Grabs all evdev devices with one of the names (as gilrs reports them).
     pub fn acquire(names: &[String]) -> Self {
         let devices = fs::read_dir("/sys/class/input")
             .into_iter()
@@ -60,7 +60,7 @@ impl Grab {
                 let name = fs::read_to_string(entry.path().join("device/name")).ok()?;
                 names.iter().any(|n| n == name.trim()).then(|| format!("/dev/input/{node}"))
             })
-            .filter_map(|path| open(&path).map_err(|err| eprintln!("Controller {path} nicht exklusiv: {err}")).ok())
+            .filter_map(|path| open(&path).map_err(|err| eprintln!("Controller {path} not exclusive: {err}")).ok())
             .collect();
         Self { devices, repeat: DirectionRepeat::default() }
     }
@@ -73,7 +73,7 @@ impl Grab {
         let mut actions = Vec::new();
         let mut buffer = [0u8; EVENT_SIZE * 32];
         for device in &mut self.devices {
-            // Nicht blockierend: liefert `WouldBlock`, sobald nichts mehr ansteht.
+            // Non-blocking: returns `WouldBlock` as soon as nothing is pending.
             while let Ok(read) = device.file.read(&mut buffer) {
                 if read == 0 {
                     break;
@@ -122,7 +122,7 @@ fn handle(
             let axis = usize::from(code == ABS_Y);
             let (min, max) = device.range[axis];
             device.axes[axis] = evdev::normalize(value, min, max);
-            // evdev zählt nach unten positiv, `Stick` erwartet „oben positiv“.
+            // evdev counts downwards as positive, `Stick` expects "up positive".
             let change = device.stick.update(device.axes[0], -device.axes[1]);
             apply(change, repeat, actions);
         }
@@ -138,13 +138,13 @@ fn handle(
 fn open(path: &str) -> std::io::Result<Device> {
     let file = OpenOptions::new().read(true).custom_flags(libc::O_NONBLOCK).open(path)?;
     let fd = file.as_raw_fd();
-    // SAFETY: gültiger Deskriptor, EVIOCGRAB erwartet einen int-Wert (1 = sperren).
+    // SAFETY: valid descriptor, EVIOCGRAB expects an int value (1 = grab).
     if unsafe { libc::ioctl(fd, EVIOCGRAB, 1 as libc::c_int) } != 0 {
         return Err(std::io::Error::last_os_error());
     }
     let range = [ABS_X, ABS_Y].map(|axis| {
         let mut info = AbsInfo::default();
-        // SAFETY: `info` ist ein passend großer, beschreibbarer `input_absinfo`.
+        // SAFETY: `info` is a writable `input_absinfo` of the right size.
         let ok = unsafe { libc::ioctl(fd, EVIOCGABS_BASE + libc::c_ulong::from(axis), &mut info) } == 0;
         if ok { (info.minimum, info.maximum) } else { (0, 0) }
     });

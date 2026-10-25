@@ -1,4 +1,4 @@
-//! Minimaler Parser für Valves KeyValues-Textformat (`.vdf`, `.acf`).
+//! Minimal parser for Valve's KeyValues text format (`.vdf`, `.acf`).
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
@@ -7,7 +7,7 @@ pub enum Value {
 }
 
 impl Value {
-    /// Kind-Eintrag eines Objekts; Valve schreibt Schlüssel uneinheitlich groß, daher ohne Groß-/Kleinschreibung.
+    /// Child entry of an object; Valve capitalizes keys inconsistently, hence case-insensitive.
     pub fn get(&self, key: &str) -> Option<&Value> {
         match self {
             Value::Obj(pairs) => pairs.iter().find(|(k, _)| k.eq_ignore_ascii_case(key)).map(|(_, v)| v),
@@ -37,14 +37,14 @@ enum Token {
     Close,
 }
 
-/// Parst ein ganzes Dokument; das Ergebnis ist immer ein `Value::Obj`.
+/// Parses a whole document; the result is always a `Value::Obj`.
 pub fn parse(input: &str) -> Result<Value, String> {
     let tokens = tokenize(input)?;
     let mut pos = 0;
     let root = parse_pairs(&tokens, &mut pos)?;
     match tokens.get(pos) {
         None => Ok(Value::Obj(root)),
-        Some(_) => Err("Unerwartete schließende Klammer".into()),
+        Some(_) => Err("Unexpected closing brace".into()),
     }
 }
 
@@ -61,12 +61,12 @@ fn parse_pairs(tokens: &[Token], pos: &mut usize) -> Result<Vec<(String, Value)>
                 *pos += 1;
                 let children = parse_pairs(tokens, pos)?;
                 if tokens.get(*pos) != Some(&Token::Close) {
-                    return Err(format!("Fehlende schließende Klammer für \"{key}\""));
+                    return Err(format!("Missing closing brace for \"{key}\""));
                 }
                 *pos += 1;
                 Value::Obj(children)
             }
-            _ => return Err(format!("Kein Wert für \"{key}\"")),
+            _ => return Err(format!("No value for \"{key}\"")),
         };
         pairs.push((key.clone(), value));
     }
@@ -97,10 +97,10 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                             Some('n') => text.push('\n'),
                             Some('t') => text.push('\t'),
                             Some(other) => text.push(other),
-                            None => return Err("Unvollständige Escape-Sequenz".into()),
+                            None => return Err("Incomplete escape sequence".into()),
                         },
                         Some(other) => text.push(other),
-                        None => return Err("Nicht geschlossener String".into()),
+                        None => return Err("Unterminated string".into()),
                     }
                 }
                 tokens.push(Token::Text(text));

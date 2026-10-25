@@ -1,11 +1,11 @@
-// Eingabeunabhängige Aktionen; Rust bildet sie auf `consoleui_core::Action` ab.
+// Input-agnostic actions; Rust maps them to `consoleui_core::Action`.
 export enum NavAction { up, down, left, right, confirm, back, menu, search, secondary, prev-tab, next-tab, guide }
 
 export enum NetworkState { offline, ethernet, wifi }
 
 export enum Screen { home, library, settings, search }
 
-// Welche Taste ein Hinweis zeigt; das Symbol hängt vom ControllerStyle ab.
+// Which button a hint shows; the glyph depends on the ControllerStyle.
 export enum GlyphButton { dpad, updown, confirm, back, north, west, menu, guide, l1, r1, quit }
 
 export enum ControllerStyle { keyboard, playstation, xbox }
@@ -21,9 +21,9 @@ export struct AppTile {
     kind: string,
     action-label: string,
     monogram: string,
-    // Nur bei Platzhalter-Covern ohne Icon
+    // Only for placeholder covers without an icon
     show-monogram: bool,
-    // Echtes Cover oder erzeugter Farbverlauf
+    // Real cover or generated gradient
     cover: image,
     icon: image,
     has-icon: bool,
@@ -31,18 +31,18 @@ export struct AppTile {
     has-logo: bool,
     accent: color,
     running: bool,
-    // Im Kontextmenü angeheftet: steht in Home vorn und trägt eine Nadel
+    // Pinned in the context menu: comes first in home and carries a pin
     pinned: bool,
 }
 
-// Eintrag im Kontextmenü (Anheften, Ausblenden …)
+// Context menu item (pin, hide, ...)
 export struct ContextItem {
     label: string,
-    // Symbol als Text (einfarbig)
+    // Symbol as text (monochrome)
     symbol: string,
 }
 
-// Taste der Bildschirmtastatur; Position und Breite in Tastenbreiten
+// On-screen keyboard key; position and width in key widths
 export struct KeyCap {
     label: string,
     row: int,
@@ -50,52 +50,52 @@ export struct KeyCap {
     width: float,
 }
 
-// Eintrag im Quick-Menü
+// Quick menu item
 export struct QuickItem {
     label: string,
-    // Zusatz unter dem Namen, z. B. „30 %“
+    // Detail below the name, e.g. "30 %"
     value: string,
-    // Symbol als Text (einfarbig), z. B. „⏻“
+    // Symbol as text (monochrome), e.g. "⏻"
     symbol: string,
-    // Wartet auf die zweite Bestätigung (Ausschalten, Beenden …)
+    // Waiting for the second confirmation (power off, quit, ...)
     armed: bool,
-    // Lautstärke: Hoch/Runter regelt
+    // Volume: up/down adjusts
     adjustable: bool,
-    // 0–100 für den Balken, sonst -1
+    // 0-100 for the bar, otherwise -1
     level: int,
 }
 
-// Zeile der Einstellungsseite
+// Row of the settings page
 export struct SettingRow {
     label: string,
     description: string,
     value: string,
-    // Öffnet eine Unterseite (WLAN, Bluetooth) statt den Wert zu ändern
+    // Opens a sub-page (Wi-Fi, Bluetooth) instead of changing the value
     opens-page: bool,
 }
 
-// Zeile der WLAN- bzw. Bluetooth-Seite
+// Row of the Wi-Fi or Bluetooth page
 export struct NetRow {
-    // Symbol als Text (Bluetooth-Geräteart, Ein/Aus)
+    // Symbol as text (Bluetooth device kind, on/off)
     symbol: string,
     title: string,
     detail: string,
-    // Rechts, z. B. „An“
+    // On the right, e.g. "On"
     value: string,
-    // WLAN-Signal 1–4, sonst 0
+    // Wi-Fi signal 1-4, otherwise 0
     bars: int,
     secured: bool,
-    // Controller hervorheben
+    // Highlight controllers
     gamepad: bool,
-    // Verbunden
+    // Connected
     active: bool,
-    // Auftrag läuft (Verbinden, Koppeln …)
+    // Request running (connecting, pairing, ...)
     busy: bool,
-    // Wartet auf den zweiten Druck zum Entfernen
+    // Waiting for the second press to remove
     armed: bool,
 }
 
-// Unterseite „WLAN“ oder „Bluetooth“ der Einstellungen, inklusive Passwort-Eingabe
+// "Wi-Fi" or "Bluetooth" sub-page of the settings, including password entry
 export struct NetView {
     open: bool,
     title: string,

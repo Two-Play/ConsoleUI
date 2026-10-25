@@ -1,4 +1,4 @@
-//! Installierte Steam-Spiele aus `libraryfolders.vdf` und `appmanifest_*.acf`.
+//! Installed Steam games from `libraryfolders.vdf` and `appmanifest_*.acf`.
 
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -9,10 +9,10 @@ use crate::library::{AppEntry, AppKind, Artwork, Launch, palette_for};
 use crate::vdf;
 use crate::xdg;
 
-/// Bit in `StateFlags`: vollständig installiert.
+/// Bit in `StateFlags`: fully installed.
 const STATE_FULLY_INSTALLED: u32 = 4;
 
-/// Native Installation zuerst, danach Flatpak.
+/// Native installation first, then Flatpak.
 pub fn find_root() -> Option<PathBuf> {
     let home = xdg::home()?;
     [".local/share/Steam", ".steam/steam", ".var/app/com.valvesoftware.Steam/.local/share/Steam"]
@@ -37,7 +37,7 @@ pub fn discover(root: &Path) -> Vec<AppEntry> {
             if !manifest.installed || is_tool(&manifest.name) {
                 continue;
             }
-            // Dasselbe Spiel kann in mehreren Bibliotheken liegen.
+            // The same game can be in several libraries.
             match games.get(&manifest.app_id) {
                 Some(known) if known.last_played >= manifest.last_played => {}
                 _ => {
@@ -65,8 +65,8 @@ fn to_entry(root: &Path, manifest: Manifest) -> AppEntry {
     }
 }
 
-/// Prozesse von Steam-Spielen: Steam gibt jedem Spielprozess (auch unter Proton/Wine)
-/// `SteamAppId` in die Umgebung. Steam selbst, seine Hilfsprozesse und die Shell zählen nicht.
+/// Processes of Steam games: Steam puts `SteamAppId` into the environment of every game process
+/// (also under Proton/Wine). Steam itself, its helper processes and the shell do not count.
 fn game_processes() -> io::Result<Vec<(u32, u32)>> {
     let own_pid = std::process::id();
     let mut processes = Vec::new();
@@ -80,7 +80,7 @@ fn game_processes() -> io::Result<Vec<(u32, u32)>> {
         if matches!(comm.trim(), "steam" | "steamwebhelper") {
             continue;
         }
-        // Nur Prozesse des eigenen Benutzers sind lesbar; alle anderen fallen hier heraus.
+        // Only processes of the own user are readable; all others drop out here.
         let Ok(environ) = fs::read(dir.join("environ")) else { continue };
         if let Some(app_id) = steam_app_id(&environ) {
             processes.push((pid, app_id));
@@ -89,13 +89,13 @@ fn game_processes() -> io::Result<Vec<(u32, u32)>> {
     Ok(processes)
 }
 
-/// App-IDs aller Steam-Spiele, die gerade Prozesse haben. Zuverlässiger als `RunningAppID` in
-/// `~/.steam/registry.vdf`, das Steam oft erst Minuten nach dem Spielende zurücksetzt.
+/// App IDs of all Steam games that currently have processes. More reliable than `RunningAppID` in
+/// `~/.steam/registry.vdf`, which Steam often resets only minutes after the game ended.
 pub fn running_games() -> HashSet<u32> {
     game_processes().map(|p| p.into_iter().map(|(_, app_id)| app_id).collect()).unwrap_or_default()
 }
 
-/// Beendet ein laufendes Steam-Spiel per SIGTERM an alle seine Prozesse.
+/// Stops a running Steam game by sending SIGTERM to all its processes.
 pub fn stop_game(app_id: u32) -> io::Result<usize> {
     let mut stopped = 0;
     for (pid, _) in game_processes()?.into_iter().filter(|&(_, id)| id == app_id) {
@@ -152,7 +152,7 @@ fn parse_manifest(content: &str) -> Option<Manifest> {
     })
 }
 
-/// Laufzeitumgebungen, Redistributables und Soundtracks, die Steam wie Spiele installiert.
+/// Runtimes, redistributables and soundtracks that Steam installs like games.
 fn is_tool(name: &str) -> bool {
     ["Proton", "Steam Linux Runtime", "Steamworks Common Redistributables", "SteamVR"]
         .iter()
@@ -163,10 +163,10 @@ fn is_tool(name: &str) -> bool {
 fn artwork(root: &Path, app_id: u32) -> Artwork {
     let cache = root.join("appcache/librarycache");
     let mut files: HashMap<String, PathBuf> = HashMap::new();
-    // Neues Format: librarycache/<appid>/[<hash>/]library_600x900.jpg
+    // New format: librarycache/<appid>/[<hash>/]library_600x900.jpg
     collect_files(&cache.join(app_id.to_string()), 2, &mut files);
     if files.is_empty() {
-        // Altes, flaches Format: librarycache/<appid>_library_600x900.jpg
+        // Old, flat format: librarycache/<appid>_library_600x900.jpg
         let prefix = format!("{app_id}_");
         for file in fs::read_dir(&cache).into_iter().flatten().flatten() {
             if let Some(name) = file.file_name().to_str().and_then(|n| n.strip_prefix(&prefix)) {

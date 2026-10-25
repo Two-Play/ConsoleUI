@@ -1,4 +1,4 @@
-//! Wann welche App zuletzt aus der Shell gestartet wurde, gespeichert als JSON.
+//! When which app was last launched from the shell, stored as JSON.
 
 use std::collections::HashMap;
 use std::fs;
@@ -11,7 +11,7 @@ use crate::xdg;
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct History {
-    /// App-ID → Unix-Zeit in Sekunden
+    /// App ID → Unix time in seconds
     last_used: HashMap<String, u64>,
 }
 
@@ -21,18 +21,18 @@ impl History {
         xdg::data_home().map(|dir| dir.join("consoleui/history.json"))
     }
 
-    /// Eine fehlende oder kaputte Datei ergibt eine leere Historie.
+    /// A missing or broken file results in an empty history.
     pub fn load(path: &Path) -> Self {
         match fs::read_to_string(path) {
             Ok(content) => serde_json::from_str(&content).unwrap_or_else(|err| {
-                eprintln!("Historie {} ist ungültig und wird ignoriert: {err}", path.display());
+                eprintln!("History {} is invalid and ignored: {err}", path.display());
                 Self::default()
             }),
             Err(_) => Self::default(),
         }
     }
 
-    /// Schreibt zuerst in eine temporäre Datei, damit ein Absturz die Historie nicht zerstört.
+    /// Writes to a temporary file first, so a crash does not destroy the history.
     pub fn save(&self, path: &Path) -> io::Result<()> {
         if let Some(dir) = path.parent() {
             fs::create_dir_all(dir)?;

@@ -1,4 +1,4 @@
-//! Desktop-Apps aus `.desktop`-Dateien (freedesktop Desktop Entry Specification).
+//! Desktop apps from `.desktop` files (freedesktop Desktop Entry Specification).
 
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -9,10 +9,10 @@ use crate::launch;
 use crate::library::{AppEntry, AppKind, Artwork, Launch, palette_for};
 use crate::xdg;
 
-/// Kategorien, die auf dem Fernseher Sinn ergeben: Spiele, Medien, Browser, Bilder.
+/// Categories that make sense on a TV: games, media, browsers, images.
 const WANTED_CATEGORIES: &[&str] = &["Game", "AudioVideo", "Audio", "Video", "Network", "Graphics"];
-/// Systemtools, Entwickler- und Büro-Apps (z. B. Mail, PDF) bleiben draußen, auch wenn sie eine
-/// gewünschte Kategorie haben.
+/// System tools, developer and office apps (e.g. mail, PDF) stay out, even if they have a
+/// wanted category.
 const EXCLUDED_CATEGORIES: &[&str] = &["Settings", "System", "Development", "Office", "ConsoleOnly"];
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -43,20 +43,20 @@ impl DesktopEntry {
             && !self.terminal
             && self.has_category(WANTED_CATEGORIES)
             && !self.has_category(EXCLUDED_CATEGORIES)
-            // Steam legt für Spiele eigene Verknüpfungen an; die kommen schon über die Steam-Quelle.
+            // Steam creates its own shortcuts for games; those already come from the Steam source.
             && self.exec.as_deref().is_some_and(|e| !e.contains("steam://rungameid"))
             && self.try_exec.as_deref().is_none_or(launch::program_exists)
     }
 }
 
-/// Findet alle passenden Desktop-Apps. `data_dirs` ist nach Priorität sortiert (siehe [`xdg::data_dirs`]).
+/// Finds all matching desktop apps. `data_dirs` is sorted by priority (see [`xdg::data_dirs`]).
 pub fn discover(data_dirs: &[PathBuf], langs: &[String]) -> Vec<AppEntry> {
     let theme = icon_theme();
     let mut seen = HashSet::new();
     let mut entries = Vec::new();
     for dir in data_dirs {
         for (id, path) in desktop_files(&dir.join("applications")) {
-            // Die erste Fundstelle gewinnt, auch wenn sie die App versteckt (Hidden=true im Benutzerordner).
+            // The first location wins, even if it hides the app (Hidden=true in the user directory).
             if !seen.insert(id.clone()) {
                 continue;
             }
@@ -91,7 +91,7 @@ fn to_app_entry(entry: DesktopEntry, data_dirs: &[PathBuf], theme: &str) -> AppE
     }
 }
 
-/// Alle `.desktop`-Dateien unterhalb von `root`. Die ID von `kde/foo.desktop` ist `kde-foo.desktop`.
+/// All `.desktop` files below `root`. The ID of `kde/foo.desktop` is `kde-foo.desktop`.
 fn desktop_files(root: &Path) -> Vec<(String, PathBuf)> {
     fn walk(dir: &Path, prefix: &str, out: &mut Vec<(String, PathBuf)>) {
         for entry in fs::read_dir(dir).into_iter().flatten().flatten() {
@@ -110,7 +110,7 @@ fn desktop_files(root: &Path) -> Vec<(String, PathBuf)> {
     files
 }
 
-/// Parst die Gruppe `[Desktop Entry]`. Gibt `None` zurück, wenn kein Name vorhanden ist.
+/// Parses the `[Desktop Entry]` group. Returns `None` if there is no name.
 pub fn parse(id: &str, content: &str, langs: &[String]) -> Option<DesktopEntry> {
     let mut values: HashMap<&str, &str> = HashMap::new();
     let mut in_main_group = false;
@@ -180,7 +180,7 @@ fn unescape(value: &str) -> String {
     out
 }
 
-/// Zerlegt `Exec` in Programm und Argumente und entfernt Feldcodes wie `%U` sowie Flatpaks `@@u … @@`.
+/// Splits `Exec` into program and arguments and removes field codes like `%U` and Flatpak's `@@u … @@`.
 pub fn exec_to_argv(exec: &str) -> Vec<String> {
     let mut args = Vec::new();
     let mut current = String::new();
@@ -223,7 +223,7 @@ pub fn exec_to_argv(exec: &str) -> Vec<String> {
     args
 }
 
-/// Icon-Theme aus den KDE-Einstellungen, sonst `hicolor`.
+/// Icon theme from the KDE settings, otherwise `hicolor`.
 fn icon_theme() -> String {
     xdg::config_home()
         .and_then(|dir| fs::read_to_string(dir.join("kdeglobals")).ok())

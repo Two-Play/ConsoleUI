@@ -1,7 +1,7 @@
-//! Akzentfarben aus einem Cover-Bild ableiten.
+//! Derives accent colors from a cover image.
 
-/// Gewichteter Mittelwert, bei dem kräftige, helle Pixel mehr zählen, danach auf eine
-/// gut lesbare Helligkeit gebracht. `rgba` sind RGBA8-Pixel hintereinander.
+/// Weighted average in which vivid, bright pixels count more, then brought to a well readable
+/// brightness. `rgba` are RGBA8 pixels in sequence.
 pub fn from_rgba(rgba: &[u8]) -> Option<([u8; 3], [u8; 3])> {
     const MAX_SAMPLES: usize = 4096;
     let pixels = rgba.len() / 4;
@@ -24,7 +24,7 @@ pub fn from_rgba(rgba: &[u8]) -> Option<([u8; 3], [u8; 3])> {
         return None;
     }
     let (h, s, v) = rgb_to_hsv(r / total, g / total, b / total);
-    // Graue Bilder nicht künstlich einfärben.
+    // Do not artificially tint gray images.
     let s = if s < 0.08 { s } else { s.clamp(0.45, 0.9) };
     let primary = hsv_to_rgb(h, s, v.clamp(0.45, 0.75));
     let secondary = hsv_to_rgb((h + 0.08).fract(), s * 0.7, (v + 0.25).min(0.95));

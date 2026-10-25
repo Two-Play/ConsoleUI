@@ -3,24 +3,24 @@ use std::path::PathBuf;
 use consoleui_core::Action;
 
 pub const USAGE: &str = "\
-Verwendung: consoleui [OPTIONEN]
+Usage: consoleui [OPTIONS]
 
-  --windowed      Im Fenster statt im Vollbild starten
-  --dummy         Erfundene Einträge statt echter Steam- und Desktop-Apps anzeigen
-  --tiles <N>     Anzahl der Dummy-Kacheln (Standard: 12, nur mit --dummy)
-  --fps           FPS- und Renderzeit-Anzeige einblenden
-  --bench         Automatisch durch alle Kacheln scrollen, Messwerte ausgeben und beenden
-  -h, --help      Diese Hilfe anzeigen
+  --windowed      Start in a window instead of fullscreen
+  --dummy         Show made-up entries instead of real Steam and desktop apps
+  --tiles <N>     Number of dummy tiles (default: 12, only with --dummy)
+  --fps           Show the FPS and render-time overlay
+  --bench         Scroll through all tiles automatically, print measurements and exit
+  -h, --help      Show this help
 
-Für die Entwicklung:
-  --start <SEITE>     Mit home, library, settings oder search starten
-  --query <TEXT>      In der Suche diesen Text vorbelegen (mit --start search)
-  --snapshot <DATEI>  Nach kurzer Zeit ein PNG des Fensters speichern und beenden
-  --actions <LISTE>   Eingaben simulieren, z. B. \"right,confirm,wait:3000,guide\"
+For development:
+  --start <PAGE>      Start with home, library, settings or search
+  --query <TEXT>      Prefill this text in the search (with --start search)
+  --snapshot <FILE>   Save a PNG of the window after a short time and exit
+  --actions <LIST>    Simulate input, e.g. \"right,confirm,wait:3000,guide\"
                       (up, down, left, right, confirm, back, menu, search, secondary,
-                      prev-tab, next-tab, guide, wait:<ms>, toast = Testhinweis)
-  --dummy-launch <BEFEHL>  Dummy-Einträge starten diesen Befehl (z. B. glxgears)
-  --fake-network      WLAN und Bluetooth simulieren statt NetworkManager/BlueZ zu fragen";
+                      prev-tab, next-tab, guide, wait:<ms>, toast = test notice)
+  --dummy-launch <COMMAND>  Dummy entries launch this command (e.g. glxgears)
+  --fake-network      Simulate Wi-Fi and Bluetooth instead of asking NetworkManager/BlueZ";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum StartScreen {
@@ -31,12 +31,12 @@ pub enum StartScreen {
     Search,
 }
 
-/// Ein Schritt aus `--actions`
+/// One step of `--actions`
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScriptStep {
     Action(Action),
     Wait(u64),
-    /// Entwicklungshilfe: zeigt einen Testhinweis (z. B. um Hinweise über Spielen zu prüfen)
+    /// Development aid: shows a test notice (e.g. to check toasts over games)
     Toast,
 }
 
@@ -90,7 +90,7 @@ impl Options {
                 "--tiles" => {
                     let value = value(&mut args, "--tiles")?;
                     options.tiles =
-                        value.parse().map_err(|_| format!("Ungültige Kachelanzahl: {value}"))?;
+                        value.parse().map_err(|_| format!("Invalid tile count: {value}"))?;
                 }
                 "--start" => {
                     options.start = match value(&mut args, "--start")?.as_str() {
@@ -98,14 +98,14 @@ impl Options {
                         "library" => StartScreen::Library,
                         "settings" => StartScreen::Settings,
                         "search" => StartScreen::Search,
-                        other => return Err(format!("Unbekannte Seite: {other}")),
+                        other => return Err(format!("Unknown page: {other}")),
                     }
                 }
                 "--query" => options.query = Some(value(&mut args, "--query")?),
                 "--snapshot" => options.snapshot = Some(value(&mut args, "--snapshot")?.into()),
                 "--actions" => options.actions = parse_script(&value(&mut args, "--actions")?)?,
                 "--dummy-launch" => options.dummy_launch = Some(value(&mut args, "--dummy-launch")?),
-                other => return Err(format!("Unbekannte Option: {other}")),
+                other => return Err(format!("Unknown option: {other}")),
             }
         }
         Ok(options)
@@ -118,7 +118,7 @@ fn parse_script(list: &str) -> Result<Vec<ScriptStep>, String> {
         .filter(|s| !s.is_empty())
         .map(|step| {
             if let Some(ms) = step.strip_prefix("wait:") {
-                return ms.parse().map(ScriptStep::Wait).map_err(|_| format!("Ungültige Wartezeit: {step}"));
+                return ms.parse().map(ScriptStep::Wait).map_err(|_| format!("Invalid wait time: {step}"));
             }
             if step == "toast" {
                 return Ok(ScriptStep::Toast);
@@ -136,7 +136,7 @@ fn parse_script(list: &str) -> Result<Vec<ScriptStep>, String> {
                 "prev-tab" => Action::PrevTab,
                 "next-tab" => Action::NextTab,
                 "guide" => Action::Guide,
-                other => return Err(format!("Unbekannte Aktion: {other}")),
+                other => return Err(format!("Unknown action: {other}")),
             };
             Ok(ScriptStep::Action(action))
         })
@@ -144,7 +144,7 @@ fn parse_script(list: &str) -> Result<Vec<ScriptStep>, String> {
 }
 
 fn value(args: &mut impl Iterator<Item = String>, option: &str) -> Result<String, String> {
-    args.next().ok_or_else(|| format!("{option} erwartet einen Wert"))
+    args.next().ok_or_else(|| format!("{option} expects a value"))
 }
 
 #[cfg(test)]
