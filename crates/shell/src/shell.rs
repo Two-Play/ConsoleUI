@@ -500,10 +500,10 @@ impl Shell {
         self.compositor_ui.as_ref().filter(|_| self.compositor.as_ref().is_some_and(Compositor::overlays))
     }
 
-    /// Tells our compositor where the open quick menu and the shown toast are, so it blurs what is
-    /// below them (Story 7.13). Called whenever they open or close and from the compositor poll
-    /// (toasts are hidden by timers, a window's size arrives later).
-    fn sync_blur(&mut self) {
+    /// Tells our compositor where the quick menu bar and the toast are, so it blurs what is below
+    /// them (Story 7.13). Called after every frame of their windows (the blur follows the sliding
+    /// bar) and from the compositor poll; only changes are sent.
+    pub fn sync_blur(&mut self) {
         let Some(windows) = self.compositor_ui() else { return };
         let Some(blur) = self.compositor.as_ref().map(Compositor::blur) else { return };
         windows.overlay.global::<Glass>().set_backdrop(blur);
@@ -522,15 +522,17 @@ impl Shell {
         };
         let overlay = &windows.overlay;
         let mut menu = Vec::new();
-        if overlay.get_open() && overlay.window().is_visible() {
+        if overlay.window().is_visible() {
             let size = overlay.window().size().to_logical(overlay.window().scale_factor());
-            let height = overlay.get_panel_height();
-            menu.push(region(0.0, size.height - height, size.width, height, 0.0));
+            let top = overlay.get_panel_y();
+            let height = overlay.get_panel_height().min(size.height - top);
+            if height >= 1.0 {
+                menu.push(region(0.0, top, size.width, height, 0.0));
+            }
         }
-        let menu_fade = overlay.get_blur_fade().clamp(0, 2000) as u32;
         let notification = &windows.notification;
         let mut toast = Vec::new();
-        if notification.get_shown() && notification.window().is_visible() {
+        if notification.get_shown() && notification.get_toast_visible() && notification.window().is_visible() {
             toast.push(region(
                 notification.get_toast_x(),
                 notification.get_toast_y(),
@@ -541,8 +543,14 @@ impl Shell {
         }
         let toast_fade = notification.get_blur_fade().clamp(0, 2000) as u32;
         let Some(compositor) = &mut self.compositor else { return };
-        compositor.set_blur(WindowRole::Overlay, menu, menu_fade);
+        compositor.set_blur(WindowRole::Overlay, menu, 0);
         compositor.set_blur(WindowRole::Notification, toast, toast_fade);
+    }
+
+    /// The overlay and notification windows whose frames move the compositor's blur (Story 7.13).
+    pub fn blur_windows(&self) -> Option<(slint::Weak<OverlayWindow>, slint::Weak<NotificationWindow>)> {
+        let windows = self.compositor_ui.as_ref()?;
+        Some((windows.overlay.as_weak(), windows.notification.as_weak()))
     }
 
     /// The window for toasts over running apps (gamescope or our compositor).
@@ -1086,7 +1094,9 @@ impl Shell {
             }
         };
         let shown = self.settings.background.animated(has_artwork);
-        self.backdrop.update(ui, shown, in_front, self.settings.animations, accent);
+        // Paused under the quick menu: the shell then only redraws the menu, and the compositor's
+        // blur under it stays cached.
+        self.backdrop.update(ui, shown, in_front && self.quick.is_none(), self.settings.animations, accent);
     }
 
     /// Fades in the hero of the focused entry (once it is decoded), prefetches the neighbours

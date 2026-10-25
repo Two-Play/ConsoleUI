@@ -18,6 +18,8 @@ export component QuickMenu inherits Rectangle {
     property <length> gap: 18px * root.s;
     // Height of the bar when open (the overlay window reports it to the compositor for the blur)
     out property <length> panel-height: 330px * root.s;
+    // Where the bar is right now (animated); the compositor's blur follows it.
+    out property <length> panel-y: panel.y;
 
     // Darkens the game above the bar only, so a blurred backdrop under the bar stays clear.
     Rectangle {

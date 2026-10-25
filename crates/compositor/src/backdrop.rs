@@ -18,16 +18,20 @@ pub struct Backdrop {
 }
 
 impl Backdrop {
-    /// New regions at `now`; an empty list fades the current ones out.
+    /// New regions at `now`; an empty list fades the current ones out. Moving regions (a sliding
+    /// panel sends them every frame) keep a running fade going.
     pub fn set(&mut self, regions: Vec<BlurRegion>, fade: Duration, now: Duration) {
         let regions: Vec<BlurRegion> = regions.into_iter().filter(|r| r.rect.width > 0 && r.rect.height > 0).collect();
-        self.from = self.alpha(now);
-        self.to = if regions.is_empty() { 0.0 } else { 1.0 };
+        let to = if regions.is_empty() { 0.0 } else { 1.0 };
         if !regions.is_empty() {
             self.regions = regions;
         }
-        self.start = now;
-        self.fade = fade;
+        if to != self.to {
+            self.from = self.alpha(now);
+            self.to = to;
+            self.start = now;
+            self.fade = fade;
+        }
     }
 
     /// Opacity of the blur at `now` (0 to 1).
@@ -132,6 +136,14 @@ mod tests {
         let empty = BlurRegion { rect: Rect { x: 0, y: 0, width: 0, height: 5 }, radius: 0 };
         backdrop.set(vec![empty], Duration::ZERO, ms(90));
         assert!(backdrop.visible(ms(90)).is_none());
+    }
+
+    #[test]
+    fn moving_regions_keep_the_fade() {
+        let mut backdrop = Backdrop::default();
+        backdrop.set(vec![region(0)], ms(100), ms(0));
+        backdrop.set(vec![region(3)], ms(100), ms(50));
+        assert_eq!(backdrop.visible(ms(100)), Some((&[region(3)][..], 1.0)));
     }
 
     #[test]

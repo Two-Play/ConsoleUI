@@ -184,6 +184,30 @@ fn main() -> Result<(), Box<dyn Error>> {
         notifier?;
     }
 
+    // Story 7.13: after each frame of the quick menu or a toast the compositor learns where the
+    // panel is now, so its blur moves with the sliding panel.
+    if let Some((overlay, notification)) = shell.borrow().blur_windows() {
+        let notifier = |shell: Rc<RefCell<Shell>>| {
+            move |state: RenderingState, _: &slint::GraphicsAPI| {
+                if let RenderingState::AfterRendering = state
+                    && let Ok(mut shell) = shell.try_borrow_mut()
+                {
+                    shell.sync_blur();
+                }
+            }
+        };
+        if let Some(overlay) = overlay.upgrade()
+            && let Err(err) = overlay.window().set_rendering_notifier(notifier(shell.clone()))
+        {
+            eprintln!("Cannot follow the quick menu for the blur: {err}");
+        }
+        if let Some(notification) = notification.upgrade()
+            && let Err(err) = notification.window().set_rendering_notifier(notifier(shell.clone()))
+        {
+            eprintln!("Cannot follow toasts for the blur: {err}");
+        }
+    }
+
     let gamepad_timer = Timer::default();
     if let Some(gamepads) = &gamepads {
         gamepad_timer.start(TimerMode::Repeated, GAMEPAD_POLL, {

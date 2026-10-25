@@ -1,6 +1,5 @@
 import { ControllerStyle, NavAction, QuickItem } from "types.slint";
 import { QuickMenu } from "quickmenu.slint";
-import { Theme } from "theme.slint";
 
 // Own transparent window for the quick menu. In gamescope, Rust sets STEAM_OVERLAY before it is
 // shown; gamescope then puts it over the running game. In our own compositor the title (announced
@@ -21,10 +20,10 @@ export component OverlayWindow inherits Window {
 
     callback action(NavAction);
 
-    // The open bar at the bottom edge, full width: our compositor blurs the game below it
-    // (Story 7.13), fading the blur like the bar.
+    // The bar at the bottom edge, full width, where it is in this frame: our compositor blurs
+    // the game below it (Story 7.13).
+    out property <length> panel-y: menu.panel-y;
     out property <length> panel-height: menu.panel-height;
-    out property <duration> blur-fade: Theme.launch-duration;
 
     property <float> s: max(0.4, min(root.width / 1920px, root.height / 1080px));
 

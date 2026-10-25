@@ -781,6 +781,13 @@ Branch `agent/compositor-blur`, on top of the UI feedback round (6.10).
   up pixel-exactly with the game (orientation and offsets checked), with them the game's text under
   the bar and toast is smeared. 141 core + 25 compositor + 8 shell tests, clippy, fmt.
 - **Not tested:** on the NVIDIA host (GPU cost not measured), on DRM in the VM, with a real game.
+- **Follow-up after user feedback (flicker and stutter on Home):** the blur sat at the bar's resting
+  place and faded while the bar was still sliding, which showed as a flickering band over the bright
+  home screen. Now rendering notifiers on the overlay and notification windows call
+  `Shell::sync_blur` after every frame, so the region follows the sliding bar and the moving toast
+  (the bar's blur no longer fades; region updates keep a running toast fade going). The animated
+  background pauses while the quick menu is open, so the shell redraws only the menu instead of two
+  windows at once. Measured on the NVIDIA host: the blur takes ~0.45 ms CPU per frame (max ~1 ms).
 - **Observed (pre-existing, also on 6.10):** the winit backend logs `EGL_BAD_SURFACE` from
   `eglQuerySurface` (buffer age) after frames without damage and after screenshots, because the
   surface is no longer current; harmless, but noisy.
