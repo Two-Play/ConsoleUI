@@ -8,9 +8,17 @@
 #   CONSOLEUI_COMPOSITOR_BIN   path of the compositor (default: /usr/local/bin/consoleui-compositor)
 #   CONSOLEUI_COMPOSITOR_ARGS  extra compositor options, e.g. "--no-xwayland"
 #   RUST_LOG                   compositor log level, e.g. "debug" (default: info)
+#
+# The output of the compositor, the shell and the apps goes to the journal
+# (journalctl --user -t consoleui -b) when systemd-cat is available: display managers drop or
+# hide a session's output otherwise.
 set -eu
 
 bin="${CONSOLEUI_BIN:-/usr/local/bin/consoleui}"
 compositor="${CONSOLEUI_COMPOSITOR_BIN:-/usr/local/bin/consoleui-compositor}"
+log=""
+if command -v systemd-cat >/dev/null 2>&1; then
+    log="systemd-cat --identifier=consoleui --"
+fi
 # shellcheck disable=SC2086 # The options are meant to be split into words.
-exec "$compositor" --drm ${CONSOLEUI_COMPOSITOR_ARGS:-} -- "$bin" "$@"
+exec $log "$compositor" --drm ${CONSOLEUI_COMPOSITOR_ARGS:-} -- "$bin" "$@"

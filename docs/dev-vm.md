@@ -16,7 +16,9 @@ dev/vm.sh try                    # try it by hand: compositor --drm + shell (dum
 dev/vm.sh try --real             # same with the guest's real library; extra args go to the shell
 dev/vm.sh ssh 'ls target/toolbox/release'      # runs in the shared checkout, as user `tester` (uid 1000)
 dev/vm.sh seat target/toolbox/release/consoleui-compositor --drm   # on seat0, VT 7, log: ~/seat.log
-dev/vm.sh screenshot /tmp/vm.png # QMP screendump of the guest display, also headless
+dev/vm.sh screenshot /tmp/vm.png # QMP screendump of the guest display, also headless (2nd arg: head)
+dev/vm.sh keys ctrl-alt-f2 sleep:1500 ctrl-alt-f7 right ret   # real key events (QMP send-key)
+dev/vm.sh output 0 1600x900      # new preferred mode for monitor 0; `output 1 1024x768` / `output 1 off`
 dev/vm.sh seat-stop              # stop the seat session, back to VT 1
 dev/vm.sh stop                   # clean poweroff
 dev/vm.sh destroy                # delete disk, seed and SSH key (keeps the downloaded image)
@@ -30,7 +32,34 @@ Settings via environment: `VM_SHARE` (default: the main checkout, also when the 
 worktree below `.claude/worktrees`), `VM_CPUS` (4), `VM_MEM` (6G), `VM_DISK` (20G overlay), `VM_RES`
 (1280x800, the virtual monitor's mode; in a window the guest's preferred mode follows the
 window size instead, so use `--headless` for reproducible screenshots), `VM_SSH_PORT` (2222, bound to 127.0.0.1),
-`CONSOLEUI_VM_DIR` (`~/.local/share/consoleui-vm`).
+`CONSOLEUI_VM_DIR` (`~/.local/share/consoleui-vm`), `VM_HEADS` (1; number of virtual monitors).
+
+A second, independent VM (e.g. while another agent uses the first one) needs its own state dir and
+port; copying the downloaded image and `CHECKSUM` there first saves the download:
+`CONSOLEUI_VM_DIR=~/.local/share/consoleui-vm-b VM_SSH_PORT=2223 VM_MEM=4G VM_HEADS=2 dev/vm.sh create`
+(then the same variables for every other command).
+
+## Real keys, monitors and the login screen
+
+- `keys` sends real key events through QMP `send-key` (QEMU qcodes: `a`, `ret`, `esc`, `tab`,
+  `up`, `f1`, `slash`, `ctrl`, `alt`, `shift`, …; `-` joins a chord, `sleep:MS` waits). They
+  arrive as a virtio keyboard through libinput, like a real keyboard, and do not need the window.
+  Use them instead of the shell's `--actions` when keyboard focus matters. The guest keymap
+  (`localectl`) is `us`, so qcodes match the printed keys unless the shell's "Keyboard layout"
+  setting picks another layout (with `de`, qcode `y` types `z`).
+- `output <head> <WxH|off>` acts like a client resizing a QEMU display: a minimal VNC client on
+  `vnc<head>.sock` sends SetDesktopSize, QEMU passes it to virtio-gpu as the monitor's preferred
+  mode and the guest gets a hotplug event; `off` (0x0) disconnects the head. Heads above 0 exist
+  only with `VM_HEADS=2` (or more) and start disconnected. `screenshot <png> <head>` captures one.
+- Display manager: `sudo dnf install sddm sddm-wayland-generic` in the guest (not enabled at
+  boot, so `seat` keeps working), `sudo session/install.sh` from the shared checkout (takes the
+  toolbox builds), then
+  `printf '[General]\nDisplayServer=wayland\n[Wayland]\nCompositorCommand=weston --shell=kiosk-shell.so\n' | sudo tee /etc/sddm.conf.d/10-test.conf`
+  and `sudo systemctl start sddm`: the greeter lists "ConsoleUI (own compositor)". The test user
+  has no password; for a login without typing one, add `[Autologin]` with `User=tester`,
+  `Session=consoleui-compositor` and `Relogin=false`. Quitting the shell ends the session and SDDM
+  shows the greeter again. The session's output is in the journal:
+  `journalctl --user -t consoleui -b`. `sudo systemctl stop sddm` when done.
 
 ## What is where
 
@@ -96,8 +125,8 @@ already DRM master.
 - `gamescope --backend drm` does not run: it needs a Vulkan device with a DRM node, lavapipe has
   none ("vulkan: not a valid physical device"). A nested `gamescope --backend wayland` inside anvil
   starts, but anvil drops it with a protocol error after a few seconds (not investigated).
-- One virtual monitor (`virtio-vga` exposes a single output; hotplug/multi-monitor needs more
-  heads via `-device virtio-gpu-pci,max_outputs=2`, not wired up).
+- Monitors are virtual (virtio-gpu heads): hotplug and mode changes work through `output`, but
+  there is no real EDID, HDR, VRR or refresh rate choice (QEMU reports 75 Hz).
 - Gamepads: `VM_USB=054c:0ce6 dev/vm.sh start` passes a USB device (here a DualSense) through with
   `usb-host`; the host loses the device while the VM runs. QEMU needs write access to
   `/dev/bus/usb/BBB/DDD`; controllers covered by the `steam-devices` udev rules already have a

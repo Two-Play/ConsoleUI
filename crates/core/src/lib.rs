@@ -12,6 +12,7 @@ pub mod i18n;
 mod icons;
 pub mod image_format;
 pub mod input;
+pub mod keymap;
 pub mod launch;
 mod library;
 mod nav;

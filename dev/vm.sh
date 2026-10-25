@@ -21,12 +21,17 @@
 #                                  consoleui-compositor --drm with the shell on the seat (dummy entries
 #                                  and glxgears as the "game" unless --real; extra args go to the shell;
 #                                  the host's LANG is passed on). Quit with Ctrl+Q, back to VT 1 after.
-#   dev/vm.sh screenshot <png>     QMP screendump of the VM display as PNG (works headless too)
+#   dev/vm.sh screenshot <png> [head]  QMP screendump of the VM display as PNG (works headless too)
+#   dev/vm.sh keys <key...>        type real key events (QMP send-key): QEMU qcodes, chords with '-',
+#                                  e.g. dev/vm.sh keys ctrl-alt-f2 sleep:2000 ctrl-alt-f7 ret
+#   dev/vm.sh output <head> <WxH|off>  plug a virtual monitor in, change its mode or unplug it (like a
+#                                  client window resize over VNC; heads > 0 need VM_HEADS)
 #   dev/vm.sh console              follow the serial console log
 #   dev/vm.sh destroy              stop and delete disk, seed and keys (the downloaded image is kept)
 #
 # Environment: CONSOLEUI_VM_DIR (state dir), VM_SHARE (host dir to share, default: the main checkout),
-# VM_CPUS (4), VM_MEM (6G), VM_DISK (20G), VM_RES (1280x800), VM_SSH_PORT (2222),
+# VM_CPUS (4), VM_MEM (6G), VM_DISK (20G), VM_RES (1280x800), VM_SSH_PORT (2222), VM_HEADS (1, virtual
+# monitors of the virtio-vga; only the first is connected at boot),
 # VM_USB (vendor:product[,vendor:product...] USB devices to pass through, e.g. a gamepad; needs
 # write access to /dev/bus/usb/BBB/DDD on the host, see docs/dev-vm.md).
 set -euo pipefail
@@ -48,6 +53,7 @@ VM_DISK="${VM_DISK:-20G}"
 VM_RES="${VM_RES:-1280x800}"
 VM_SSH_PORT="${VM_SSH_PORT:-2222}"
 VM_USB="${VM_USB:-}"
+VM_HEADS="${VM_HEADS:-1}"
 VM_USER=tester
 VIRTIOFSD=/usr/libexec/virtiofsd
 
@@ -247,6 +253,12 @@ start_vm() { # start_vm <headless:0|1>
             usb+=(-device "usb-host,bus=xhci.0,vendorid=0x${dev%%:*},productid=0x${dev##*:}")
         done
     fi
+    # One VNC socket per virtual monitor: `output` resizes or unplugs a head through it.
+    local vnc=() head
+    for ((head = 0; head < VM_HEADS; head++)); do
+        rm -f "$VM_DIR/vnc$head.sock"
+        vnc+=(-vnc "unix:$VM_DIR/vnc$head.sock,id=vnc$head,display=video0,head=$head")
+    done
     rm -f "$QMP"
     : >"$SERIAL_LOG"
     setsid qemu-system-x86_64 \
@@ -257,7 +269,8 @@ start_vm() { # start_vm <headless:0|1>
         -drive "file=$SEED,if=virtio,media=cdrom,readonly=on" \
         -chardev "socket,id=vfs,path=$VFS_SOCK" -device vhost-user-fs-pci,chardev=vfs,tag=consoleui \
         -nic "user,model=virtio-net-pci,hostfwd=tcp:127.0.0.1:$VM_SSH_PORT-:22" \
-        -vga none -device "virtio-vga,xres=${VM_RES%x*},yres=${VM_RES#*x}" \
+        -vga none -device "virtio-vga,id=video0,max_outputs=$VM_HEADS,xres=${VM_RES%x*},yres=${VM_RES#*x}" \
+        "${vnc[@]}" \
         -device virtio-keyboard-pci -device virtio-tablet-pci \
         -device virtio-rng-pci \
         "${usb[@]}" \
@@ -375,11 +388,73 @@ try)
 seat-stop)
     vm_ssh 'sudo systemctl stop consoleui-seat 2>/dev/null; sudo systemctl reset-failed consoleui-seat 2>/dev/null; sudo chvt 1' || true
     ;;
+keys)
+    shift
+    [ $# -gt 0 ] || die "usage: dev/vm.sh keys <qcode[-qcode...]|sleep:MS>..."
+    for chord in "$@"; do
+        if [[ "$chord" == sleep:* ]]; then
+            sleep "$(awk -v ms="${chord#sleep:}" 'BEGIN { print ms / 1000 }')"
+            continue
+        fi
+        keys=""
+        IFS=- read -ra parts <<<"$chord"
+        for part in "${parts[@]}"; do keys+="${keys:+,}{\"type\": \"qcode\", \"data\": \"$part\"}"; done
+        qmp "{\"execute\": \"send-key\", \"arguments\": {\"keys\": [$keys], \"hold-time\": 80}}" >/dev/null
+        sleep 0.15
+    done
+    ;;
+output)
+    [ $# -eq 3 ] || die "usage: dev/vm.sh output <head> <WxH|off>"
+    sock="$VM_DIR/vnc$2.sock"
+    [ -S "$sock" ] || die "no VNC socket for head $2 (start the VM with VM_HEADS=$(($2 + 1)))"
+    if [ "$3" = off ]; then size=(0 0); else size=("${3%x*}" "${3#*x}"); fi
+    # A minimal RFB client: SetDesktopSize makes QEMU pass the size to virtio-gpu as the monitor's
+    # preferred mode (a hotplug event in the guest); 0x0 disables the head (unplug).
+    python3 -I - "$sock" "${size[@]}" <<'EOF'
+import socket, struct, sys
+path, width, height = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
+s = socket.socket(socket.AF_UNIX)
+s.connect(path)
+def read(n):
+    data = b""
+    while len(data) < n:
+        chunk = s.recv(n - len(data))
+        if not chunk:
+            sys.exit("VNC server closed the connection")
+        data += chunk
+    return data
+read(12)
+s.sendall(b"RFB 003.008\n")
+types = read(read(1)[0])
+if 1 not in types:
+    sys.exit("VNC server wants authentication")
+s.sendall(b"\x01")
+if struct.unpack(">I", read(4))[0] != 0:
+    sys.exit("VNC security handshake failed")
+s.sendall(b"\x01")  # shared
+_w, _h = struct.unpack(">HH", read(4))
+read(16)
+read(struct.unpack(">I", read(4))[0])
+# SetEncodings: raw + ExtendedDesktopSize (-308)
+s.sendall(struct.pack(">BxHii", 2, 2, 0, -308))
+# SetDesktopSize with one screen
+s.sendall(struct.pack(">BxHHBx", 251, width, height, 1) + struct.pack(">IHHHHI", 0, 0, 0, width, height, 0))
+s.settimeout(1.0)
+try:
+    s.recv(4096)
+except socket.timeout:
+    pass
+s.close()
+print(f"head {path.rsplit('vnc', 1)[1].split('.')[0]}: {width}x{height}" if width else "head off")
+EOF
+    ;;
 screenshot)
-    [ -n "${2:-}" ] || die "usage: dev/vm.sh screenshot <file.png>"
+    [ -n "${2:-}" ] || die "usage: dev/vm.sh screenshot <file.png> [head]"
     out="$(realpath -m "$2")"
     mkdir -p "$(dirname "$out")"
-    qmp "{\"execute\": \"screendump\", \"arguments\": {\"filename\": \"$out\", \"format\": \"png\"}}" >/dev/null
+    head=""
+    [ -z "${3:-}" ] || head=", \"device\": \"video0\", \"head\": $3"
+    qmp "{\"execute\": \"screendump\", \"arguments\": {\"filename\": \"$out\", \"format\": \"png\"$head}}" >/dev/null
     echo "$out"
     ;;
 console)
@@ -391,7 +466,7 @@ destroy)
     log "deleted the VM (kept $VM_DIR/$IMAGE_NAME)"
     ;;
 *)
-    sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//'
     exit 2
     ;;
 esac
