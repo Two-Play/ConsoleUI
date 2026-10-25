@@ -47,7 +47,15 @@ fn install_signal_handlers() {
 fn main() {
     let filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info,smithay=warn"));
-    tracing_subscriber::fmt().with_env_filter(filter).init();
+    // The log goes to stderr: display managers drop a session's stdout (SDDM keeps stderr in
+    // ~/.cache/wayland-errors, the session script sends both to the journal). Colors only on a
+    // terminal, so log files stay readable.
+    let stderr = std::io::stderr;
+    tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_writer(stderr)
+        .with_ansi(std::io::IsTerminal::is_terminal(&stderr()))
+        .init();
 
     let nested = std::env::var_os("WAYLAND_DISPLAY").is_some() || std::env::var_os("DISPLAY").is_some();
     let options = match Options::parse(std::env::args().skip(1), nested) {

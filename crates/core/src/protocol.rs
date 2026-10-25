@@ -85,6 +85,13 @@ pub enum ShellMessage {
     WindowRole { title: String, role: WindowRole },
     /// Save the composed output as PNG (development, basis for Story 7.12).
     Screenshot { path: String },
+    /// Layout of the physical keyboard (settings row "Keyboard layout"): an xkb layout name such
+    /// as `de`, or `None` for the system layout the compositor detected. The shell sends it after
+    /// `Hello` and on every change; the compositor answers with [`CompositorMessage::Keymap`].
+    KeyboardLayout {
+        #[serde(default)]
+        layout: Option<String>,
+    },
 }
 
 /// Compositor → shell
@@ -117,6 +124,13 @@ pub enum CompositorMessage {
         path: String,
         #[serde(default)]
         error: Option<String>,
+    },
+    /// The keymap the seat keyboard uses now (sent on connect and when it changes). `layout` may
+    /// be a comma-separated list; empty means xkbcommon's default (`us`).
+    Keymap {
+        layout: String,
+        #[serde(default)]
+        variant: String,
     },
 }
 
@@ -189,6 +203,10 @@ mod tests {
             "{\"type\":\"WindowRole\",\"title\":\"T\",\"role\":\"notification\"}\n"
         );
         assert_eq!(encode(&CompositorMessage::Guide), "{\"type\":\"Guide\"}\n");
+        assert_eq!(
+            encode(&ShellMessage::KeyboardLayout { layout: Some("ch".into()) }),
+            "{\"type\":\"KeyboardLayout\",\"layout\":\"ch\"}\n"
+        );
     }
 
     #[test]
@@ -207,6 +225,8 @@ mod tests {
             ShellMessage::WindowRole { title: "ConsoleUI Overlay".into(), role: WindowRole::Overlay },
             ShellMessage::WindowRole { title: "ConsoleUI notification".into(), role: WindowRole::Notification },
             ShellMessage::Screenshot { path: "/tmp/a.png".into() },
+            ShellMessage::KeyboardLayout { layout: Some("de".into()) },
+            ShellMessage::KeyboardLayout { layout: None },
         ];
         let mut reader = LineReader::default();
         for message in &shell {
@@ -225,6 +245,7 @@ mod tests {
             CompositorMessage::AppGone { app_id: 5 },
             CompositorMessage::FocusChanged { target: Target::Shell },
             CompositorMessage::ScreenshotDone { path: "/tmp/a.png".into(), error: None },
+            CompositorMessage::Keymap { layout: "de".into(), variant: "nodeadkeys".into() },
         ];
         for message in &compositor {
             reader.push(encode(message).as_bytes());
@@ -251,6 +272,7 @@ mod tests {
     fn optional_fields_may_be_missing() {
         let mut reader = LineReader::default();
         reader.push(b"{\"type\":\"Launched\",\"app_id\":4}\n{\"type\":\"WindowMapped\",\"app_id\":4}\n");
+        reader.push(b"{\"type\":\"KeyboardLayout\"}\n{\"type\":\"Keymap\",\"layout\":\"de\"}\n");
         assert_eq!(
             reader.next_message::<ShellMessage>(),
             Some(ShellMessage::Launched { app_id: 4, pid: None, scope: None, steam_app_id: None })
@@ -258,6 +280,11 @@ mod tests {
         assert_eq!(
             reader.next_message::<CompositorMessage>(),
             Some(CompositorMessage::WindowMapped { app_id: 4, title: String::new() })
+        );
+        assert_eq!(reader.next_message::<ShellMessage>(), Some(ShellMessage::KeyboardLayout { layout: None }));
+        assert_eq!(
+            reader.next_message::<CompositorMessage>(),
+            Some(CompositorMessage::Keymap { layout: "de".into(), variant: String::new() })
         );
     }
 

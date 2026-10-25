@@ -5,16 +5,20 @@
 #                                if the compositor was built
 # Build first as a normal user:  cargo build --release
 #   and for the compositor:      dev/toolbox.sh run cargo build --release -p consoleui-compositor
+#   (or everything in the toolbox: dev/toolbox.sh run cargo build --release --workspace)
 # Then:                          sudo session/install.sh
 set -eu
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
-bin="$root/target/release/consoleui"
+# The host build of the shell, else the toolbox build (e.g. in the test VM, which has no Rust)
+bin="${CONSOLEUI_BUILD:-$root/target/release/consoleui}"
+[ -x "$bin" ] || bin="$root/target/toolbox/release/consoleui"
 compositor="${CONSOLEUI_COMPOSITOR_BUILD:-$root/target/toolbox/release/consoleui-compositor}"
 if [ ! -x "$bin" ]; then
     echo "Run 'cargo build --release' first." >&2
     exit 1
 fi
+echo "Shell: $bin"
 
 install -Dm755 "$bin" /usr/local/bin/consoleui
 install -Dm755 "$root/session/consoleui-session" /usr/local/bin/consoleui-session

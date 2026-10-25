@@ -9,6 +9,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use consoleui_core::game_options::{GameOptions, GameOptionsPanel, GameOptionsStore, PanelOutcome};
 use consoleui_core::i18n::{self, Language, tr, trf};
+use consoleui_core::keymap::KeyboardLayout;
 use consoleui_core::launch::{self, ProcessHandle};
 use consoleui_core::netpages::Page;
 use consoleui_core::osk::{KeyboardEvent, OnScreenKeyboard};
@@ -262,6 +263,7 @@ impl Shell {
             network: Network::default(),
         };
         shell.apply_settings(ui);
+        shell.send_keyboard_layout();
         shell.refresh(ui);
         shell
     }
@@ -559,10 +561,11 @@ impl Shell {
     }
 
     fn apply_settings_page(&mut self, ui: &AppWindow, action: Action) {
-        let setting = Setting::ALL[self.settings_row];
+        let rows = self.settings_list();
+        let setting = rows[self.settings_row.min(rows.len() - 1)];
         match action {
             Action::Up => self.settings_row = self.settings_row.saturating_sub(1),
-            Action::Down => self.settings_row = (self.settings_row + 1).min(Setting::ALL.len() - 1),
+            Action::Down => self.settings_row = (self.settings_row + 1).min(rows.len() - 1),
             Action::Confirm if setting.opens_page() => {
                 let page = if setting == Setting::Wifi { Page::Wifi } else { Page::Bluetooth };
                 let requests = self.network.pages.open(page);
@@ -574,6 +577,9 @@ impl Shell {
                 self.settings.change(setting, action != Action::Left);
                 if setting == Setting::Language {
                     self.apply_language(ui);
+                }
+                if setting == Setting::KeyboardLayout {
+                    self.send_keyboard_layout();
                 }
                 if let Some(path) = &self.settings_path
                     && let Err(err) = self.settings.save(path)
@@ -638,15 +644,35 @@ impl Shell {
         ui.set_net_view(self.network.view());
     }
 
+    /// Rows of the settings page; the keyboard layout only in our compositor.
+    fn settings_list(&self) -> Vec<Setting> {
+        Setting::rows(self.compositor.is_some())
+    }
+
+    /// Tells our compositor the keyboard layout from the settings (`None`: the system layout).
+    fn send_keyboard_layout(&mut self) {
+        let layout = self.settings.keyboard_layout.code().map(String::from);
+        if let Some(compositor) = &mut self.compositor {
+            compositor.send(&ShellMessage::KeyboardLayout { layout });
+        }
+    }
+
     fn update_settings_rows(&self, ui: &AppWindow) {
-        let rows: Vec<SettingRow> = Setting::ALL
-            .iter()
-            .map(|&setting| SettingRow {
+        let keymap = self.compositor.as_ref().and_then(Compositor::keymap);
+        let rows: Vec<SettingRow> = self
+            .settings_list()
+            .into_iter()
+            .map(|setting| SettingRow {
                 label: setting.label().into(),
                 description: setting.description().into(),
                 value: match setting {
                     Setting::Wifi => self.network.pages.summary(Page::Wifi).into(),
                     Setting::Bluetooth => self.network.pages.summary(Page::Bluetooth).into(),
+                    // Shows what "Automatic" resolved to, e.g. "Automatic: de (nodeadkeys)"
+                    Setting::KeyboardLayout if self.settings.keyboard_layout == KeyboardLayout::Auto => match &keymap {
+                        Some(keymap) => trf("Automatic: {}", &[&keymap]).into(),
+                        None => self.settings.value_label(setting).into(),
+                    },
                     _ => self.settings.value_label(setting).into(),
                 },
                 opens_page: setting.opens_page(),
@@ -949,7 +975,7 @@ impl Shell {
             Screen::Settings if self.network.pages.is_open() => {
                 hints.extend(self.network.hints().into_iter().map(|(button, label)| hint(button, label)));
             }
-            Screen::Settings if Setting::ALL[self.settings_row].opens_page() => {
+            Screen::Settings if self.settings_list().get(self.settings_row).is_some_and(|s| s.opens_page()) => {
                 hints.push(hint(GlyphButton::Updown, tr("Select")));
                 hints.push(hint(GlyphButton::Confirm, tr("Open")));
                 hints.push(hint(GlyphButton::L1, tr("Library")));
@@ -1417,6 +1443,7 @@ impl Shell {
     pub fn poll_compositor(&mut self, ui: &AppWindow) {
         let Some(compositor) = &mut self.compositor else { return };
         let mut guide = false;
+        let mut keymap_changed = false;
         for message in compositor.poll() {
             match message {
                 CompositorMessage::WindowMapped { app_id, .. } => {
@@ -1434,8 +1461,12 @@ impl Shell {
                 }
                 // The keyboard's Guide key, reserved by the compositor (Story 7.5)
                 CompositorMessage::Guide => guide = true,
+                CompositorMessage::Keymap { .. } => keymap_changed = true,
                 _ => {}
             }
+        }
+        if keymap_changed {
+            self.update_settings_rows(ui);
         }
         if guide {
             self.apply(ui, Action::Guide);

@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+use consoleui_core::keymap::{self, Keymap};
 use consoleui_core::ownership;
 use consoleui_core::protocol::{self, CompositorMessage, ShellMessage};
 use smithay::backend::allocator::dmabuf::Dmabuf;
@@ -131,6 +132,10 @@ pub struct State {
     /// they are released, so the app does not get the release of a key the shell got pressed
     /// (Story 7.5).
     pub focus_deferred: bool,
+    /// Keymap detected from the system (`XKB_DEFAULT_*`, localectl, /etc files)
+    pub system_keymap: Keymap,
+    /// Keymap the seat keyboard uses now (the system one or the shell's choice)
+    pub keymap: Keymap,
 
     pub policy: Policy,
     pub control: Control,
@@ -193,10 +198,20 @@ impl State {
         let mut seat_state = SeatState::new();
         let mut seat = seat_state.new_wl_seat(&dh, backend.seat_name());
         let pointer = seat.add_pointer();
-        seat.add_keyboard(XkbConfig::default(), 200, 25)?;
+        let (system_keymap, source) = keymap::detect();
+        info!("keyboard layout {} (from {source:?})", system_keymap.describe());
+        let keymap = match seat.add_keyboard(xkb_config(&system_keymap), 200, 25) {
+            Ok(_) => system_keymap.clone(),
+            Err(err) => {
+                warn!("keymap {system_keymap:?} does not compile ({err}), using the default");
+                seat.add_keyboard(XkbConfig::default(), 200, 25)?;
+                Keymap::default()
+            }
+        };
 
         let runtime_dir = std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
-        let control = Control::listen(&runtime_dir.join(format!("consoleui-{socket_name}.sock")), &handle)?;
+        let mut control = Control::listen(&runtime_dir.join(format!("consoleui-{socket_name}.sock")), &handle)?;
+        control.set_greeting(keymap_message(&keymap));
 
         let dh_for_x = dh.clone();
         Ok(State {
@@ -233,6 +248,8 @@ impl State {
             cursor_status: CursorImageStatus::default_named(),
             suppressed_keys: Vec::new(),
             focus_deferred: false,
+            system_keymap,
+            keymap,
             policy: Policy::default(),
             control,
             shell: None,
@@ -452,8 +469,34 @@ impl State {
                 self.screenshots.push(ScreenshotRequest { path: path.into(), reply: Some(client) });
                 Vec::new()
             }
+            ShellMessage::KeyboardLayout { layout } => {
+                self.set_keyboard_layout(layout.as_deref());
+                Vec::new()
+            }
         };
         self.after_policy_change(events);
+    }
+
+    /// Switches the seat keyboard to `layout` (`None`: the system layout) at runtime; clients get
+    /// the new keymap through `wl_keyboard.keymap` (XWayland passes it on to X11 games).
+    fn set_keyboard_layout(&mut self, layout: Option<&str>) {
+        let wanted = self.system_keymap.with_layout(layout);
+        if wanted != self.keymap
+            && let Some(keyboard) = self.seat.get_keyboard()
+        {
+            match keyboard.set_xkb_config(self, xkb_config(&wanted)) {
+                Ok(()) => {
+                    info!("keyboard layout -> {}", wanted.describe());
+                    self.keymap = wanted;
+                }
+                Err(err) => {
+                    warn!("keyboard layout {layout:?} does not compile ({err}), keeping {}", self.keymap.describe())
+                }
+            }
+        }
+        let message = keymap_message(&self.keymap);
+        self.control.set_greeting(message.clone());
+        self.control.broadcast(&message);
     }
 
     /// Takes a screenshot `delay` after now (`--screenshot-after`).
@@ -830,3 +873,19 @@ impl PointerConstraintsHandler for State {
 }
 
 smithay::delegate_dispatch2!(State);
+
+/// The xkb names of a [`Keymap`]; empty fields fall back to `XKB_DEFAULT_*` and then xkbcommon's
+/// defaults.
+fn xkb_config(keymap: &Keymap) -> XkbConfig<'_> {
+    XkbConfig {
+        rules: &keymap.rules,
+        model: &keymap.model,
+        layout: &keymap.layout,
+        variant: &keymap.variant,
+        options: (!keymap.options.is_empty()).then(|| keymap.options.clone()),
+    }
+}
+
+fn keymap_message(keymap: &Keymap) -> CompositorMessage {
+    CompositorMessage::Keymap { layout: keymap.layout.clone(), variant: keymap.variant.clone() }
+}

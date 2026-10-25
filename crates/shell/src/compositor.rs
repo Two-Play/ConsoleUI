@@ -29,6 +29,8 @@ pub struct Compositor {
     overlay: bool,
     /// Optional features from the compositor's `Welcome`
     features: Vec<String>,
+    /// Keymap the compositor reports for the seat keyboard, e.g. `de (nodeadkeys)`
+    keymap: Option<String>,
 }
 
 impl Compositor {
@@ -54,6 +56,7 @@ impl Compositor {
             output: None,
             overlay: false,
             features: Vec::new(),
+            keymap: None,
         };
         compositor.send(&ShellMessage::Hello { version: protocol::VERSION, pid: std::process::id() });
         // An older compositor skips these; the windows are then never shown (see `overlays`).
@@ -95,6 +98,10 @@ impl Compositor {
         self.features.iter().any(|f| f == protocol::FEATURE_OVERLAYS)
     }
 
+    pub fn keymap(&self) -> Option<String> {
+        self.keymap.clone()
+    }
+
     /// Messages that arrived since the last call.
     pub fn poll(&mut self) -> Vec<CompositorMessage> {
         self.flush();
@@ -112,6 +119,14 @@ impl Compositor {
         while let Some(message) = self.reader.next_message::<CompositorMessage>() {
             match &message {
                 CompositorMessage::Output { width, height } => self.output = Some((*width, *height)),
+                CompositorMessage::Keymap { layout, variant } => {
+                    let keymap = consoleui_core::keymap::Keymap {
+                        layout: layout.clone(),
+                        variant: variant.clone(),
+                        ..Default::default()
+                    };
+                    self.keymap = Some(keymap.describe());
+                }
                 CompositorMessage::Welcome { version, features } => {
                     if *version != protocol::VERSION {
                         eprintln!("compositor speaks protocol {version}, shell {}", protocol::VERSION);
