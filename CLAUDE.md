@@ -70,7 +70,8 @@ Compositor options: `--winit`/`--drm` (default: winit when `WAYLAND_DISPLAY`/`DI
 after `--` or `--shell`. **Never run `--drm` on the host** (it takes over the display); test it in the VM.
 
 Test VM for the DRM backend and the login session (`docs/dev-vm.md`): `dev/vm.sh create` once, then
-`dev/vm.sh start [--headless]`. The main checkout is shared at the same path, so toolbox builds run in
+`dev/vm.sh start [--headless]`. `dev/vm.sh try [--real]` starts the VM with a window and runs the
+compositor with the shell on its seat, for trying it by hand. The main checkout is shared at the same path, so toolbox builds run in
 the guest; `dev/vm.sh ssh '<cmd>'` runs a command there, `dev/vm.sh screenshot <png>` captures the guest
 display, and `dev/vm.sh seat '<cmd>'` runs a command as an active logind session on seat0/VT 7 (log in
 `~/seat.log` in the guest), which is what `consoleui-compositor --drm` needs. The guest renders with

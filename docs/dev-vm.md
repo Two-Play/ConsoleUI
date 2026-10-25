@@ -12,6 +12,8 @@ run directly in the guest.
 ```bash
 dev/vm.sh create                 # once (~10 min): download + verify the image, first boot installs packages
 dev/vm.sh start                  # display in a QEMU window; `start --headless` for scripted runs
+dev/vm.sh try                    # try it by hand: compositor --drm + shell (dummy entries, glxgears) in the window
+dev/vm.sh try --real             # same with the guest's real library; extra args go to the shell
 dev/vm.sh ssh 'ls target/toolbox/release'      # runs in the shared checkout, as user `tester` (uid 1000)
 dev/vm.sh seat target/toolbox/release/consoleui-compositor --drm   # on seat0, VT 7, log: ~/seat.log
 dev/vm.sh screenshot /tmp/vm.png # QMP screendump of the guest display, also headless

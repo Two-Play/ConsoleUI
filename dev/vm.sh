@@ -17,6 +17,10 @@
 #   dev/vm.sh scp <src...> <dst>   copy files, prefix guest paths with ':' (e.g. dev/vm.sh scp a.bin :/tmp/)
 #   dev/vm.sh seat <cmd...>        run cmd as a logind session on seat0 (VT 7, active), log in ~/seat.log
 #   dev/vm.sh seat-stop            stop the seat session and switch back to VT 1
+#   dev/vm.sh try [--real] [args]  try it by hand: start the VM with a window if needed, then run
+#                                  consoleui-compositor --drm with the shell on the seat (dummy entries
+#                                  and glxgears as the "game" unless --real; extra args go to the shell;
+#                                  the host's LANG is passed on). Quit with Ctrl+Q, back to VT 1 after.
 #   dev/vm.sh screenshot <png>     QMP screendump of the VM display as PNG (works headless too)
 #   dev/vm.sh console              follow the serial console log
 #   dev/vm.sh destroy              stop and delete disk, seed and keys (the downloaded image is kept)
@@ -350,6 +354,23 @@ seat)
         -p WorkingDirectory=$(printf '%q' "$VM_SHARE") \
         /bin/bash -lc $(printf '%q' "exec >>~/seat.log 2>&1; echo \"== \$(date -Is) seat session\"; $(quote "$@")")"
     log "started on seat0/VT 7, log: dev/vm.sh ssh tail -f ~/seat.log"
+    ;;
+try)
+    shift
+    real=0
+    if [ "${1:-}" = "--real" ]; then real=1; shift; fi
+    bin="target/toolbox/release"
+    [ -x "$VM_SHARE/$bin/consoleui-compositor" ] && [ -x "$VM_SHARE/$bin/consoleui" ] ||
+        die "build first: dev/toolbox.sh run cargo build --release --workspace"
+    running || "$0" start
+    shell_args=()
+    [ "$real" = 1 ] || shell_args+=(--dummy --dummy-launch glxgears)
+    shell_args+=("$@")
+    cmd="LANG=$(printf '%q' "${LANG:-C.UTF-8}") $bin/consoleui-compositor --drm -- $bin/consoleui"
+    [ ${#shell_args[@]} -eq 0 ] || cmd+=" $(printf '%q ' "${shell_args[@]}")"
+    # Back to the autologin console on VT 1 once the shell (and with it the compositor) has quit.
+    "$0" seat "$cmd; sudo chvt 1"
+    log "running on VT 7 in the QEMU window; click into it (Ctrl+Alt+G releases the mouse)"
     ;;
 seat-stop)
     vm_ssh 'sudo systemctl stop consoleui-seat 2>/dev/null; sudo systemctl reset-failed consoleui-seat 2>/dev/null; sudo chvt 1' || true
