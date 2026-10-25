@@ -5,20 +5,24 @@ use std::time::{Duration, Instant};
 
 use consoleui_core::input::GlyphStyle;
 use consoleui_core::status::{self, Network};
-use consoleui_core::{Action, AppEntry, History, apply_history, discover_library, dummy_library, sort_by_recent};
+use consoleui_core::{
+    Action, AppEntry, History, Launch, apply_history, discover_library, dummy_library, sort_by_recent,
+};
 use slint::{RenderingState, Rgba8Pixel, SharedPixelBuffer, Timer, TimerMode};
 
 mod cover;
 mod gamepad;
+mod gamescope;
 mod options;
 mod perf;
+mod quick;
 mod shell;
 mod tiles;
 
 use gamepad::Gamepads;
-use options::{Options, StartScreen, USAGE};
+use options::{Options, ScriptStep, StartScreen, USAGE};
 use perf::FrameStats;
-use shell::Shell;
+use shell::{GamescopeUi, Shell};
 
 slint::include_modules!();
 
@@ -26,6 +30,7 @@ const BENCH_STEP: Duration = Duration::from_millis(200);
 /// Abfrage-Intervall für Gamepads (gilrs liefert Events nur auf Nachfrage).
 const GAMEPAD_POLL: Duration = Duration::from_millis(8);
 const SNAPSHOT_DELAY: Duration = Duration::from_millis(1500);
+const SCRIPT_START_DELAY: Duration = Duration::from_millis(800);
 /// Wie oft geprüft wird, ob die gestartete App noch läuft.
 const WATCH_INTERVAL: Duration = Duration::from_millis(500);
 
@@ -46,7 +51,25 @@ fn main() -> Result<(), Box<dyn Error>> {
     ui.set_show_fps(options.show_fps || options.bench);
 
     let (entries, history, history_path) = load_library(&options);
-    let shell = Rc::new(RefCell::new(Shell::new(&ui, entries, history, history_path)));
+    // In der gamescope-Session (Steam-Modus) steuert die Shell die Fenster selbst und zeigt das
+    // Quick-Menü als eigenes Overlay-Fenster.
+    let gamescope = match gamescope::Gamescope::connect() {
+        Some(control) => Some(GamescopeUi::new(control, OverlayWindow::new()?)),
+        None => None,
+    };
+    let overlay = gamescope.as_ref().map(|g| g.overlay.as_weak());
+    let shell = Rc::new(RefCell::new(Shell::new(&ui, entries, history, history_path, gamescope)));
+    if let Some(overlay) = overlay.and_then(|o| o.upgrade()) {
+        overlay.on_action({
+            let ui = ui.as_weak();
+            let shell = shell.clone();
+            move |nav| {
+                if let Some(ui) = ui.upgrade() {
+                    shell.borrow_mut().apply(&ui, to_action(nav));
+                }
+            }
+        });
+    }
     ui.on_action({
         let ui = ui.as_weak();
         let shell = shell.clone();
@@ -94,12 +117,13 @@ fn main() -> Result<(), Box<dyn Error>> {
             move || {
                 let Some(ui) = ui.upgrade() else { return };
                 let actions = gamepads.borrow_mut().poll(Instant::now());
-                // gilrs liest die Geräte direkt; ohne Fensterfokus gehören die Eingaben dem Spiel.
-                if !ui.get_window_active() {
-                    return;
-                }
                 for action in actions {
-                    shell.borrow_mut().apply(&ui, action);
+                    // gilrs liest die Geräte direkt; ohne Fensterfokus gehören die Eingaben dem
+                    // Spiel, bis auf die PS-Taste und das offene Quick-Menü.
+                    let accepted = ui.get_window_active() || shell.borrow().accepts_unfocused(action);
+                    if accepted {
+                        shell.borrow_mut().apply(&ui, action);
+                    }
                 }
             }
         });
@@ -143,6 +167,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     if let Some(query) = &options.query {
         shell.borrow_mut().type_text(&ui, query);
     }
+    let _script = (!options.actions.is_empty()).then(|| run_script(&ui, shell.clone(), options.actions.clone()));
+
     let snapshot_timer = Timer::default();
     if let Some(path) = options.snapshot.clone() {
         // Etwas warten, bis Seitenwechsel und Hero-Überblendung fertig sind.
@@ -180,7 +206,37 @@ fn load_library(options: &Options) -> (Vec<AppEntry>, History, Option<std::path:
         }
         eprintln!("Keine Spiele oder Apps gefunden, zeige Dummy-Einträge.");
     }
-    (dummy_library(options.tiles), History::default(), None)
+    let mut entries = dummy_library(options.tiles);
+    if let Some(command) = &options.dummy_launch {
+        let argv: Vec<String> = command.split_whitespace().map(str::to_string).collect();
+        for entry in &mut entries {
+            entry.launch = Launch::Command(argv.clone());
+        }
+    }
+    (entries, History::default(), None)
+}
+
+/// Spielt `--actions` ab (für Tests ohne echte Eingabe). Die Aktionen gehen direkt an die Shell,
+/// unabhängig vom Fensterfokus.
+fn run_script(ui: &AppWindow, shell: Rc<RefCell<Shell>>, steps: Vec<ScriptStep>) -> Timer {
+    let ui = ui.as_weak();
+    let mut next = 0;
+    // Kurz warten, bis das Fenster steht
+    let mut due = Instant::now() + SCRIPT_START_DELAY;
+    let timer = Timer::default();
+    timer.start(TimerMode::Repeated, Duration::from_millis(20), move || {
+        let Some(ui) = ui.upgrade() else { return };
+        if Instant::now() < due {
+            return;
+        }
+        match steps.get(next) {
+            Some(ScriptStep::Wait(ms)) => due = Instant::now() + Duration::from_millis(*ms),
+            Some(ScriptStep::Action(action)) => shell.borrow_mut().apply(&ui, *action),
+            None => return,
+        }
+        next += 1;
+    });
+    timer
 }
 
 fn save_png(path: &std::path::Path, pixels: &SharedPixelBuffer<Rgba8Pixel>) -> Result<(), Box<dyn Error>> {
@@ -205,6 +261,7 @@ fn to_action(nav: NavAction) -> Action {
         NavAction::Secondary => Action::Secondary,
         NavAction::PrevTab => Action::PrevTab,
         NavAction::NextTab => Action::NextTab,
+        NavAction::Guide => Action::Guide,
     }
 }
 

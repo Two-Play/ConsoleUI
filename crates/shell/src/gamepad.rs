@@ -101,7 +101,7 @@ fn is_supported(gamepad: &Gamepad) -> bool {
 }
 
 /// Kreuz/A bestätigt, Kreis/B geht zurück, Dreieck/Y sucht, Quadrat/X filtert, L1/R1 wechseln
-/// die Tabs, Options/Start und PS/Guide öffnen das Menü.
+/// die Tabs, Options/Start öffnet das Menü, PS/Guide die Steuerzentrale.
 fn button_action(button: Button) -> Option<Action> {
     Some(match button {
         Button::DPadUp => Action::Up,
@@ -114,7 +114,8 @@ fn button_action(button: Button) -> Option<Action> {
         Button::West => Action::Secondary,
         Button::LeftTrigger => Action::PrevTab,
         Button::RightTrigger => Action::NextTab,
-        Button::Start | Button::Mode => Action::Menu,
+        Button::Start => Action::Menu,
+        Button::Mode => Action::Guide,
         _ => return None,
     })
 }

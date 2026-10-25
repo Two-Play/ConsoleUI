@@ -1,20 +1,25 @@
-//! Zustand der Shell: Einträge, Bildschirme, Fokus, Historie und die Verbindung zur UI.
+//! Zustand der Shell: Einträge, Bildschirme, Fokus, Historie, laufende Apps und die Verbindung
+//! zur UI (Hauptfenster, in gamescope zusätzlich Overlay-Fenster und Fenstersteuerung).
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use consoleui_core::launch::{self, ProcessHandle};
 use consoleui_core::osk::{KeyboardEvent, OnScreenKeyboard};
+use consoleui_core::ownership::{self, FIRST_DESKTOP_APP_ID, Owner, SHELL_APP_ID};
 use consoleui_core::running::{MIN_HOLD, Phase, RunningApp};
+use consoleui_core::system;
 use consoleui_core::{
     Action, AppEntry, AppKind, Carousel, Grid, History, Launch, LibraryFilter, LibrarySort, library_view, search,
     steam,
 };
-use slint::{Image, ModelRc, VecModel};
+use slint::{ComponentHandle, Image, ModelRc, VecModel};
 
-use crate::{AppTile, AppWindow, ControllerStyle, GlyphButton, Hint, KeyCap, Screen, tiles};
+use crate::gamescope::{Gamescope, x11_window_id};
+use crate::quick::{ForegroundApp, QuickAction, QuickMenu, QuickOutcome};
+use crate::{AppTile, AppWindow, ControllerStyle, GlyphButton, Hint, KeyCap, OverlayWindow, Screen, tiles};
 
 /// So viele zuletzt genutzte Einträge zeigt die Home-Reihe vor der Bibliothekskachel.
 const HOME_COUNT: usize = 12;
@@ -30,11 +35,31 @@ enum Stop {
     Steam(u32),
 }
 
-/// Die zuletzt gestartete App, solange sie läuft (oder gerade startet).
+/// Eine gestartete App, solange sie läuft (oder gerade startet).
 struct Running {
     entry_id: String,
+    /// App-ID für gamescope (`STEAM_GAME`)
+    app_id: u32,
     app: RunningApp,
     stop: Stop,
+    /// Woran ihre Prozesse erkennbar sind (für die Fensterzuordnung)
+    owner: Option<Owner>,
+    /// Schon ein Fenster in gamescope zugeordnet?
+    has_window: bool,
+}
+
+/// Nur in der gamescope-Session: Fenstersteuerung und das Overlay-Fenster für das Quick-Menü.
+pub struct GamescopeUi {
+    pub control: Gamescope,
+    pub overlay: OverlayWindow,
+    /// X11-ID, für die das Overlay vorbereitet ist (ändert sich, falls Slint das Fenster neu anlegt)
+    overlay_window: Option<u32>,
+}
+
+impl GamescopeUi {
+    pub fn new(control: Gamescope, overlay: OverlayWindow) -> Self {
+        Self { control, overlay, overlay_window: None }
+    }
 }
 
 pub struct Shell {
@@ -69,15 +94,27 @@ pub struct Shell {
     heroes: HashMap<String, Image>,
     /// Eintrag, dessen Hero gerade angezeigt wird (verhindert unnötiges Überblenden)
     hero_entry: Option<String>,
-    running: Option<Running>,
+
+    running: Vec<Running>,
+    next_app_id: u32,
+    /// App, die in gamescope gerade vorne ist (`None`: die Shell)
+    foreground: Option<u32>,
     /// Zeitpunkt eines fehlgeschlagenen Starts; der Startbildschirm zeigt den Fehler kurz an.
     failed_launch: Option<Instant>,
     /// Eintrags-ID, deren Beenden gerade bestätigt werden soll
     confirm_quit: Option<String>,
+    quick: Option<QuickMenu>,
+    gamescope: Option<GamescopeUi>,
 }
 
 impl Shell {
-    pub fn new(ui: &AppWindow, mut entries: Vec<AppEntry>, history: History, history_path: Option<PathBuf>) -> Self {
+    pub fn new(
+        ui: &AppWindow,
+        mut entries: Vec<AppEntry>,
+        history: History,
+        history_path: Option<PathBuf>,
+        gamescope: Option<GamescopeUi>,
+    ) -> Self {
         let today = tiles::today();
         let tile_list = entries.iter_mut().enumerate().map(|(i, entry)| tiles::to_tile(entry, i, today)).collect();
 
@@ -95,6 +132,11 @@ impl Shell {
         ui.set_home_tiles(ModelRc::from(home_model.clone()));
         ui.set_library_tiles(ModelRc::from(library_model.clone()));
         ui.set_results(ModelRc::from(results_model.clone()));
+
+        if let Some(gamescope) = &gamescope {
+            // Im Steam-Modus ist ohne Baselayer gar nichts zu sehen.
+            gamescope.control.set_baselayer(&[SHELL_APP_ID]);
+        }
 
         let mut shell = Self {
             library_tile: tiles::library_tile(entries.len()),
@@ -119,9 +161,13 @@ impl Shell {
             history_path,
             heroes: HashMap::new(),
             hero_entry: None,
-            running: None,
+            running: Vec::new(),
+            next_app_id: FIRST_DESKTOP_APP_ID,
+            foreground: None,
             failed_launch: None,
             confirm_quit: None,
+            quick: None,
+            gamescope,
         };
         shell.refresh(ui);
         shell
@@ -141,11 +187,25 @@ impl Shell {
         self.tiles.len().min(HOME_COUNT) + 1
     }
 
+    /// Eingaben, die auch ohne Fensterfokus gelten: alles im offenen Quick-Menü und in gamescope
+    /// die PS-/Guide-Taste (dort liegt das Spiel vorne und hat den Fokus).
+    pub fn accepts_unfocused(&self, action: Action) -> bool {
+        self.quick.is_some() || (self.gamescope.is_some() && action == Action::Guide)
+    }
+
     pub fn apply(&mut self, ui: &AppWindow, action: Action) {
+        if self.quick.is_some() {
+            self.apply_quick(ui, action);
+            return;
+        }
+        if action == Action::Guide {
+            self.open_quick(ui);
+            return;
+        }
         if ui.get_launching() {
             // „Zurück“ holt die Übersicht, die App läuft weiter und bleibt verfolgt.
             if action == Action::Back {
-                ui.set_launching(false);
+                self.show_shell(ui);
             }
             return;
         }
@@ -248,7 +308,7 @@ impl Shell {
     pub fn type_text(&mut self, ui: &AppWindow, text: &str) -> bool {
         let printable = !text.is_empty()
             && text.chars().all(|c| !c.is_control() && !('\u{e000}'..='\u{f8ff}').contains(&c));
-        if !printable || self.screen != Screen::Search || ui.get_launching() {
+        if !printable || self.screen != Screen::Search || ui.get_launching() || self.quick.is_some() {
             return false;
         }
         self.search_area = SearchArea::Keyboard;
@@ -299,8 +359,8 @@ impl Shell {
         }
     }
 
-    fn is_running(&self, index: usize) -> bool {
-        self.running.as_ref().is_some_and(|r| r.entry_id == self.entries[index].id)
+    fn running_for(&self, index: usize) -> Option<&Running> {
+        self.running.iter().find(|r| r.entry_id == self.entries[index].id)
     }
 
     // --- Modelle und Anzeige ---------------------------------------------------------------
@@ -392,8 +452,8 @@ impl Shell {
             Screen::Home => {
                 hints.push(hint(GlyphButton::Dpad, "Navigieren"));
                 match self.home_entry() {
-                    Some(i) if self.is_running(i) => {
-                        hints.push(hint(GlyphButton::Confirm, "Anzeigen"));
+                    Some(i) if self.running_for(i).is_some() => {
+                        hints.push(hint(GlyphButton::Confirm, "Fortsetzen"));
                         hints.push(hint(GlyphButton::Menu, "Beenden"));
                     }
                     Some(i) => hints.push(hint(GlyphButton::Confirm, start_label(i))),
@@ -401,6 +461,7 @@ impl Shell {
                 }
                 hints.push(hint(GlyphButton::North, "Suchen"));
                 hints.push(hint(GlyphButton::R1, "Bibliothek"));
+                hints.push(hint(GlyphButton::Guide, "Steuerzentrale"));
                 if keyboard {
                     hints.push(hint(GlyphButton::Quit, "Shell beenden"));
                 }
@@ -408,7 +469,8 @@ impl Shell {
             Screen::Library => {
                 hints.push(hint(GlyphButton::Dpad, "Navigieren"));
                 if let Some(i) = self.focused_entry() {
-                    hints.push(hint(GlyphButton::Confirm, start_label(i)));
+                    let label = if self.running_for(i).is_some() { "Fortsetzen" } else { start_label(i) };
+                    hints.push(hint(GlyphButton::Confirm, label));
                 }
                 hints.push(hint(GlyphButton::West, "Filter"));
                 hints.push(hint(GlyphButton::Menu, "Sortierung"));
@@ -436,9 +498,98 @@ impl Shell {
         ui.set_hints(ModelRc::new(VecModel::from(hints)));
     }
 
+    // --- Quick-Menü ------------------------------------------------------------------------
+
+    fn open_quick(&mut self, ui: &AppWindow) {
+        let foreground = self.foreground.and_then(|app_id| {
+            let running = self.running.iter().find(|r| r.app_id == app_id)?;
+            let entry = self.entries.iter().find(|e| e.id == running.entry_id)?;
+            Some(ForegroundApp { app_id, entry_id: entry.id.clone(), title: entry.title.clone() })
+        });
+        self.quick = Some(QuickMenu::new(foreground));
+        self.show_quick(ui, true);
+    }
+
+    fn apply_quick(&mut self, ui: &AppWindow, action: Action) {
+        let Some(quick) = self.quick.as_mut() else { return };
+        match quick.apply(action) {
+            QuickOutcome::Stay => self.show_quick(ui, true),
+            QuickOutcome::Close => self.close_quick(ui),
+            QuickOutcome::Run(action) => {
+                self.close_quick(ui);
+                match action {
+                    QuickAction::Resume(app_id) => self.bring_to_front(ui, app_id),
+                    QuickAction::Home => {
+                        self.show_shell(ui);
+                        self.screen = Screen::Home;
+                        self.sync(ui);
+                    }
+                    QuickAction::Quit(entry_id) => self.quit_running(&entry_id),
+                    QuickAction::Volume => {}
+                    QuickAction::Power(power) => {
+                        if let Err(err) = system::power(power) {
+                            eprintln!("Energieaktion fehlgeschlagen: {err}");
+                        }
+                    }
+                    QuickAction::Logout => {
+                        let _ = slint::quit_event_loop();
+                    }
+                }
+            }
+        }
+    }
+
+    fn close_quick(&mut self, ui: &AppWindow) {
+        self.show_quick(ui, false);
+        self.quick = None;
+    }
+
+    /// Zeigt das Quick-Menü im Overlay-Fenster (gamescope) oder als Ebene im Hauptfenster.
+    fn show_quick(&mut self, ui: &AppWindow, open: bool) {
+        let Some(quick) = &self.quick else { return };
+        let items = ModelRc::new(VecModel::from(quick.items()));
+        let (title, focused) = (quick.title(), quick.focused() as i32);
+        let Some(gamescope) = &mut self.gamescope else {
+            ui.set_quick_items(items);
+            ui.set_quick_title(title.into());
+            ui.set_quick_focused(focused);
+            ui.set_quick_open(open);
+            return;
+        };
+        let overlay = &gamescope.overlay;
+        overlay.set_items(items);
+        overlay.set_title_text(title.into());
+        overlay.set_focused(focused);
+        overlay.set_controller_style(ui.get_controller_style());
+        if open && !overlay.get_open() {
+            show_overlay_window(gamescope);
+            // Erst nach dem Anzeigen öffnen, damit die Leiste hereingleitet.
+            let weak = gamescope.overlay.as_weak();
+            slint::Timer::single_shot(Duration::from_millis(30), move || {
+                if let Some(overlay) = weak.upgrade() {
+                    overlay.set_open(true);
+                }
+            });
+        } else if !open {
+            overlay.set_open(false);
+            let weak = gamescope.overlay.as_weak();
+            slint::Timer::single_shot(Duration::from_millis(450), move || {
+                if let Some(overlay) = weak.upgrade().filter(|o| !o.get_open()) {
+                    let _ = overlay.hide();
+                }
+            });
+        }
+    }
+
     // --- Starten, Verfolgen, Beenden -------------------------------------------------------
 
     fn launch(&mut self, ui: &AppWindow, index: usize) {
+        // Läuft die App schon, kommt sie nur wieder nach vorn.
+        if let Some(app_id) = self.running_for(index).map(|r| r.app_id) {
+            self.bring_to_front(ui, app_id);
+            return;
+        }
+
         let hero = self.hero(index);
         let entry = &self.entries[index];
         let tile = &self.tiles[index];
@@ -446,26 +597,21 @@ impl Shell {
         ui.set_launch_image(hero.unwrap_or_else(|| tile.cover.clone()));
         ui.set_launch_accent(tile.accent);
 
-        // Läuft die App schon, zeigen wir nur den Startbildschirm, statt sie ein zweites Mal zu starten.
-        if self.is_running(index) {
-            ui.set_launch_status("läuft".into());
-            ui.set_launching(true);
-            return;
-        }
-
         let now = Instant::now();
         let id = entry.id.clone();
         match launch::spawn(&entry.launch) {
             Ok(handle) => {
-                let (app, stop) = match entry.launch {
-                    Launch::Steam(app_id) => (RunningApp::steam(app_id, now), Stop::Steam(app_id)),
-                    _ => (RunningApp::process(handle.clone(), now), Stop::Process(handle)),
+                let (app_id, app, stop, owner) = match entry.launch {
+                    Launch::Steam(steam_id) => {
+                        (steam_id, RunningApp::steam(steam_id, now), Stop::Steam(steam_id), Some(Owner::Steam(steam_id)))
+                    }
+                    _ => {
+                        let app_id = self.next_app_id;
+                        self.next_app_id += 1;
+                        (app_id, RunningApp::process(handle.clone(), now), Stop::Process(handle.clone()), handle.owner())
+                    }
                 };
-                // Es wird nur die zuletzt gestartete App verfolgt.
-                if let Some(previous) = self.running.take() {
-                    self.set_running_flag(&previous.entry_id, false);
-                }
-                self.running = Some(Running { entry_id: id.clone(), app, stop });
+                self.running.push(Running { entry_id: id.clone(), app_id, app, stop, owner, has_window: false });
                 ui.set_launch_status("wird gestartet …".into());
                 ui.set_launching(true);
                 self.set_running_flag(&id, true);
@@ -473,12 +619,49 @@ impl Shell {
                 self.home.focus(0);
                 self.refresh(ui);
                 self.focus_entry(&id);
+                self.set_foreground(Some(app_id));
             }
             Err(err) => {
                 eprintln!("{} konnte nicht gestartet werden: {err}", entry.title);
                 ui.set_launch_status("konnte nicht gestartet werden".into());
                 ui.set_launching(true);
                 self.failed_launch = Some(now);
+            }
+        }
+    }
+
+    /// Holt eine laufende App nach vorn. Ohne gamescope geht das nicht; dann zeigt der
+    /// Startbildschirm, dass sie läuft.
+    fn bring_to_front(&mut self, ui: &AppWindow, app_id: u32) {
+        if self.gamescope.is_some() {
+            self.set_foreground(Some(app_id));
+            return;
+        }
+        let Some(index) = self.running.iter().find(|r| r.app_id == app_id).and_then(|r| {
+            self.entries.iter().position(|e| e.id == r.entry_id)
+        }) else {
+            return;
+        };
+        let hero = self.hero(index);
+        ui.set_launch_title(self.tiles[index].title.clone());
+        ui.set_launch_image(hero.unwrap_or_else(|| self.tiles[index].cover.clone()));
+        ui.set_launch_accent(self.tiles[index].accent);
+        ui.set_launch_status("läuft".into());
+        ui.set_launching(true);
+    }
+
+    /// Die Shell nach vorn holen; laufende Apps laufen im Hintergrund weiter.
+    fn show_shell(&mut self, ui: &AppWindow) {
+        ui.set_launching(false);
+        self.set_foreground(None);
+    }
+
+    fn set_foreground(&mut self, app_id: Option<u32>) {
+        self.foreground = app_id;
+        if let Some(gamescope) = &self.gamescope {
+            match app_id {
+                Some(app_id) => gamescope.control.set_baselayer(&[app_id, SHELL_APP_ID]),
+                None => gamescope.control.set_baselayer(&[SHELL_APP_ID]),
             }
         }
     }
@@ -493,8 +676,8 @@ impl Shell {
         }
     }
 
-    /// Prüft regelmäßig, ob die gestartete App noch läuft. In gamescope wird die Shell wieder
-    /// sichtbar, sobald das App-Fenster zu ist; dann fährt hier der Startbildschirm zurück.
+    /// Läuft regelmäßig: ordnet in gamescope neue Fenster ihren Apps zu und prüft, welche Apps
+    /// beendet sind. Ist die App vorne fertig, kommt die Shell mit Animation zurück.
     pub fn watch_running(&mut self, ui: &AppWindow) {
         if let Some(failed) = self.failed_launch
             && failed.elapsed() >= MIN_HOLD
@@ -502,24 +685,64 @@ impl Shell {
             self.failed_launch = None;
             ui.set_launching(false);
         }
-        let Some(running) = self.running.as_mut() else { return };
-        let steam_running = if running.app.is_steam() { steam::running_app_id() } else { None };
-        match running.app.phase(Instant::now(), steam_running) {
-            Phase::Starting => {}
-            Phase::Running => {
-                if ui.get_launching() {
-                    ui.set_launch_status("läuft".into());
+        self.tag_windows(ui);
+
+        let now = Instant::now();
+        let steam_running =
+            if self.running.iter().any(|r| r.app.is_steam()) { steam::running_app_id() } else { None };
+        let mut finished = Vec::new();
+        for running in &mut self.running {
+            match running.app.phase(now, steam_running) {
+                Phase::Starting => {}
+                Phase::Running => {
+                    if ui.get_launching() && self.foreground == Some(running.app_id) {
+                        ui.set_launch_status("läuft".into());
+                    }
                 }
+                Phase::Finished => finished.push((running.entry_id.clone(), running.app_id)),
             }
-            Phase::Finished => {
-                let id = running.entry_id.clone();
-                self.running = None;
-                ui.set_launching(false);
-                if self.confirm_quit.as_deref() == Some(id.as_str()) {
-                    self.close_confirm(ui);
+        }
+        if finished.is_empty() {
+            return;
+        }
+        self.running.retain(|r| !finished.iter().any(|(_, app_id)| *app_id == r.app_id));
+        for (entry_id, app_id) in &finished {
+            self.set_running_flag(entry_id, false);
+            if self.confirm_quit.as_deref() == Some(entry_id.as_str()) {
+                self.close_confirm(ui);
+            }
+            if self.foreground == Some(*app_id) {
+                self.show_shell(ui);
+            }
+        }
+        self.refresh(ui);
+    }
+
+    /// gamescope zeigt im Steam-Modus nur Fenster mit App-ID; die vergibt die Shell hier.
+    fn tag_windows(&mut self, ui: &AppWindow) {
+        let Some(gamescope) = &mut self.gamescope else { return };
+        let own_pid = std::process::id();
+        let apps: Vec<(u32, Owner)> =
+            self.running.iter().filter_map(|r| r.owner.clone().map(|owner| (r.app_id, owner))).collect();
+        // Fenster ohne erkennbaren Besitzer (z. B. Steam selbst beim ersten Start) gehören zur
+        // zuletzt gestarteten App, die noch kein Fenster hat.
+        let fallback = self.running.iter().rev().find(|r| !r.has_window).map(|r| r.app_id);
+        let tagged = gamescope.control.tag_windows(
+            |pid| {
+                if pid == own_pid {
+                    Some(SHELL_APP_ID)
+                } else {
+                    ownership::owner_of(pid, &apps, ownership::read_process)
                 }
-                if self.set_running_flag(&id, false) {
-                    self.refresh(ui);
+            },
+            fallback,
+        );
+        for app_id in tagged {
+            if let Some(running) = self.running.iter_mut().find(|r| r.app_id == app_id) {
+                running.has_window = true;
+                // Das Spiel ist jetzt zu sehen; der Startbildschirm darunter wird nicht mehr gebraucht.
+                if self.foreground == Some(app_id) {
+                    ui.set_launching(false);
                 }
             }
         }
@@ -530,13 +753,14 @@ impl Shell {
         let Some(index) = self.entries.iter().position(|e| e.id == id) else { return false };
         let tile = &mut self.tiles[index];
         tile.running = running;
+        tile.action_label = tiles::action_label(self.entries[index].kind, running).into();
         tile.subtitle =
             if running { "Läuft gerade".into() } else { tiles::subtitle(&self.entries[index], tiles::today()).into() };
         true
     }
 
     fn ask_quit(&mut self, ui: &AppWindow, index: usize) {
-        if !self.is_running(index) {
+        if self.running_for(index).is_none() {
             return;
         }
         self.confirm_quit = Some(self.entries[index].id.clone());
@@ -552,8 +776,8 @@ impl Shell {
     }
 
     /// Bittet die App, sich zu beenden. Das Badge verschwindet, sobald `watch_running` das Ende sieht.
-    fn quit_running(&mut self, id: &str) {
-        let Some(running) = self.running.as_ref().filter(|r| r.entry_id == id) else { return };
+    fn quit_running(&mut self, entry_id: &str) {
+        let Some(running) = self.running.iter().find(|r| r.entry_id == entry_id) else { return };
         let result = match &running.stop {
             Stop::Process(handle) => handle.stop(),
             Stop::Steam(app_id) => steam::stop_game(*app_id).map(|_| ()),
@@ -578,5 +802,26 @@ impl Shell {
         let tile = self.tiles.remove(index);
         self.entries.insert(0, entry);
         self.tiles.insert(0, tile);
+    }
+}
+
+/// Zeigt das Overlay-Fenster. Beim ersten Mal (oder wenn Slint das Fenster neu angelegt hat)
+/// bekommt es zuerst die Overlay-Atome und wird dann neu gemappt, weil gamescope sie nur beim
+/// Mappen liest.
+fn show_overlay_window(gamescope: &mut GamescopeUi) {
+    let overlay = &gamescope.overlay;
+    overlay.window().set_fullscreen(true);
+    if let Err(err) = overlay.show() {
+        eprintln!("Overlay konnte nicht angezeigt werden: {err}");
+        return;
+    }
+    let window = x11_window_id(overlay.window());
+    if window.is_some() && window != gamescope.overlay_window {
+        if let Some(id) = window {
+            gamescope.control.prepare_overlay(id);
+        }
+        let _ = overlay.hide();
+        let _ = overlay.show();
+        gamescope.overlay_window = window;
     }
 }

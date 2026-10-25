@@ -1,12 +1,14 @@
 import { Theme } from "theme.slint";
-import { AppTile, ControllerStyle, GlyphButton, Hint, KeyCap, NavAction, NetworkState, Screen } from "types.slint";
+import { AppTile, ControllerStyle, GlyphButton, Hint, KeyCap, NavAction, NetworkState, QuickItem, Screen } from "types.slint";
 import { StatusBar } from "statusbar.slint";
 import { ButtonGlyph, HintBar } from "glyph.slint";
 import { HomePage } from "home.slint";
 import { LibraryPage } from "library.slint";
 import { SearchPage } from "search.slint";
+import { QuickMenu } from "quickmenu.slint";
+import { OverlayWindow } from "overlay.slint";
 
-export { AppTile, ControllerStyle, GlyphButton, Hint, KeyCap, NavAction, NetworkState, Screen }
+export { AppTile, ControllerStyle, GlyphButton, Hint, KeyCap, NavAction, NetworkState, QuickItem, Screen, OverlayWindow }
 
 export component AppWindow inherits Window {
     title: "ConsoleUI";
@@ -51,6 +53,12 @@ export component AppWindow inherits Window {
     in property <string> launch-status;
     in property <image> launch-image;
     in property <color> launch-accent;
+
+    // Quick-Menü als Ebene im Hauptfenster (ohne gamescope; dort ist es ein eigenes Overlay-Fenster)
+    in property <bool> quick-open;
+    in property <string> quick-title;
+    in property <[QuickItem]> quick-items;
+    in property <int> quick-focused;
 
     // Rückfrage, z. B. vor dem Beenden einer laufenden App
     in property <bool> confirm-open;
@@ -134,6 +142,10 @@ export component AppWindow inherits Window {
             }
             if (event.text == Key.Tab) {
                 root.action(NavAction.menu);
+                return accept;
+            }
+            if (event.text == Key.F1) {
+                root.action(NavAction.guide);
                 return accept;
             }
             // In der Suche tippt die Tastatur; WASD und die Buchstabenkürzel gelten dort nicht.
@@ -369,6 +381,8 @@ export component AppWindow inherits Window {
             hints: root.hints;
             style: root.controller-style;
             s: root.s;
+            opacity: root.quick-open ? 0 : 1;
+            animate opacity { duration: Theme.page-duration; }
         }
 
         // Startbildschirm; liegt geschlossen unsichtbar genau über der fokussierten Kachel.
@@ -491,6 +505,17 @@ export component AppWindow inherits Window {
                     }
                 }
             }
+        }
+
+        QuickMenu {
+            width: 100%;
+            height: 100%;
+            open: root.quick-open;
+            title: root.quick-title;
+            items: root.quick-items;
+            focused: root.quick-focused;
+            style: root.controller-style;
+            s: root.s;
         }
 
         if root.show-fps: Rectangle {

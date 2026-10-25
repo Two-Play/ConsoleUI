@@ -10,10 +10,12 @@ pub mod launch;
 mod library;
 mod nav;
 pub mod osk;
+pub mod ownership;
 pub mod running;
 pub mod search;
 pub mod status;
 pub mod steam;
+pub mod system;
 pub mod vdf;
 pub mod xdg;
 

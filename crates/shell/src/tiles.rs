@@ -27,16 +27,16 @@ pub fn to_tile(entry: &mut AppEntry, index: usize, today: NaiveDate) -> AppTile 
     }
     let icon = if real_cover.is_none() { entry.artwork.icon.as_deref().and_then(load) } else { None };
     let logo = entry.artwork.logo.as_deref().and_then(load);
-    let (kind, action_label) = match entry.kind {
-        AppKind::Game => ("SPIEL", "Spielen"),
-        AppKind::App => ("APP", "Öffnen"),
+    let kind = match entry.kind {
+        AppKind::Game => "SPIEL",
+        AppKind::App => "APP",
     };
 
     AppTile {
         title: entry.title.as_str().into(),
         subtitle: subtitle(entry, today).into(),
         kind: kind.into(),
-        action_label: action_label.into(),
+        action_label: action_label(entry.kind, false).into(),
         monogram: entry.monogram().into(),
         show_monogram: real_cover.is_none() && icon.is_none(),
         has_icon: icon.is_some(),
@@ -47,6 +47,15 @@ pub fn to_tile(entry: &mut AppEntry, index: usize, today: NaiveDate) -> AppTile 
             .unwrap_or_else(|| cover::generate(entry.accent, entry.accent2, index as u32, COVER_SIZE)),
         accent: Color::from_rgb_u8(entry.accent[0], entry.accent[1], entry.accent[2]),
         running: false,
+    }
+}
+
+/// Beschriftung des Start-Buttons
+pub fn action_label(kind: AppKind, running: bool) -> &'static str {
+    match (kind, running) {
+        (_, true) => "Fortsetzen",
+        (AppKind::Game, false) => "Spielen",
+        (AppKind::App, false) => "Öffnen",
     }
 }
 

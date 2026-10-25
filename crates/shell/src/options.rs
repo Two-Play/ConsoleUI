@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use consoleui_core::Action;
+
 pub const USAGE: &str = "\
 Verwendung: consoleui [OPTIONEN]
 
@@ -13,7 +15,11 @@ Verwendung: consoleui [OPTIONEN]
 Für die Entwicklung:
   --start <SEITE>     Mit home, library oder search starten
   --query <TEXT>      In der Suche diesen Text vorbelegen (mit --start search)
-  --snapshot <DATEI>  Nach kurzer Zeit ein PNG des Fensters speichern und beenden";
+  --snapshot <DATEI>  Nach kurzer Zeit ein PNG des Fensters speichern und beenden
+  --actions <LISTE>   Eingaben simulieren, z. B. \"right,confirm,wait:3000,guide\"
+                      (up, down, left, right, confirm, back, menu, search, secondary,
+                      prev-tab, next-tab, guide, wait:<ms>)
+  --dummy-launch <BEFEHL>  Dummy-Einträge starten diesen Befehl (z. B. glxgears)";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum StartScreen {
@@ -21,6 +27,13 @@ pub enum StartScreen {
     Home,
     Library,
     Search,
+}
+
+/// Ein Schritt aus `--actions`
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScriptStep {
+    Action(Action),
+    Wait(u64),
 }
 
 #[derive(Debug, PartialEq)]
@@ -34,6 +47,8 @@ pub struct Options {
     pub start: StartScreen,
     pub query: Option<String>,
     pub snapshot: Option<PathBuf>,
+    pub actions: Vec<ScriptStep>,
+    pub dummy_launch: Option<String>,
 }
 
 impl Default for Options {
@@ -48,6 +63,8 @@ impl Default for Options {
             start: StartScreen::Home,
             query: None,
             snapshot: None,
+            actions: Vec::new(),
+            dummy_launch: None,
         }
     }
 }
@@ -78,11 +95,41 @@ impl Options {
                 }
                 "--query" => options.query = Some(value(&mut args, "--query")?),
                 "--snapshot" => options.snapshot = Some(value(&mut args, "--snapshot")?.into()),
+                "--actions" => options.actions = parse_script(&value(&mut args, "--actions")?)?,
+                "--dummy-launch" => options.dummy_launch = Some(value(&mut args, "--dummy-launch")?),
                 other => return Err(format!("Unbekannte Option: {other}")),
             }
         }
         Ok(options)
     }
+}
+
+fn parse_script(list: &str) -> Result<Vec<ScriptStep>, String> {
+    list.split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|step| {
+            if let Some(ms) = step.strip_prefix("wait:") {
+                return ms.parse().map(ScriptStep::Wait).map_err(|_| format!("Ungültige Wartezeit: {step}"));
+            }
+            let action = match step {
+                "up" => Action::Up,
+                "down" => Action::Down,
+                "left" => Action::Left,
+                "right" => Action::Right,
+                "confirm" => Action::Confirm,
+                "back" => Action::Back,
+                "menu" => Action::Menu,
+                "search" => Action::Search,
+                "secondary" => Action::Secondary,
+                "prev-tab" => Action::PrevTab,
+                "next-tab" => Action::NextTab,
+                "guide" => Action::Guide,
+                other => return Err(format!("Unbekannte Aktion: {other}")),
+            };
+            Ok(ScriptStep::Action(action))
+        })
+        .collect()
 }
 
 fn value(args: &mut impl Iterator<Item = String>, option: &str) -> Result<String, String> {
@@ -116,6 +163,23 @@ mod tests {
         assert_eq!(options.query.as_deref(), Some("red"));
         assert_eq!(options.snapshot, Some(PathBuf::from("/tmp/x.png")));
         assert!(parse(&["--start", "nirgendwo"]).is_err());
+    }
+
+    #[test]
+    fn parses_action_scripts() {
+        let options = parse(&["--actions", "right, confirm,wait:500,guide", "--dummy-launch", "glxgears"]).unwrap();
+        assert_eq!(
+            options.actions,
+            [
+                ScriptStep::Action(Action::Right),
+                ScriptStep::Action(Action::Confirm),
+                ScriptStep::Wait(500),
+                ScriptStep::Action(Action::Guide)
+            ]
+        );
+        assert_eq!(options.dummy_launch.as_deref(), Some("glxgears"));
+        assert!(parse(&["--actions", "jump"]).is_err());
+        assert!(parse(&["--actions", "wait:bald"]).is_err());
     }
 
     #[test]

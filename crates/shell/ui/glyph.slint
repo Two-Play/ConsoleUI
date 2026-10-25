@@ -13,6 +13,8 @@ export component ButtonGlyph inherits Rectangle {
     property <bool> ps: root.style == ControllerStyle.playstation;
     property <string> symbol:
         root.button == GlyphButton.dpad ? "◀ ▶"
+        : root.button == GlyphButton.updown ? "▲ ▼"
+        : root.button == GlyphButton.guide ? (root.style == ControllerStyle.keyboard ? "F1" : root.ps ? "PS" : "Guide")
         : root.style == ControllerStyle.keyboard ? (
             root.button == GlyphButton.confirm ? "Enter"
             : root.button == GlyphButton.back ? "Esc"
@@ -42,9 +44,10 @@ export component ButtonGlyph inherits Rectangle {
     height: root.size;
     width: root.face ? root.size : max(root.size, label.preferred-width + 14px * root.s);
     border-radius: root.face ? root.size / 2 : 6px * root.s;
-    background: root.button == GlyphButton.dpad ? transparent : Theme.surface;
+    property <bool> plain: root.button == GlyphButton.dpad || root.button == GlyphButton.updown;
+    background: root.plain ? transparent : Theme.surface;
     border-width: root.face ? 0 : 1px;
-    border-color: root.button == GlyphButton.dpad ? transparent : #ffffff33;
+    border-color: root.plain ? transparent : #ffffff33;
 
     label := Text {
         width: 100%;

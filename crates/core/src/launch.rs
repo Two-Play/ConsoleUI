@@ -7,6 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::library::Launch;
+use crate::ownership::Owner;
 
 /// Wie ein gestarteter Prozess wieder beendet wird.
 #[derive(Debug, Clone, PartialEq)]
@@ -33,6 +34,15 @@ impl ProcessHandle {
 
     pub fn has_exited(&self) -> bool {
         self.exited.load(Ordering::Relaxed)
+    }
+
+    /// Woran sich die Prozesse dieser App erkennen lassen (für die Fensterzuordnung in gamescope).
+    pub fn owner(&self) -> Option<Owner> {
+        match &self.stopper {
+            Stopper::None => None,
+            Stopper::Scope(unit) => Some(Owner::Scope(unit.clone())),
+            Stopper::ProcessGroup(pid) => Some(Owner::Process(*pid)),
+        }
     }
 
     /// Bittet die App per SIGTERM, sich zu beenden.

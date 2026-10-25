@@ -1,0 +1,122 @@
+import { Theme } from "theme.slint";
+import { ControllerStyle, GlyphButton, Hint, QuickItem } from "types.slint";
+import { HintBar } from "glyph.slint";
+
+// Quick-Menü: Leiste am unteren Rand mit Karten, darüber eine leichte Abdunklung. Wird im
+// Overlay-Fenster (gamescope) oder als Ebene im Hauptfenster verwendet.
+export component QuickMenu inherits Rectangle {
+    in property <bool> open;
+    in property <string> title;
+    in property <[QuickItem]> items;
+    in property <int> focused;
+    in property <ControllerStyle> style;
+    in property <float> s: 1;
+
+    property <QuickItem> current: root.items[root.focused];
+    property <length> card: 170px * root.s;
+    property <length> gap: 18px * root.s;
+    property <length> panel-height: 330px * root.s;
+
+    Rectangle {
+        width: 100%;
+        height: 100%;
+        background: Theme.base;
+        opacity: root.open ? 0.55 : 0;
+        animate opacity { duration: Theme.page-duration; }
+    }
+
+    Rectangle {
+        y: root.open ? root.height - root.panel-height : root.height;
+        width: 100%;
+        height: root.panel-height;
+        background: #12141cf2;
+        opacity: root.open ? 1 : 0;
+        animate y, opacity {
+            duration: Theme.launch-duration;
+            easing: ease-out-quart;
+        }
+
+        Rectangle {
+            y: 0;
+            width: 100%;
+            height: 1px;
+            background: #ffffff22;
+        }
+
+        Text {
+            x: 110px * root.s;
+            y: 26px * root.s;
+            text: root.title;
+            color: Theme.text-dim;
+            font-size: 20px * root.s;
+            font-weight: 600;
+            letter-spacing: 2px * root.s;
+        }
+
+        for item[i] in root.items: card := Rectangle {
+            property <bool> is-focused: i == root.focused;
+            x: 110px * root.s + i * (root.card + root.gap);
+            y: 70px * root.s + (self.is-focused ? 0 : 8px * root.s);
+            width: root.card;
+            height: root.card * 0.82;
+            border-radius: 18px * root.s;
+            background: item.armed ? #ff5a5a : self.is-focused ? Theme.text : Theme.surface;
+            animate y, background { duration: Theme.focus-duration; easing: ease-out-quart; }
+
+            Text {
+                x: 18px * root.s;
+                y: 14px * root.s;
+                text: item.symbol;
+                color: card.is-focused || item.armed ? Theme.base : Theme.text;
+                font-size: 30px * root.s;
+            }
+
+            VerticalLayout {
+                x: 18px * root.s;
+                y: parent.height - self.height - 14px * root.s;
+                width: parent.width - 36px * root.s;
+                height: self.preferred-height;
+                spacing: 2px * root.s;
+
+                Text {
+                    text: item.label;
+                    color: card.is-focused || item.armed ? Theme.base : Theme.text;
+                    font-size: 17px * root.s;
+                    font-weight: 700;
+                    overflow: elide;
+                }
+
+                if item.level >= 0: Rectangle {
+                    height: 6px * root.s;
+                    border-radius: 3px * root.s;
+                    background: #00000033;
+
+                    Rectangle {
+                        x: 0;
+                        width: parent.width * item.level / 100;
+                        border-radius: parent.border-radius;
+                        background: card.is-focused ? Theme.base : Theme.text;
+                    }
+                }
+
+                if item.value != "": Text {
+                    text: item.value;
+                    color: card.is-focused || item.armed ? Theme.base.with-alpha(0.7) : Theme.text-dim;
+                    font-size: 14px * root.s;
+                    overflow: elide;
+                }
+            }
+        }
+
+        HintBar {
+            x: 110px * root.s;
+            y: root.panel-height - 62px * root.s;
+            height: 28px * root.s;
+            style: root.style;
+            s: root.s;
+            hints: root.current.armed ? [{ button: GlyphButton.confirm, label: "Bestätigen" }, { button: GlyphButton.back, label: "Abbrechen" }]
+                : root.current.adjustable ? [{ button: GlyphButton.dpad, label: "Auswählen" }, { button: GlyphButton.updown, label: "Lautstärke" }, { button: GlyphButton.confirm, label: "Stumm" }, { button: GlyphButton.back, label: "Schließen" }]
+                : [{ button: GlyphButton.dpad, label: "Auswählen" }, { button: GlyphButton.confirm, label: "OK" }, { button: GlyphButton.back, label: "Schließen" }];
+        }
+    }
+}

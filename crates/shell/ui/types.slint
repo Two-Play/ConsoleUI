@@ -1,12 +1,12 @@
 // Eingabeunabhängige Aktionen; Rust bildet sie auf `consoleui_core::Action` ab.
-export enum NavAction { up, down, left, right, confirm, back, menu, search, secondary, prev-tab, next-tab }
+export enum NavAction { up, down, left, right, confirm, back, menu, search, secondary, prev-tab, next-tab, guide }
 
 export enum NetworkState { offline, ethernet, wifi }
 
 export enum Screen { home, library, search }
 
 // Welche Taste ein Hinweis zeigt; das Symbol hängt vom ControllerStyle ab.
-export enum GlyphButton { dpad, confirm, back, north, west, menu, l1, r1, quit }
+export enum GlyphButton { dpad, updown, confirm, back, north, west, menu, guide, l1, r1, quit }
 
 export enum ControllerStyle { keyboard, playstation, xbox }
 
@@ -39,4 +39,19 @@ export struct KeyCap {
     row: int,
     x: float,
     width: float,
+}
+
+// Eintrag im Quick-Menü
+export struct QuickItem {
+    label: string,
+    // Zusatz unter dem Namen, z. B. „30 %“
+    value: string,
+    // Symbol als Text (einfarbig), z. B. „⏻“
+    symbol: string,
+    // Wartet auf die zweite Bestätigung (Ausschalten, Beenden …)
+    armed: bool,
+    // Lautstärke: Hoch/Runter regelt
+    adjustable: bool,
+    // 0–100 für den Balken, sonst -1
+    level: int,
 }

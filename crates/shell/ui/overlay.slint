@@ -1,0 +1,45 @@
+import { ControllerStyle, NavAction, QuickItem } from "types.slint";
+import { QuickMenu } from "quickmenu.slint";
+
+// Eigenes, transparentes Fenster für das Quick-Menü in gamescope. Rust setzt STEAM_OVERLAY, bevor
+// es angezeigt wird; dann legt gamescope es über das laufende Spiel.
+export component OverlayWindow inherits Window {
+    title: "ConsoleUI Overlay";
+    no-frame: true;
+    background: transparent;
+    forward-focus: keys;
+
+    in property <bool> open;
+    in property <string> title-text;
+    in property <[QuickItem]> items;
+    in property <int> focused;
+    in property <ControllerStyle> controller-style;
+
+    callback action(NavAction);
+
+    property <float> s: max(0.4, min(root.width / 1920px, root.height / 1080px));
+
+    keys := FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.LeftArrow) { root.action(NavAction.left); return accept; }
+            if (event.text == Key.RightArrow) { root.action(NavAction.right); return accept; }
+            if (event.text == Key.UpArrow) { root.action(NavAction.up); return accept; }
+            if (event.text == Key.DownArrow) { root.action(NavAction.down); return accept; }
+            if (event.text == Key.Return || event.text == Key.Space) { root.action(NavAction.confirm); return accept; }
+            if (event.text == Key.Escape || event.text == Key.Backspace) { root.action(NavAction.back); return accept; }
+            if (event.text == Key.F1) { root.action(NavAction.guide); return accept; }
+            reject
+        }
+
+        QuickMenu {
+            width: 100%;
+            height: 100%;
+            open: root.open;
+            title: root.title-text;
+            items: root.items;
+            focused: root.focused;
+            style: root.controller-style;
+            s: root.s;
+        }
+    }
+}

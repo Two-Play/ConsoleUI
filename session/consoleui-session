@@ -1,6 +1,7 @@
 #!/bin/sh
-# ConsoleUI als Konsolen-Session: gamescope ohne Steam-Integration (siehe docs/spike-gamescope.md)
-# mit der Shell als Hauptprogramm. Endet die Shell (Strg+Q), endet auch die Session.
+# ConsoleUI als Konsolen-Session: gamescope im Steam-Modus (-e) mit der Shell als Hauptprogramm.
+# Die Shell übernimmt dabei die Rolle von Steam: Sie gibt allen Fenstern App-IDs und bestimmt,
+# was vorne ist (siehe docs/spike-gamescope.md). Endet die Shell, endet auch die Session.
 #
 # Umgebungsvariablen:
 #   CONSOLEUI_BIN             Pfad zur Shell (Standard: /usr/local/bin/consoleui)
@@ -8,5 +9,6 @@
 set -eu
 
 bin="${CONSOLEUI_BIN:-/usr/local/bin/consoleui}"
+export CONSOLEUI_GAMESCOPE=steam
 # shellcheck disable=SC2086 # Die Optionen sollen bewusst in Wörter zerlegt werden.
-exec gamescope ${CONSOLEUI_GAMESCOPE_ARGS:-} -- "$bin" "$@"
+exec gamescope -e ${CONSOLEUI_GAMESCOPE_ARGS:-} -- "$bin" "$@"

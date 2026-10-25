@@ -15,6 +15,8 @@ pub enum Action {
     /// L1/LB und R1/RB: zwischen den Tabs wechseln
     PrevTab,
     NextTab,
+    /// PS-/Guide-Taste: Quick-Menü, auch während ein Spiel läuft
+    Guide,
 }
 
 /// Fokus innerhalb einer horizontalen Kachelreihe. Läuft am Rand nicht im Kreis (wie bei der PS5).

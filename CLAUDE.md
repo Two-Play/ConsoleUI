@@ -34,7 +34,7 @@ Quit the running shell with Ctrl+Q. Pressing Enter on a real entry really launch
 Use `--snapshot` to check UI changes visually instead of screenshotting the desktop: a screen capture
 can pick up the user's other windows.
 
-Console session (see `docs/spike-gamescope.md` for why gamescope runs without `-e`):
+Console session (see `docs/spike-gamescope.md`; gamescope runs in Steam mode `-e` and the shell acts as Steam):
 
 ```bash
 CONSOLEUI_BIN=$PWD/target/release/consoleui CONSOLEUI_GAMESCOPE_ARGS="-W 1280 -H 720" session/consoleui-session   # nested test
@@ -42,8 +42,20 @@ sudo session/install.sh   # after `cargo build --release`; installs to /usr/loca
 ```
 
 Inside gamescope, children get `DISPLAY=:1` and an empty `WAYLAND_DISPLAY`, so the shell and everything
-it launches run through XWayland. Focus always goes to the newest window, so the shell never switches
-windows itself; it only detects when the launched app ends.
+it launches run through XWayland. In Steam mode only windows with a `STEAM_GAME` atom are shown at
+all: the shell (`src/gamescope.rs`, x11rb) tags every new top-level window, resolving `_NET_WM_PID`
+through `consoleui_core::ownership` (`SteamAppId` env, systemd scope cgroup, parent chain). It picks
+the visible app with `GAMESCOPECTRL_BASELAYER_APPID` (`[app, SHELL_APP_ID]` or `[SHELL_APP_ID]`). Gamescope
+mode is enabled only with `CONSOLEUI_GAMESCOPE=steam`, which the session script sets.
+
+End-to-end test without real input (nested gamescope, screenshots of gamescope's own output):
+
+```bash
+CONSOLEUI_GAMESCOPE=steam gamescope -e -W 960 -H 540 -- target/release/consoleui --dummy --windowed \
+  --dummy-launch glxgears --actions "wait:1500,confirm,wait:4000,guide"
+# inside gamescope: xprop -root -f GAMESCOPECTRL_REQUEST_SCREENSHOT 32c -set GAMESCOPECTRL_REQUEST_SCREENSHOT 2
+#   writes /tmp/gamescope.png; type 2 = full composition (type 1 omits overlays)
+```
 
 ## Architecture
 
@@ -68,14 +80,16 @@ Cargo workspace (edition 2024, `default-members` = the shell):
     (`DirectionRepeat` for hold-to-repeat, `Stick` with hysteresis, `glyph_style` by device name).
   - `running::RunningApp` decides when the launch overlay closes: process exit for commands,
     `steam::running_app_id()` (reads `~/.steam/registry.vdf`) for Steam games, with a minimum hold time.
-  - `status.rs` reads network/battery from sysfs; `accent::from_rgba` derives tile colors from covers.
+  - `status.rs` reads network/battery from sysfs; `system.rs` wraps `wpctl` (volume) and
+    `systemctl suspend|reboot|poweroff`; `accent::from_rgba` derives tile colors from covers.
 - `crates/shell` (binary `consoleui`): Slint UI plus glue.
   - `ui/main.slint`: `AppWindow`, the home screen. All sizes scale from a 1920×1080 reference via the
     `s` factor; tiles are positioned absolutely and animated (`animate x, y, width, height`).
   - `ui/theme.slint`: the `Theme` global with design tokens (colors, durations). Use it instead of
     hard-coded values.
   - `ui/types.slint`: `NavAction` enum and `AppTile` struct shared with Rust.
-  - `src/shell.rs`: `Shell` owns entries plus a parallel `tiles` vector, the three tile models (home =
+  - `src/shell.rs`: `Shell` owns entries plus a parallel `tiles` vector, all `running` apps (each with a
+    gamescope app ID, a stop handle and an `Owner`), the `foreground` app, the three tile models (home =
     first 12 entries + library tile, library view, search results), the current `Screen`, focus, history,
     the hero cache, the tracked running app and the quit confirmation. `Shell::apply(action)` is the single
     entry point for input; it dispatches by screen and ends with `sync()` (screen, focus, hero, hints).
@@ -83,7 +97,11 @@ Cargo workspace (edition 2024, `default-members` = the shell):
     image layers (`hero-a`/`hero-b` + `hero-front-a`) for crossfades; a launch moves the entry to index 0
     under the fullscreen launch overlay.
   - `src/tiles.rs`: `AppEntry` → `AppTile` (loads cover, icon and logo, overrides the accent from the cover).
-  - `src/gamepad.rs`: gilrs polling → `Action`s (only devices with an SDL mapping).
+  - `src/gamepad.rs`: gilrs polling → `Action`s (only devices with an SDL mapping); PS/Guide → `Action::Guide`.
+  - `src/gamescope.rs`: X11 control of gamescope (tagging windows, baselayer, preparing the overlay window).
+  - `src/quick.rs`: quick menu ("Steuerzentrale") items and input handling. In gamescope it is shown in
+    `OverlayWindow` (`ui/overlay.slint`, transparent, gets `STEAM_OVERLAY` and is remapped before first
+    use); otherwise it is the `QuickMenu` layer inside `AppWindow`.
   - `src/main.rs`: wiring and timers: gamepad poll (8 ms), status/clock (1 s), app watcher (500 ms), bench.
   - `ui/statusbar.slint`: the right side of the top bar; icons in `ui/icons/*.svg` are tinted with `colorize`.
   - `ui/home.slint`, `ui/library.slint`, `ui/search.slint`: one component per `Screen`, all stacked in
@@ -99,7 +117,8 @@ and Rust pushes properties back (`focused`, `pulse`, `launching`, …). New inpu
 In the search screen the `FocusScope` sends printable keys to `typed(text)` instead of the letter
 shortcuts (WASD, Q/E, F, /). Gamepad input is dropped while the window is not focused
 (`window-active`), because gilrs reads devices directly and would otherwise react to presses meant
-for the game in front.
+for the game in front. Exceptions (`Shell::accepts_unfocused`): the Guide button in gamescope mode and
+everything while the quick menu is open. `--actions` script steps bypass the gating.
 
 Note: `[profile.dev]` uses `opt-level = 1` and dependencies use `opt-level = 3`, so debug builds
 render smoothly.

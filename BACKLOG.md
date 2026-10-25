@@ -235,6 +235,37 @@ Deck o. Ä.) sollten wir später den Skia-Renderer vergleichen (Story 6.5).
 - Nicht manuell getestet: Beenden-Dialog und Badge mit einer echten App sowie die
   Start-Animation aus Bibliothek und Suche.
 
+### Sprint 5 – „System“ (umgesetzt: 4.4 Rest, 4.6, 3.4, 5.1, 5.2)
+
+- **Spikes:** [docs/spike-gamescope.md](docs/spike-gamescope.md) (Spike 2 und 3). Zurückwechseln
+  geht nur im Steam-Modus von gamescope, ein echtes Overlay mit einem ARGB-Fenster und
+  `STEAM_OVERLAY` vor dem Mappen.
+- **Session im Steam-Modus:** `session/consoleui-session` startet `gamescope -e` und setzt
+  `CONSOLEUI_GAMESCOPE=steam`. Die Shell übernimmt die Rolle von Steam: Sie gibt jedem neuen
+  Fenster per x11rb ein `STEAM_GAME`-Atom. Die Zuordnung läuft über `_NET_WM_PID`, dann
+  `SteamAppId` in der Umgebung oder die systemd-Scope-Unit bzw. die Elternprozesse. Fenster ohne
+  Zuordnung gehen an die zuletzt gestartete App. Mit `GAMESCOPECTRL_BASELAYER_APPID` bestimmt die
+  Shell, wer vorne ist.
+- **Mehrere laufende Apps (4.4):** Alle werden verfolgt und haben ein Badge. ✕ auf einer
+  laufenden App holt sie zurück nach vorn („Fortsetzen“), ohne gamescope zeigt sie den
+  Startbildschirm „läuft“. Ist das App-Fenster da, verschwindet der Startbildschirm.
+- **Steuerzentrale (4.6, 3.4):** Die PS-Taste (Tastatur: F1) öffnet sie von überall, auch während
+  ein Spiel vorne läuft. In gamescope ist sie ein eigenes transparentes Overlay-Fenster über dem
+  Spiel, ohne gamescope eine Ebene im Hauptfenster. Inhalt: Fortsetzen, Home, Beenden (mit
+  Spiel), Lautstärke, Standby, Neustart, Ausschalten, Abmelden. Folgenschwere Aktionen brauchen
+  einen zweiten Druck („Wirklich?“).
+- **Lautstärke (5.2):** `wpctl` auf `@DEFAULT_AUDIO_SINK@`, ▲/▼ in 5-%-Schritten, ✕ schaltet stumm.
+- **Energie (5.1):** `systemctl suspend|reboot|poweroff` (logind/polkit, ohne root).
+- **Entwickler-Optionen:** `--actions` (simulierte Eingaben) und `--dummy-launch <befehl>`, damit
+  sich der Ablauf in gamescope automatisch testen lässt.
+- Getestet: der komplette Ablauf verschachtelt in gamescope `-e` mit `glxgears` (Screenshots per
+  `GAMESCOPECTRL_REQUEST_SCREENSHOT=2`), das Quick-Menü im Desktop-Fenster per `--snapshot`.
+- **Nicht getestet:** echte Steam-Spiele und der Steam-Client in der Steam-Modus-Session, die Session
+  auf echter Hardware (DRM), Lautstärke regeln und Energieaktionen auslösen.
+- **Bekannte Grenze:** Während die Steuerzentrale offen ist, bekommt das Spiel die Controller-Tasten
+  weiterhin mit, denn gilrs und das Spiel lesen dasselbe Gerät. Abhilfe wäre ein exklusiver Zugriff
+  (`EVIOCGRAB`) oder ein virtueller Controller, ähnlich wie bei Steam Input.
+
 ## Risiken / offene Fragen
 
 - **gamescope-Fokussteuerung** ist kaum dokumentiert und auf XWayland bzw. Steam ausgelegt → deshalb Spike 0.3 früh einplanen. Falls das nicht klappt, wird Epic 7 wichtiger.
