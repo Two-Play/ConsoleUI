@@ -1,6 +1,6 @@
 //! Installierte Steam-Spiele aus `libraryfolders.vdf` und `appmanifest_*.acf`.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -65,17 +65,11 @@ fn to_entry(root: &Path, manifest: Manifest) -> AppEntry {
     }
 }
 
-/// App-ID des Spiels, das Steam gerade ausführt (aus `~/.steam/registry.vdf`).
-pub fn running_app_id() -> Option<u32> {
-    let path = xdg::home()?.join(".steam/registry.vdf");
-    running_app_id_from(&fs::read_to_string(path).ok()?)
-}
-
-/// Beendet ein laufendes Steam-Spiel per SIGTERM. Steam gibt jedem Spielprozess `SteamAppId`
-/// in die Umgebung; Steam selbst und seine Hilfsprozesse bleiben verschont.
-pub fn stop_game(app_id: u32) -> io::Result<usize> {
+/// Prozesse von Steam-Spielen: Steam gibt jedem Spielprozess (auch unter Proton/Wine)
+/// `SteamAppId` in die Umgebung. Steam selbst, seine Hilfsprozesse und die Shell zählen nicht.
+fn game_processes() -> io::Result<Vec<(u32, u32)>> {
     let own_pid = std::process::id();
-    let mut stopped = 0;
+    let mut processes = Vec::new();
     for entry in fs::read_dir("/proc")?.flatten() {
         let Some(pid) = entry.file_name().to_str().and_then(|n| n.parse::<u32>().ok()) else { continue };
         if pid == own_pid {
@@ -88,24 +82,36 @@ pub fn stop_game(app_id: u32) -> io::Result<usize> {
         }
         // Nur Prozesse des eigenen Benutzers sind lesbar; alle anderen fallen hier heraus.
         let Ok(environ) = fs::read(dir.join("environ")) else { continue };
-        if environ_has_app(&environ, app_id)
-            && std::process::Command::new("kill").args(["-TERM", &pid.to_string()]).status()?.success()
-        {
+        if let Some(app_id) = steam_app_id(&environ) {
+            processes.push((pid, app_id));
+        }
+    }
+    Ok(processes)
+}
+
+/// App-IDs aller Steam-Spiele, die gerade Prozesse haben. Zuverlässiger als `RunningAppID` in
+/// `~/.steam/registry.vdf`, das Steam oft erst Minuten nach dem Spielende zurücksetzt.
+pub fn running_games() -> HashSet<u32> {
+    game_processes().map(|p| p.into_iter().map(|(_, app_id)| app_id).collect()).unwrap_or_default()
+}
+
+/// Beendet ein laufendes Steam-Spiel per SIGTERM an alle seine Prozesse.
+pub fn stop_game(app_id: u32) -> io::Result<usize> {
+    let mut stopped = 0;
+    for (pid, _) in game_processes()?.into_iter().filter(|&(_, id)| id == app_id) {
+        if std::process::Command::new("kill").args(["-TERM", &pid.to_string()]).status()?.success() {
             stopped += 1;
         }
     }
     Ok(stopped)
 }
 
-fn environ_has_app(environ: &[u8], app_id: u32) -> bool {
-    let wanted = format!("SteamAppId={app_id}");
-    environ.split(|&b| b == 0).any(|var| var == wanted.as_bytes())
-}
-
-fn running_app_id_from(registry: &str) -> Option<u32> {
-    let doc = vdf::parse(registry).ok()?;
-    let steam = ["Registry", "HKCU", "Software", "Valve", "Steam"].iter().try_fold(&doc, |v, key| v.get(key))?;
-    steam.get("RunningAppID")?.as_str()?.parse().ok().filter(|&id| id != 0)
+fn steam_app_id(environ: &[u8]) -> Option<u32> {
+    environ
+        .split(|&b| b == 0)
+        .find_map(|var| var.strip_prefix(b"SteamAppId="))
+        .and_then(|v| std::str::from_utf8(v).ok()?.parse().ok())
+        .filter(|&id| id != 0)
 }
 
 fn library_paths(root: &Path) -> Vec<PathBuf> {
@@ -219,21 +225,23 @@ mod tests {
     }
 
     #[test]
-    fn finds_app_id_in_environment() {
-        let environ = b"HOME=/home/x\0SteamAppId=730\0SteamGameId=730\0";
-        assert!(environ_has_app(environ, 730));
-        assert!(!environ_has_app(environ, 73));
-        assert!(!environ_has_app(b"SteamAppId=7300\0", 730));
+    fn detects_and_stops_game_processes() {
+        let mut child = std::process::Command::new("sleep").arg("30").env("SteamAppId", "987654").spawn().unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while !running_games().contains(&987654) && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert!(running_games().contains(&987654));
+        assert_eq!(stop_game(987654).unwrap(), 1);
+        child.wait().unwrap();
+        assert!(!running_games().contains(&987654));
     }
 
     #[test]
-    fn reads_running_app_id() {
-        let registry = |id: &str| {
-            format!(r#""Registry" {{ "HKCU" {{ "Software" {{ "Valve" {{ "Steam" {{ "RunningAppID" "{id}" }} }} }} }} }}"#)
-        };
-        assert_eq!(running_app_id_from(&registry("730")), Some(730));
-        assert_eq!(running_app_id_from(&registry("0")), None);
-        assert_eq!(running_app_id_from(r#""Registry" { }"#), None);
+    fn finds_app_id_in_environment() {
+        assert_eq!(steam_app_id(b"HOME=/home/x\0SteamAppId=730\0SteamGameId=730\0"), Some(730));
+        assert_eq!(steam_app_id(b"SteamAppId=0\0"), None);
+        assert_eq!(steam_app_id(b"SteamGameId=730\0"), None);
     }
 
     #[test]

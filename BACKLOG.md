@@ -304,6 +304,14 @@ Deck o. Ä.) sollten wir später den Skia-Renderer vergleichen (Story 6.5).
   Die Tastatur holt sich den Fokus per `XSetInputFocus` zurück (spätestens nach 500 ms).
 - Dazu `session/consoleui-nested`: simuliert die Session in einem Desktop-Fenster.
 
+### Nachtrag – Fehler „Steam-Spiel gilt nach dem Beenden noch minutenlang als laufend“
+
+- Ursache: Das Spielende wurde an `RunningAppID` in `~/.steam/registry.vdf` erkannt, und das setzt
+  Steam oft erst Minuten später zurück.
+- Lösung: `steam::running_games()` sucht in `/proc` nach Prozessen mit `SteamAppId=<id>` (setzt Steam
+  für jedes Spiel, auch unter Proton). Gibt es 2 s lang keinen, ist das Spiel beendet.
+  `steam::stop_game` nutzt dieselbe Suche.
+
 ## Risiken / offene Fragen
 
 - **gamescope-Fokussteuerung** ist kaum dokumentiert und auf XWayland bzw. Steam ausgelegt → deshalb Spike 0.3 früh einplanen. Falls das nicht klappt, wird Epic 7 wichtiger.

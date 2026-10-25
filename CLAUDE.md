@@ -82,7 +82,9 @@ Cargo workspace (edition 2024, `default-members` = the shell):
   - `input.rs` has the device-free gamepad logic
     (`DirectionRepeat` for hold-to-repeat, `Stick` with hysteresis, `glyph_style` by device name).
   - `running::RunningApp` decides when the launch overlay closes: process exit for commands,
-    `steam::running_app_id()` (reads `~/.steam/registry.vdf`) for Steam games, with a minimum hold time.
+    `steam::running_games()` for Steam games (scans `/proc` for processes with `SteamAppId=<id>`;
+    `RunningAppID` in `~/.steam/registry.vdf` is updated by Steam only minutes later), with a minimum hold
+    time and a 2 s grace period without game processes.
   - `settings.rs` (persisted `Settings`, the rows of the settings page), `sound.rs` (synthesized UI sounds
     as raw PCM), `input::evdev` (key codes/axis normalization for the exclusive grab).
   - `status.rs` reads network/battery from sysfs; `system.rs` wraps `wpctl` (volume) and

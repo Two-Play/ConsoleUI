@@ -22,7 +22,7 @@ Getestet mit gamescope 3.16.29 (Fedora 44), verschachtelt im KDE-Plasma-Desktop:
   wann die App beendet ist, um den Startbildschirm zurückzufahren:
   - Desktop-Apps: Der gestartete Prozess endet.
   - Steam-Spiele: Der Prozess `steam steam://rungameid/…` kehrt sofort zurück. Ob das Spiel läuft,
-    steht in `~/.steam/registry.vdf` unter `HKCU/Software/Valve/Steam/RunningAppID`.
+    steht in `~/.steam/registry.vdf` unter `HKCU/Software/Valve/Steam/RunningAppID`. (Später ersetzt: Steam aktualisiert den Wert erst Minuten nach dem Spielende; die Shell sucht jetzt nach Prozessen mit `SteamAppId`.)
 - **Wichtig für Steam:** Läuft Steam schon außerhalb von gamescope (z. B. im KDE-Desktop), öffnet
   `steam://` das Spiel dort und nicht in gamescope. In der echten Session (TTY/Login-Manager) startet
   Steam beim ersten `steam://`-Aufruf innerhalb der Session, das passt dann.

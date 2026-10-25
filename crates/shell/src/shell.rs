@@ -912,11 +912,11 @@ impl Shell {
         self.restore_keyboard_focus(ui);
 
         let now = Instant::now();
-        let steam_running =
-            if self.running.iter().any(|r| r.app.is_steam()) { steam::running_app_id() } else { None };
+        let steam_games =
+            if self.running.iter().any(|r| r.app.is_steam()) { steam::running_games() } else { Default::default() };
         let mut finished = Vec::new();
         for running in &mut self.running {
-            match running.app.phase(now, steam_running) {
+            match running.app.phase(now, &steam_games) {
                 Phase::Starting => {}
                 Phase::Running => {
                     if ui.get_launching() && self.foreground == Some(running.app_id) {
