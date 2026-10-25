@@ -113,6 +113,8 @@ Schätzung in Story Points (SP): 1, 2, 3, 5, 8, 13. Ein Sprint dauert 2 Wochen.
 | 6.4 | Theme system with central design tokens (colors, radii, timings) | 3 |
 | 6.5 | Performance pass: load images asynchronously, thumbnail cache, frame-time overlay for debugging | 5 |
 | 6.6 | i18n: UI strings in English as the source language, German translation (e.g. Slint's `@tr()` with gettext catalogs), language follows `LANG` and can be changed on the settings page; remaining German strings in the code are moved to English | 5 |
+| 6.7 | **Done (Sprint 11).** Optional background music on the home screen like on the PS5: a generated ambient loop or the user's own files, fades out while an app is in front | 3 |
+| 6.8 | **Done (Sprint 11).** Animation polish: focus ring with a gap, light sweep on focus, ripple on press, gliding tab underline, crossfading info area, progress indicator on the launch screen | 3 |
 
 ## Epic 7 (optional, phase 3) – Own Smithay compositor (hybrid)
 
@@ -140,7 +142,7 @@ are updated after the spike.
 | 7.4 | Robust XWayland for Steam and games: Steam client, launcher and splash windows, focus changes, special cases from tests with real games | 13 |
 | 7.5 | **Done (Sprint 10).** Focus and input in the compositor: Guide button always goes to the shell, the game gets no input while the quick menu is open (replaces `grab.rs`), keyboard focus returns cleanly | 5 |
 | 7.6 | **Done (Sprint 10).** Shell as overlay above running apps: quick menu and toasts as shell toplevels placed on top by the compositor (Slint has no layer-shell), replaces the `OverlayWindow`/`NotificationWindow` tricks | 5 |
-| 7.7 | Animated transitions between shell and app in the compositor (tile zooms into the real game image, animated return) | 8 |
+| 7.7 | **Done (Sprint 11).** Animated transitions between shell and app in the compositor (tile zooms into the real game image, animated return) | 8 |
 | 7.8 | Direct scanout for the game in front (zero-copy, low latency), falling back to composition while an overlay is open | 5 |
 | 7.9 | VRR (adaptive sync) and tearing for games, simple frame pacing (Smithay has VRR, but no tearing-control/async page flip yet) | 13 |
 | 7.10 | Nested gamescope per entry (resolution, FSR/NIS/integer, FPS limit, HDR, fullscreen) from the context menu — **done (Sprint 8)**, not for Steam games | 5 |
@@ -186,7 +188,8 @@ Farbmanagement, FPS-Limiter. Das liefert das verschachtelte gamescope (7.10).
 | **8** | "Hybrid start": Smithay spike, nested gamescope per entry, i18n | 7.1, 7.10, 6.6 |
 | **9** | "Own compositor": minimal compositor, XWayland, test VM, license | 7.2, 7.3 |
 | **10** | "Session without gamescope": input isolation, overlays, keyboard layout, DRM checks | 7.5, 7.6 |
-| 11+ | Steam and launchers (with the user), then transitions and latency | 7.4 → 7.7–7.9, 7.11, 7.12 |
+| **11** | "Transitions": shell ↔ app animated in the compositor, animation polish, background music | 7.7, 6.7, 6.8 |
+| 12+ | Steam and launchers (with the user), then latency | 7.4 → 7.8, 7.9, 7.11, 7.12 |
 
 ## Sprint-Ergebnisse
 
@@ -627,6 +630,43 @@ Two agents in parallel; both had to test with real key events (QMP `send-key`), 
   still reach the game while the menu is open (possible later fix: `SDL_JOYSTICK_HIDAPI=0`, loses
   gyro/LED/rumble); the overlay stays on top ~450 ms while fading out; a monitor that comes back after
   a hand-over stays dark (single output); shutdown logs a harmless DRM "restore previous state" error.
+
+### Sprint 11 – "Transitions" (done: 7.7, 6.7, 6.8)
+
+- **Transitions (7.7):** `ShellMessage::Focus` carries an optional `Transition` (the tile rectangle
+  and how long the shell's launch screen takes to grow); the compositor announces
+  `FEATURE_TRANSITIONS`. Opening: the app's windows zoom out of the tile (or out of the launch screen
+  where it is at that moment) to fullscreen and fade in; the image keeps its aspect ratio (scaled to
+  cover the growing rectangle and cropped to it). Return ("Home" in the quick menu): the app shrinks
+  into its tile on the home screen and fades out above the shell, which settles from a slight zoom
+  and brightens. If the app closed its window itself, only the shell part runs. The Smithay-free
+  logic is in `crates/compositor/src/transition.rs` (unit-tested); `State::frame_windows` builds the
+  frame's windows (front to back, the app being left raised above the shell, background apps hidden)
+  and `render.rs` turns an `Effect` into rescale/relocate/crop elements. The shell keeps the launch
+  screen up ~700 ms under the zooming app. Animations off → no transition (instant, as before).
+- **Background music (6.7):** settings row "Background music": Off (default) / Ambient / My music.
+  Ambient is generated (`consoleui_core::music`, 48 s loop over four chords with bells and an echo,
+  seamless) and streamed to its own `pw-cat --media-role Music` with a 1.5 s fade; "My music" plays
+  `flac`/`ogg`/`opus`/`wav` files from `$XDG_DATA_HOME/consoleui/music` shuffled, paused with
+  `SIGSTOP`/`SIGCONT`. It plays only while the shell is in front (no app, no launch screen, no boot
+  screen). `cargo run -p consoleui-core --example ambient_wav -- /tmp/ambient.wav` writes the loop
+  to a WAV file.
+- **Animation polish (6.8):** focus ring with a gap around the tile, a light sweeping once across a
+  newly focused tile, a ripple ring on press, a glass highlight on every tile, a gliding underline
+  under the current tab, the info area on the home screen crossfades (old text sinks, new one rises)
+  and an indeterminate progress bar on the launch screen. The settings list scrolls now (nine rows
+  with the music row did not fit above the hint bar in a 720p window). Benchmark: render time
+  Ø 6.0 → 7.0 ms, max frame gap unchanged.
+- **Tested:** nested on the NVIDIA host (`--winit`, glxgears via `--dummy-launch`, one run, no Xid):
+  a screenshot series every 70 ms through launch → zoom in, quick menu → Home → shrink into the
+  tile, launch again from the running tile → zoom out of the tile. Music with a stand-in `pw-cat`
+  that records the stream: fade in after the boot screen, fade out at the launch, back after the app
+  exited. 138 core + 21 compositor + 8 shell tests, clippy, fmt.
+- **Not tested:** transitions on DRM in the VM, with a real game or Steam (splash windows), with a
+  nested gamescope; the music with real speakers over a longer time; "My music" with real files.
+- **Known gaps:** no rounded corners or shadow on the zooming game image (would need a shader);
+  the return animation needs the app's window, so an app that quits shows only the shell part;
+  "My music" pauses without a fade.
 
 ## Risiken / offene Fragen
 

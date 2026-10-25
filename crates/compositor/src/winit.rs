@@ -138,11 +138,12 @@ pub fn run(options: &Options) -> Result<i32, Box<dyn std::error::Error>> {
 
 impl State {
     fn render_winit(&mut self, output: &Output) {
+        let windows = self.frame_windows();
         let Backend::Winit(data) = &mut self.backend else { return };
         let pointer = self.pointer.current_location();
         let age = data.backend.buffer_age().unwrap_or(0);
         let result = data.backend.bind().and_then(|(renderer, mut framebuffer)| {
-            let elements = render::output_elements(renderer, &self.space, output, &self.cursor_status, pointer);
+            let elements = render::output_elements(renderer, &windows, output, &self.cursor_status, pointer);
             let result = data
                 .damage_tracker
                 .render_output(renderer, &mut framebuffer, age, &elements, render::CLEAR_COLOR)
@@ -197,8 +198,9 @@ impl State {
         let Some(size) = output.current_mode().map(|mode| mode.size) else { return };
         let pointer = self.pointer.current_location();
         let requests = std::mem::take(&mut self.screenshots);
+        let windows = self.frame_windows();
         let Some(renderer) = self.backend.renderer() else { return };
-        let elements = render::output_elements(renderer, &self.space, output, &self.cursor_status, pointer);
+        let elements = render::output_elements(renderer, &windows, output, &self.cursor_status, pointer);
         let results: Vec<_> = requests
             .into_iter()
             .map(|request| {

@@ -352,6 +352,18 @@ msgstr "Klänge"
 msgid "Sounds while navigating"
 msgstr "Klänge beim Navigieren"
 
+msgid "Background music"
+msgstr "Hintergrundmusik"
+
+msgid "Plays while the home screen is in front"
+msgstr "Läuft, solange der Startbildschirm vorne ist"
+
+msgid "Ambient"
+msgstr "Ambient"
+
+msgid "My music"
+msgstr "Eigene Musik"
+
 msgid "Button symbols"
 msgstr "Tastensymbole"
 

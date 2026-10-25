@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use consoleui_core::keymap::{self, Keymap};
 use consoleui_core::ownership;
-use consoleui_core::protocol::{self, CompositorMessage, ShellMessage};
+use consoleui_core::protocol::{self, CompositorMessage, ShellMessage, Target};
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::renderer::ImportDma;
 use smithay::backend::renderer::utils::{on_commit_buffer_handler, with_renderer_surface_state};
@@ -66,7 +66,9 @@ use crate::backend::Backend;
 use crate::child::ShellProcess;
 use crate::control::{ClientId as ControlClient, Control};
 use crate::focus::FocusTarget;
-use crate::policy::{Policy, WindowId};
+use crate::policy::{Layer, Policy, Role, WindowId};
+use crate::render::Drawn;
+use crate::transition::Transitions;
 
 #[derive(Debug, Default)]
 pub struct ClientState {
@@ -138,6 +140,10 @@ pub struct State {
     pub keymap: Keymap,
 
     pub policy: Policy,
+    /// What was in front when the policy was last applied (front changes start transitions)
+    pub front: Target,
+    /// Animated front changes (Story 7.7)
+    pub transitions: Transitions,
     pub control: Control,
     pub shell: Option<ShellProcess>,
     pub screenshots: Vec<ScreenshotRequest>,
@@ -251,6 +257,8 @@ impl State {
             system_keymap,
             keymap,
             policy: Policy::default(),
+            front: Target::Shell,
+            transitions: Transitions::default(),
             control,
             shell: None,
             screenshots: Vec::new(),
@@ -377,8 +385,55 @@ impl State {
             info!("policy: {event:?}");
             self.control.broadcast(event);
         }
+        self.track_front();
         self.apply_policy();
         self.refresh_pointer_focus();
+    }
+
+    /// Starts a transition when the window in front changed (not for the quick menu, which only
+    /// stacks the shell's overlay above the app).
+    fn track_front(&mut self) {
+        let front = self.policy.front();
+        if front != self.front {
+            let old = std::mem::replace(&mut self.front, front);
+            if !self.policy.overlay_open() {
+                let leaving = match old {
+                    Target::App { app_id } => self.policy.app_has_content(app_id),
+                    Target::Shell => false,
+                };
+                let output = self.output_size().map(|s| (s.w as f64, s.h as f64)).unwrap_or((1.0, 1.0));
+                self.transitions.front_changed(old, front, leaving, output, self.clock.now().into());
+            }
+        }
+        self.transitions.settle(front);
+    }
+
+    /// The windows of the next frame, front to back, with the transition's effects (Story 7.7).
+    pub fn frame_windows(&mut self) -> Vec<Drawn> {
+        let now: Duration = self.clock.now().into();
+        let output = self.output_size().map(|s| (s.w as f64, s.h as f64)).unwrap_or((1.0, 1.0));
+        let animating = self.transitions.tick(now);
+        let mut bottom_up: Vec<(Role, bool, Drawn)> = Vec::new();
+        for window in self.space.elements() {
+            let id = Self::window_id(window);
+            let role = self.policy.role(id).unwrap_or(Role::Unknown);
+            let normal = self.policy.layer(id).is_none_or(|layer| layer == Layer::Normal);
+            if animating && normal && self.transitions.hidden(role) {
+                continue;
+            }
+            let effect = if animating && normal { self.transitions.effect(role, now, output) } else { None };
+            let location = self.space.element_location(window).unwrap_or_default() - window.geometry().loc;
+            bottom_up.push((role, normal, Drawn { window: window.clone(), location, effect }));
+        }
+        // During a return the app being left shrinks above the shell (below the shell's overlays).
+        if let Some(app_id) = self.transitions.raised().filter(|_| animating) {
+            let (raised, mut rest): (Vec<_>, Vec<_>) =
+                bottom_up.into_iter().partition(|(role, normal, _)| *normal && *role == Role::App(app_id));
+            let at = rest.iter().rposition(|(role, normal, _)| *normal && *role == Role::Shell).map_or(0, |i| i + 1);
+            rest.splice(at..at, raised);
+            bottom_up = rest;
+        }
+        bottom_up.into_iter().rev().map(|(_, _, drawn)| drawn).collect()
     }
 
     fn focus_target(window: &Window) -> FocusTarget {
@@ -447,7 +502,9 @@ impl State {
                 if version != protocol::VERSION {
                     warn!("shell speaks protocol {version}, compositor {}", protocol::VERSION);
                 }
-                let features = vec![protocol::FEATURE_OVERLAYS.to_owned(), protocol::FEATURE_GUIDE_KEY.to_owned()];
+                let features = [protocol::FEATURE_OVERLAYS, protocol::FEATURE_GUIDE_KEY, protocol::FEATURE_TRANSITIONS]
+                    .map(str::to_owned)
+                    .to_vec();
                 self.control.send_to(client, &CompositorMessage::Welcome { version: protocol::VERSION, features });
                 self.policy.set_shell_pid(pid, &ownership::read_process)
             }
@@ -456,7 +513,10 @@ impl State {
                 self.policy.launched(app_id, owner, &ownership::read_process)
             }
             ShellMessage::Exited { app_id } => self.policy.exited(app_id),
-            ShellMessage::Focus { target } => self.policy.set_target(target),
+            ShellMessage::Focus { target, transition } => {
+                self.transitions.request(target, transition, self.clock.now().into());
+                self.policy.set_target(target)
+            }
             ShellMessage::Overlay { open } => {
                 info!("overlay {}", if open { "open" } else { "closed" });
                 self.policy.set_overlay(open)

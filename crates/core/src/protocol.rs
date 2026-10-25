@@ -7,7 +7,7 @@
 //! to those apps (with [`crate::ownership`]) and reports what it sees.
 //!
 //! Unknown message types or malformed lines are skipped by the reader, so either side can add
-//! messages later (7.7 transitions, 7.12 screenshots) without breaking an older peer. Fields that
+//! messages later (7.12 screenshots) without breaking an older peer. Fields that
 //! may be added later must be `Option` or `#[serde(default)]`. Optional features are announced in
 //! [`CompositorMessage::Welcome`] (`features`), so a newer shell keeps working with an older
 //! compositor (Story 7.6: overlay toplevels only when the compositor lists [`FEATURE_OVERLAYS`]).
@@ -27,6 +27,31 @@ pub const FEATURE_OVERLAYS: &str = "overlay_windows";
 /// Feature (Story 7.5): the compositor reserves a Guide key combination for the shell and reports
 /// it as [`CompositorMessage::Guide`], whatever window has the keyboard.
 pub const FEATURE_GUIDE_KEY: &str = "guide_key";
+
+/// Feature (Story 7.7): the compositor animates a change of the front window when
+/// [`ShellMessage::Focus`] carries a [`Transition`].
+pub const FEATURE_TRANSITIONS: &str = "transitions";
+
+/// A rectangle in output pixels (logical, origin top left).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Rect {
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+}
+
+/// How the compositor animates bringing an app to the front or the shell back (Story 7.7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct Transition {
+    /// The tile the app zooms out of (to the front) or shrinks into (back to the shell)
+    #[serde(default)]
+    pub tile: Option<Rect>,
+    /// The shell's launch screen grows from `tile` to fullscreen within this many milliseconds
+    /// from now; an app window that shows content earlier starts where the launch screen is then.
+    #[serde(default)]
+    pub card_ms: u32,
+}
 
 /// What a separate shell toplevel is for (Story 7.6). The shell's main window has no role.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -74,8 +99,13 @@ pub enum ShellMessage {
     /// The app has exited; the compositor forgets it.
     Exited { app_id: u32 },
     /// Bring the shell or an app to the front. An app without a window yet stays behind the
-    /// shell until its first window shows content.
-    Focus { target: Target },
+    /// shell until its first window shows content. With a `transition` (and
+    /// [`FEATURE_TRANSITIONS`]) the change is animated; without one it is instant.
+    Focus {
+        target: Target,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        transition: Option<Transition>,
+    },
     /// The quick menu is open: the shell gets keyboard and pointer, the app in front gets no input
     /// at all (Story 7.5). With a [`WindowRole::Overlay`] window only that window is placed above
     /// the app (Story 7.6); without one the whole shell window comes to the front.
@@ -190,11 +220,11 @@ mod tests {
     #[test]
     fn messages_have_a_stable_json_shape() {
         assert_eq!(
-            encode(&ShellMessage::Focus { target: Target::Shell }),
+            encode(&ShellMessage::Focus { target: Target::Shell, transition: None }),
             "{\"type\":\"Focus\",\"target\":{\"kind\":\"shell\"}}\n"
         );
         assert_eq!(
-            encode(&ShellMessage::Focus { target: Target::App { app_id: 7 } }),
+            encode(&ShellMessage::Focus { target: Target::App { app_id: 7 }, transition: None }),
             "{\"type\":\"Focus\",\"target\":{\"kind\":\"app\",\"app_id\":7}}\n"
         );
         assert_eq!(encode(&CompositorMessage::AppGone { app_id: 3 }), "{\"type\":\"AppGone\",\"app_id\":3}\n");
@@ -220,7 +250,11 @@ mod tests {
                 steam_app_id: None,
             },
             ShellMessage::Exited { app_id: 1 },
-            ShellMessage::Focus { target: Target::App { app_id: 1 } },
+            ShellMessage::Focus { target: Target::App { app_id: 1 }, transition: None },
+            ShellMessage::Focus {
+                target: Target::Shell,
+                transition: Some(Transition { tile: Some(Rect { x: 1, y: 2, width: 3, height: 4 }), card_ms: 450 }),
+            },
             ShellMessage::Overlay { open: true },
             ShellMessage::WindowRole { title: "ConsoleUI Overlay".into(), role: WindowRole::Overlay },
             ShellMessage::WindowRole { title: "ConsoleUI notification".into(), role: WindowRole::Notification },
@@ -296,6 +330,17 @@ mod tests {
         assert_eq!(
             reader.next_message::<CompositorMessage>(),
             Some(CompositorMessage::Welcome { version: 1, features: Vec::new() })
+        );
+        // A focus request without a transition (an older shell) is instant.
+        reader.push(b"{\"type\":\"Focus\",\"target\":{\"kind\":\"shell\"}}\n");
+        assert_eq!(
+            reader.next_message::<ShellMessage>(),
+            Some(ShellMessage::Focus { target: Target::Shell, transition: None })
+        );
+        reader.push(b"{\"type\":\"Focus\",\"target\":{\"kind\":\"shell\"},\"transition\":{}}\n");
+        assert_eq!(
+            reader.next_message::<ShellMessage>(),
+            Some(ShellMessage::Focus { target: Target::Shell, transition: Some(Transition::default()) })
         );
         // Unknown roles (a newer shell) are skipped like unknown messages.
         reader.push(b"{\"type\":\"WindowRole\",\"title\":\"x\",\"role\":\"from_the_future\"}\n");

@@ -2,64 +2,56 @@ import { AppTile } from "types.slint";
 import { Theme } from "theme.slint";
 import { TileRow } from "tilerow.slint";
 
-// Home: the recently used apps and the library tile at the end, below them info on the selection.
-export component HomePage inherits Rectangle {
-    in property <[AppTile]> tiles;
-    in property <int> focused;
-    in property <bool> pulse;
+// Kind, title (or logo), subtitle and buttons of an entry
+component InfoBlock {
+    in property <AppTile> tile;
+    in property <bool> shown;
     in property <float> s;
 
-    out property <length> focus-x: row.focus-x;
-    out property <length> focus-y: row.focus-y;
-    out property <length> focus-size: row.focus-size;
-
-    property <length> margin: 110px * root.s;
-    property <AppTile> current: root.tiles[root.focused];
-
-    row := TileRow {
-        x: root.margin;
-        y: 150px * root.s;
-        tiles: root.tiles;
-        focused: root.focused;
-        pulse: root.pulse;
-        tile: 150px * root.s;
-        tile-focused: 230px * root.s;
-        gap: 20px * root.s;
+    opacity: root.shown ? 1 : 0;
+    visible: self.opacity > 0.01;
+    animate opacity {
+        duration: Theme.focus-duration * 1.2;
+        easing: ease-out-quart;
     }
 
     VerticalLayout {
-        x: root.margin;
-        y: row.y + row.height + 56px * root.s;
-        width: root.width - 2 * root.margin;
-        height: root.height - self.y;
+        // Sinks a little when hidden, rises into place when shown
+        y: root.shown ? 0 : 16px * root.s;
+        animate y {
+            duration: Theme.focus-duration * 1.4;
+            easing: ease-out-quart;
+        }
+        width: 100%;
+        height: 100%;
         alignment: start;
         spacing: 8px * root.s;
 
         Text {
-            text: root.current.kind;
+            text: root.tile.kind;
             color: Theme.text-dim;
             font-size: 18px * root.s;
             font-weight: 600;
             letter-spacing: 3px * root.s;
         }
 
-        if root.current.has-logo: Image {
+        if root.tile.has-logo: Image {
             height: 130px * root.s;
-            source: root.current.logo;
+            source: root.tile.logo;
             image-fit: contain;
             horizontal-alignment: left;
         }
 
-        if !root.current.has-logo: Text {
-            text: root.current.title;
+        if !root.tile.has-logo: Text {
+            text: root.tile.title;
             color: Theme.text;
             font-size: 64px * root.s;
             font-weight: 800;
         }
 
         Text {
-            text: root.current.subtitle;
-            color: root.current.running ? Theme.charging : Theme.text-dim;
+            text: root.tile.subtitle;
+            color: root.tile.running ? Theme.charging : Theme.text-dim;
             font-size: 26px * root.s;
         }
 
@@ -77,7 +69,7 @@ export component HomePage inherits Rectangle {
                 Text {
                     width: 100%;
                     height: 100%;
-                    text: root.current.action-label;
+                    text: root.tile.action-label;
                     color: Theme.base;
                     font-size: 24px * root.s;
                     font-weight: 700;
@@ -103,5 +95,55 @@ export component HomePage inherits Rectangle {
                 }
             }
         }
+    }
+}
+
+// Home: the recently used apps and the library tile at the end, below them info on the selection.
+export component HomePage inherits Rectangle {
+    in property <[AppTile]> tiles;
+    in property <int> focused;
+    in property <bool> pulse;
+    in property <float> s;
+
+    out property <length> focus-x: row.focus-x;
+    out property <length> focus-y: row.focus-y;
+    out property <length> focus-size: row.focus-size;
+
+    property <length> margin: 110px * root.s;
+    property <AppTile> current: root.tiles[root.focused];
+
+    row := TileRow {
+        x: root.margin;
+        y: 150px * root.s;
+        tiles: root.tiles;
+        focused: root.focused;
+        pulse: root.pulse;
+        tile: 150px * root.s;
+        tile-focused: 230px * root.s;
+        gap: 20px * root.s;
+    }
+
+    // Info on the focused entry: when the focus moves, the old text sinks and fades out while the
+    // new one rises in. The layer being shown follows `current` live, the other one keeps the
+    // previous entry while it fades.
+    property <bool> flip;
+    property <AppTile> last: root.current;
+    property <AppTile> previous;
+
+    changed focused => {
+        root.previous = root.last;
+        root.last = root.current;
+        root.flip = !root.flip;
+    }
+
+    for layer in 2: InfoBlock {
+        property <bool> shows: (layer == 0) == root.flip;
+        x: root.margin;
+        y: row.y + row.height + 56px * root.s;
+        width: root.width - 2 * root.margin;
+        height: root.height - self.y;
+        tile: self.shows ? root.current : root.previous;
+        shown: self.shows;
+        s: root.s;
     }
 }

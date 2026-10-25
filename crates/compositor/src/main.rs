@@ -16,6 +16,7 @@ mod options;
 mod policy;
 mod render;
 mod state;
+mod transition;
 mod winit;
 mod xwayland;
 

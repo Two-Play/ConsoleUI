@@ -1,5 +1,5 @@
-//! What a frame consists of (the space's windows plus the client cursor), frame callbacks and
-//! presentation feedback after a frame, and the offscreen screenshot.
+//! What a frame consists of (the windows, transformed during a transition, plus the client
+//! cursor), frame callbacks and presentation feedback after a frame, and the offscreen screenshot.
 //!
 //! The frame bookkeeping follows anvil (`anvil/src/state.rs`, `render.rs`, MIT, Copyright (c)
 //! 2017 Victor Berger).
@@ -12,10 +12,14 @@ use std::time::Duration;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::element::surface::{WaylandSurfaceRenderElement, render_elements_from_surface_tree};
-use smithay::backend::renderer::element::{Kind, RenderElementStates, default_primary_scanout_output_compare};
+use smithay::backend::renderer::element::utils::{
+    CropRenderElement, Relocate, RelocateRenderElement, RescaleRenderElement,
+};
+use smithay::backend::renderer::element::{
+    AsRenderElements, Kind, RenderElementStates, default_primary_scanout_output_compare,
+};
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::backend::renderer::{Bind, ExportMem, Offscreen, TextureMapping};
-use smithay::desktop::space::SpaceRenderElements;
 use smithay::desktop::utils::{
     OutputPresentationFeedback, send_frames_surface_tree, surface_presentation_feedback_flags_from_states,
     surface_primary_scanout_output, update_surface_primary_scanout_output,
@@ -26,19 +30,33 @@ use smithay::output::Output;
 use smithay::utils::{IsAlive, Logical, Physical, Point, Rectangle, Scale, Size, Transform};
 use smithay::wayland::compositor::with_states;
 
+use crate::transition::Effect;
+
 /// Background where no window covers the output
 pub const CLEAR_COLOR: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
 
+type Transformed =
+    CropRenderElement<RelocateRenderElement<RescaleRenderElement<WaylandSurfaceRenderElement<GlesRenderer>>>>;
+
 smithay::backend::renderer::element::render_elements! {
     pub OutputElement<=GlesRenderer>;
-    Space=SpaceRenderElements<GlesRenderer, WaylandSurfaceRenderElement<GlesRenderer>>,
-    Cursor=WaylandSurfaceRenderElement<GlesRenderer>,
+    /// Windows and the client cursor
+    Surface=WaylandSurfaceRenderElement<GlesRenderer>,
+    /// Windows during a transition
+    Transformed=Transformed,
 }
 
-/// Elements of one frame, front to back.
+/// A window in a frame: where it is drawn (its render location) and how a transition changes it.
+pub struct Drawn {
+    pub window: Window,
+    pub location: Point<i32, Logical>,
+    pub effect: Option<Effect>,
+}
+
+/// Elements of one frame, front to back; `windows` front to back as well.
 pub fn output_elements(
     renderer: &mut GlesRenderer,
-    space: &Space<Window>,
+    windows: &[Drawn],
     output: &Output,
     cursor: &CursorImageStatus,
     pointer: Point<f64, Logical>,
@@ -61,11 +79,32 @@ pub fn output_elements(
         elements.extend(
             render_elements_from_surface_tree(renderer, surface, position, scale, 1.0, Kind::Cursor)
                 .into_iter()
-                .map(OutputElement::Cursor),
+                .map(OutputElement::Surface),
         );
     }
-    if let Ok(space_elements) = smithay::desktop::space::space_render_elements(renderer, [space], output, 1.0) {
-        elements.extend(space_elements.into_iter().map(OutputElement::Space));
+    let output_size = output.current_mode().map(|mode| mode.size).unwrap_or_default();
+    for drawn in windows {
+        let location = drawn.location.to_physical_precise_round(scale);
+        let Some(effect) = drawn.effect else {
+            let window_elements: Vec<WaylandSurfaceRenderElement<GlesRenderer>> =
+                drawn.window.render_elements(renderer, location, scale, 1.0);
+            elements.extend(window_elements.into_iter().map(OutputElement::Surface));
+            continue;
+        };
+        let window_elements: Vec<WaylandSurfaceRenderElement<GlesRenderer>> =
+            drawn.window.render_elements(renderer, location, scale, effect.alpha);
+        let offset = Point::<f64, Logical>::from(effect.offset).to_physical(scale).to_i32_round();
+        let clip = match effect.clip {
+            Some(area) => Rectangle::<f64, Logical>::new((area.x, area.y).into(), (area.w, area.h).into())
+                .to_physical(scale)
+                .to_i32_round(),
+            None => Rectangle::from_size(output_size),
+        };
+        elements.extend(window_elements.into_iter().filter_map(|element| {
+            let element = RescaleRenderElement::from_element(element, Point::default(), effect.scale);
+            let element = RelocateRenderElement::from_element(element, offset, Relocate::Relative);
+            CropRenderElement::from_element(element, scale, clip).map(OutputElement::Transformed)
+        }));
     }
     elements
 }

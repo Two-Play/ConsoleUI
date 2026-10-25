@@ -14,7 +14,7 @@ use consoleui_core::launch::{self, ProcessHandle};
 use consoleui_core::netpages::Page;
 use consoleui_core::osk::{KeyboardEvent, OnScreenKeyboard};
 use consoleui_core::ownership::{self, FIRST_DESKTOP_APP_ID, Owner, SHELL_APP_ID};
-use consoleui_core::protocol::{CompositorMessage, ShellMessage};
+use consoleui_core::protocol::{CompositorMessage, Rect, ShellMessage, Transition};
 use consoleui_core::running::{MIN_HOLD, Phase, RunningApp};
 use consoleui_core::settings::{GlyphChoice, Setting, Settings};
 use consoleui_core::sound::Sound;
@@ -31,6 +31,7 @@ use crate::context::{ContextAction, ContextMenu, ContextOutcome, EntryState};
 use crate::gamescope::{Gamescope, x11_window_id};
 use crate::hero::Heroes;
 use crate::loader::Library;
+use crate::music::Music;
 use crate::network::Network;
 use crate::quick::{ForegroundApp, QuickAction, QuickMenu, QuickOutcome};
 use crate::{
@@ -146,6 +147,8 @@ pub struct Shell {
     foreground: Option<u32>,
     /// Time of a failed launch; the launch screen shows the error briefly.
     failed_launch: Option<Instant>,
+    /// Our compositor zooms the app in over the launch screen (Story 7.7); it closes afterwards.
+    close_launch_at: Option<Instant>,
     /// Entry ID whose quitting is waiting for confirmation
     confirm_quit: Option<String>,
     quick: Option<QuickMenu>,
@@ -159,6 +162,8 @@ pub struct Shell {
     settings_path: Option<PathBuf>,
     settings_row: usize,
     audio: Option<Audio>,
+    /// Background music; plays only while the shell is in front
+    music: Music,
     /// Counts toasts up so that an older hide timer does not close a newer toast
     toast_generation: Rc<Cell<u64>>,
     /// "Controller battery low" warning already shown
@@ -187,6 +192,10 @@ struct Feedback {
     settings: Settings,
     network: [usize; 5],
 }
+
+/// How long the launch screen stays under an app our compositor zooms in (a bit longer than the
+/// compositor's transition)
+const LAUNCH_HANDOVER: Duration = Duration::from_millis(700);
 
 /// Initial animation durations in milliseconds (as in `theme.slint`)
 const DURATIONS: [i64; 5] = [220, 500, 120, 450, 200];
@@ -249,6 +258,7 @@ impl Shell {
             next_app_id: FIRST_DESKTOP_APP_ID,
             foreground: None,
             failed_launch: None,
+            close_launch_at: None,
             confirm_quit: None,
             quick: None,
             gamescope,
@@ -258,6 +268,7 @@ impl Shell {
             settings_path,
             settings_row: 0,
             audio: Audio::start(),
+            music: Music::start(),
             toast_generation: Rc::default(),
             battery_warned: false,
             network: Network::default(),
@@ -858,6 +869,13 @@ impl Shell {
         ui.set_keyboard_active(self.search_area == SearchArea::Keyboard);
         self.show_hero(ui);
         self.update_hints(ui);
+        self.update_music(ui);
+    }
+
+    /// Background music plays while the shell is in front: no app, no launch screen, no boot.
+    fn update_music(&mut self, ui: &AppWindow) {
+        let active = self.foreground.is_none() && !ui.get_launching() && !ui.get_booting();
+        self.music.set(self.settings.music, active);
     }
 
     /// Fades in the hero of the focused entry (once it is decoded), prefetches the neighbours
@@ -1185,11 +1203,12 @@ impl Shell {
             QuickOutcome::Run(action) => {
                 self.close_quick(ui);
                 match action {
-                    QuickAction::Resume(app_id) => self.bring_to_front(ui, app_id),
+                    QuickAction::Resume(app_id) => self.bring_to_front(ui, app_id, None),
                     QuickAction::Home => {
-                        self.show_shell(ui);
+                        // Home first, so the app shrinks into its tile there.
                         self.screen = Screen::Home;
                         self.sync(ui);
+                        self.show_shell(ui);
                     }
                     QuickAction::Quit(entry_id) => self.quit_running(&entry_id),
                     QuickAction::Volume => {}
@@ -1268,9 +1287,11 @@ impl Shell {
     // --- Launching, tracking, quitting -----------------------------------------------------
 
     fn launch(&mut self, ui: &AppWindow, index: usize) {
+        // The tile the launch screen (and in our compositor the app) grows out of
+        let tile_rect = self.tile_rect(ui);
         // If the app is already running, it only comes to the front again.
         if let Some(app_id) = self.running_for(index).map(|r| r.app_id) {
-            self.bring_to_front(ui, app_id);
+            self.bring_to_front(ui, app_id, tile_rect);
             return;
         }
 
@@ -1319,17 +1340,20 @@ impl Shell {
                 }
                 self.running.push(Running { entry_id: id.clone(), app_id, app, stop, owner, has_window: false });
                 ui.set_launch_status(tr("Starting …").into());
+                ui.set_launch_busy(true);
                 ui.set_launching(true);
                 self.set_running_flag(&id, true);
                 self.record_launch(index);
                 self.home.focus(0);
                 self.refresh(ui);
                 self.focus_entry(&id);
-                self.set_foreground(Some(app_id));
+                let card_ms = if self.settings.animations { DURATIONS[3] as u32 } else { 0 };
+                self.set_foreground(Some(app_id), self.transition(tile_rect, card_ms));
             }
             Err(err) => {
                 eprintln!("Cannot start {}: {err}", entry.title);
                 ui.set_launch_status(tr("Couldn't start").into());
+                ui.set_launch_busy(false);
                 ui.set_launching(true);
                 self.failed_launch = Some(now);
                 let title = entry.title.clone();
@@ -1338,11 +1362,11 @@ impl Shell {
         }
     }
 
-    /// Brings a running app to the front. Without gamescope this is not possible; then the
-    /// launch screen shows that it is running.
-    fn bring_to_front(&mut self, ui: &AppWindow, app_id: u32) {
+    /// Brings a running app to the front (out of `tile`, if given, in our compositor). Without
+    /// gamescope this is not possible; then the launch screen shows that it is running.
+    fn bring_to_front(&mut self, ui: &AppWindow, app_id: u32, tile: Option<Rect>) {
         if self.gamescope.is_some() || self.compositor.is_some() {
-            self.set_foreground(Some(app_id));
+            self.set_foreground(Some(app_id), self.transition(tile, 0));
             return;
         }
         let Some(index) = self
@@ -1357,19 +1381,34 @@ impl Shell {
         ui.set_launch_image(self.launch_image(index));
         ui.set_launch_accent(self.tiles[index].accent);
         ui.set_launch_status(tr("Running").into());
+        ui.set_launch_busy(false);
         ui.set_launching(true);
     }
 
     /// Brings the shell to the front; running apps keep running in the background.
     fn show_shell(&mut self, ui: &AppWindow) {
         ui.set_launching(false);
-        self.set_foreground(None);
+        self.close_launch_at = None;
+        let transition = self.transition(self.tile_rect(ui), 0);
+        self.set_foreground(None, transition);
     }
 
-    fn set_foreground(&mut self, app_id: Option<u32>) {
+    /// The focused tile in output pixels (the main window is fullscreen in our compositor).
+    fn tile_rect(&self, ui: &AppWindow) -> Option<Rect> {
+        self.compositor.as_ref()?;
+        let size = ui.get_tile_size().round() as i32;
+        Some(Rect { x: ui.get_tile_x().round() as i32, y: ui.get_tile_y().round() as i32, width: size, height: size })
+    }
+
+    /// How our compositor animates the next front change (Story 7.7); `None` with animations off.
+    fn transition(&self, tile: Option<Rect>, card_ms: u32) -> Option<Transition> {
+        self.settings.animations.then_some(Transition { tile, card_ms })
+    }
+
+    fn set_foreground(&mut self, app_id: Option<u32>, transition: Option<Transition>) {
         self.foreground = app_id;
         if let Some(compositor) = &mut self.compositor {
-            compositor.focus(app_id);
+            compositor.focus(app_id, transition);
         }
         if let Some(gamescope) = &self.gamescope {
             match app_id {
@@ -1403,6 +1442,8 @@ impl Shell {
         }
         self.tag_windows(ui);
         self.restore_keyboard_focus(ui);
+        // Also after the boot screen, an app exit or the launch screen closing
+        self.update_music(ui);
 
         let now = Instant::now();
         let steam_games =
@@ -1414,6 +1455,7 @@ impl Shell {
                 Phase::Running => {
                     if ui.get_launching() && self.foreground == Some(running.app_id) {
                         ui.set_launch_status(tr("Running").into());
+                        ui.set_launch_busy(false);
                     }
                 }
                 Phase::Finished => finished.push((running.entry_id.clone(), running.app_id)),
@@ -1441,6 +1483,10 @@ impl Shell {
     /// Messages from our compositor: which launched apps show a window (the launch screen closes
     /// as soon as the app in front has one).
     pub fn poll_compositor(&mut self, ui: &AppWindow) {
+        if self.close_launch_at.is_some_and(|at| Instant::now() >= at) {
+            self.close_launch_at = None;
+            ui.set_launching(false);
+        }
         let Some(compositor) = &mut self.compositor else { return };
         let mut guide = false;
         let mut keymap_changed = false;
@@ -1449,8 +1495,13 @@ impl Shell {
                 CompositorMessage::WindowMapped { app_id, .. } => {
                     if let Some(running) = self.running.iter_mut().find(|r| r.app_id == app_id) {
                         running.has_window = true;
-                        if self.foreground == Some(app_id) {
-                            ui.set_launching(false);
+                        if self.foreground == Some(app_id) && ui.get_launching() {
+                            if compositor.transitions() && self.settings.animations {
+                                // The app zooms in above the launch screen first (Story 7.7).
+                                self.close_launch_at = Some(Instant::now() + LAUNCH_HANDOVER);
+                            } else {
+                                ui.set_launching(false);
+                            }
                         }
                     }
                 }

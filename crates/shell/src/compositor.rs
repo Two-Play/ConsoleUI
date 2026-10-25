@@ -11,7 +11,7 @@
 use std::io::{self, Read, Write};
 use std::os::unix::net::UnixStream;
 
-use consoleui_core::protocol::{self, CompositorMessage, LineReader, ShellMessage, Target, WindowRole};
+use consoleui_core::protocol::{self, CompositorMessage, LineReader, ShellMessage, Target, Transition, WindowRole};
 
 /// Title of `OverlayWindow` (`ui/overlay.slint`); the compositor recognizes the window by it.
 pub const OVERLAY_TITLE: &str = "ConsoleUI Overlay";
@@ -74,12 +74,15 @@ impl Compositor {
         self.flush();
     }
 
-    pub fn focus(&mut self, app_id: Option<u32>) {
+    /// Brings the app (or the shell) to the front, animated if the compositor supports it and a
+    /// transition is given (Story 7.7).
+    pub fn focus(&mut self, app_id: Option<u32>, transition: Option<Transition>) {
         let target = match app_id {
             Some(app_id) => Target::App { app_id },
             None => Target::Shell,
         };
-        self.send(&ShellMessage::Focus { target });
+        let transition = transition.filter(|_| self.transitions());
+        self.send(&ShellMessage::Focus { target, transition });
     }
 
     pub fn set_overlay(&mut self, open: bool) {
@@ -96,6 +99,11 @@ impl Compositor {
     /// The compositor places the overlay and notification windows above the app (Story 7.6).
     pub fn overlays(&self) -> bool {
         self.features.iter().any(|f| f == protocol::FEATURE_OVERLAYS)
+    }
+
+    /// The compositor animates front changes (Story 7.7).
+    pub fn transitions(&self) -> bool {
+        self.features.iter().any(|f| f == protocol::FEATURE_TRANSITIONS)
     }
 
     pub fn keymap(&self) -> Option<String> {

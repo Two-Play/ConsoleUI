@@ -30,6 +30,7 @@ cargo run -- --windowed --dummy    # made-up entries instead of the real Steam/d
 cargo run --release -- --windowed --dummy --tiles 50 --bench   # perf benchmark (fps, render time, max frame gap,
                                                                # slowest input step on the UI thread), then exits
 cargo run -p consoleui-core --example list_library   # print what discovery finds on this machine
+cargo run -p consoleui-core --example ambient_wav -- /tmp/ambient.wav   # the background music loop as WAV
 cargo run --release -- --windowed --start library --snapshot /tmp/lib.png   # render own window to PNG and exit
 cargo run --release -- --windowed --start search --query red --snapshot /tmp/search.png
 cargo run --release -- --windowed --dummy --fake-network --start settings --actions "down,down,down,down,confirm" --snapshot /tmp/wifi.png
@@ -86,7 +87,9 @@ Quit the running shell with Ctrl+Q. Pressing Enter on a real entry really launch
 Use `--snapshot` to check UI changes visually instead of screenshotting the desktop: a screen capture
 can pick up the user's other windows. Set `XDG_CONFIG_HOME` to a scratch directory when scripted actions
 touch the settings page (otherwise they overwrite the user's `~/.config/consoleui/settings.json`), and
-keep in mind that UI sounds really play through the speakers unless `"sounds": false` is set there.
+keep in mind that UI sounds really play through the speakers unless `"sounds": false` is set there
+(background music is off by default; a stand-in `pw-cat` script earlier in `PATH` that reads stdin at
+playback speed records it instead).
 Snapshot, `--actions` and `--bench` start only after the boot screen is gone (library loaded + 1.2 s);
 with `--actions` the snapshot waits until the script is done (+0.7 s).
 The WLAN/Bluetooth pages really change system state on ✕/□/≡ (connect, radio, discovery, pairing).
@@ -149,7 +152,7 @@ Cargo workspace (edition 2024, `default-members` = the shell):
     `RunningAppID` in `~/.steam/registry.vdf` is updated by Steam only minutes later), with a minimum hold
     time and a 2 s grace period without game processes.
   - `settings.rs` (persisted `Settings`, the rows of the settings page), `sound.rs` (synthesized UI sounds
-    as raw PCM), `input::evdev` (key codes/axis normalization for the exclusive grab).
+    as raw PCM), `music.rs` (generated ambient loop and the music folder for the background music), `input::evdev` (key codes/axis normalization for the exclusive grab).
   - `wifi.rs` / `bluetooth.rs`: D-Bus-free models for NetworkManager/BlueZ (merge/sort networks, AP
     security flags, device kind from `Icon`/Class/name, visible devices). `network.rs`: `Request`,
     `Response`, the `Backend` trait and `spawn` (backend thread, coalesces refreshes); `fakenet.rs` is the
@@ -177,6 +180,9 @@ Cargo workspace (edition 2024, `default-members` = the shell):
   Epic 7. `winit.rs` (nested) and `drm.rs` (DRM/KMS + libinput + libseat, single GPU and output, accepts
   a software EGL device) sit behind `backend::Backend`. `state.rs` holds the globals and protocol
   handlers (dmabuf, drm-syncobj, presentation-time, relative-pointer, pointer-constraints, …).
+  `transition.rs` (Story 7.7) is the Smithay-free logic of the animated front changes (zoom out of
+  the tile, shrink back into it), `State::frame_windows` applies it per window and `render.rs` draws
+  the resulting `Effect` with rescale/relocate/crop elements.
   `policy.rs` is the Smithay-free, unit-tested window policy (owner shell/app/unknown, front, stacking,
   keyboard focus; every toplevel is fullscreen, an app comes to the front once its window shows
   content). `xwayland.rs` runs `X11Wm` and maps windows to apps via `_NET_WM_PID` or the X-Resource
@@ -223,6 +229,8 @@ Cargo workspace (edition 2024, `default-members` = the shell):
     `main.rs` polls the channel, calls `Shell::set_library` and then hides the boot screen.
   - `src/audio.rs`: persistent `pw-cat --raw` process fed by a writer thread. `Shell::apply` compares a
     `Feedback` snapshot before/after each action to pick the sound.
+  - `src/music.rs`: background music on its own thread (ambient loop through `pw-cat --raw` with fades,
+    or the user's files); `Shell::update_music` lets it play only while the shell is in front.
   - `src/grab.rs`: while the quick menu is open, `EVIOCGRAB` on the controller's evdev nodes (matched by
     gilrs `os_name`) and read them directly so the game in front gets no input.
   - `src/gamepad.rs`: gilrs polling → `Action`s (only devices with an SDL mapping); PS/Guide → `Action::Guide`.

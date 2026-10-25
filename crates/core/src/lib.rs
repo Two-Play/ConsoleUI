@@ -15,6 +15,7 @@ pub mod input;
 pub mod keymap;
 pub mod launch;
 mod library;
+pub mod music;
 mod nav;
 pub mod netpages;
 pub mod network;

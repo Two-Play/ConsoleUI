@@ -70,12 +70,37 @@ impl GlyphChoice {
     }
 }
 
+/// Background music on the home screen (see [`crate::music`])
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MusicChoice {
+    #[default]
+    Off,
+    /// The generated ambient loop
+    Ambient,
+    /// Files from the music folder (`$XDG_DATA_HOME/consoleui/music`)
+    Folder,
+}
+
+impl MusicChoice {
+    pub const ALL: [MusicChoice; 3] = [Self::Off, Self::Ambient, Self::Folder];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Off => tr("Off"),
+            Self::Ambient => tr("Ambient"),
+            Self::Folder => tr("My music"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
     pub accent: Accent,
     pub animations: bool,
     pub sounds: bool,
+    pub music: MusicChoice,
     pub glyphs: GlyphChoice,
     pub language: LanguageChoice,
     /// Layout of the physical keyboard in our compositor (the on-screen keyboard follows the
@@ -89,6 +114,7 @@ impl Default for Settings {
             accent: Accent::default(),
             animations: true,
             sounds: true,
+            music: MusicChoice::default(),
             glyphs: GlyphChoice::default(),
             language: LanguageChoice::default(),
             keyboard_layout: KeyboardLayout::default(),
@@ -102,6 +128,8 @@ pub enum Setting {
     Accent,
     Animations,
     Sounds,
+    /// Background music on the home screen
+    Music,
     Glyphs,
     /// Story 6.6
     Language,
@@ -114,10 +142,11 @@ pub enum Setting {
 }
 
 impl Setting {
-    pub const ALL: [Setting; 8] = [
+    pub const ALL: [Setting; 9] = [
         Self::Accent,
         Self::Animations,
         Self::Sounds,
+        Self::Music,
         Self::Glyphs,
         Self::Language,
         Self::KeyboardLayout,
@@ -141,6 +170,7 @@ impl Setting {
             Self::Accent => tr("Accent color"),
             Self::Animations => tr("Animations"),
             Self::Sounds => tr("Sounds"),
+            Self::Music => tr("Background music"),
             Self::Glyphs => tr("Button symbols"),
             Self::Language => tr("Language"),
             Self::KeyboardLayout => tr("Keyboard layout"),
@@ -154,6 +184,7 @@ impl Setting {
             Self::Accent => tr("Color of selection and buttons"),
             Self::Animations => tr("Transitions and motion"),
             Self::Sounds => tr("Sounds while navigating"),
+            Self::Music => tr("Plays while the home screen is in front"),
             Self::Glyphs => tr("Symbols in the button hints"),
             Self::Language => tr("Language of the interface"),
             Self::KeyboardLayout => tr("Layout of the connected keyboard"),
@@ -206,6 +237,7 @@ impl Settings {
             Setting::Accent => self.accent.label(),
             Setting::Animations => on_off(self.animations),
             Setting::Sounds => on_off(self.sounds),
+            Setting::Music => self.music.label(),
             Setting::Glyphs => self.glyphs.label(),
             Setting::Language => self.language.label(),
             Setting::KeyboardLayout => self.keyboard_layout.label(),
@@ -219,6 +251,7 @@ impl Settings {
             Setting::Accent => self.accent = cycle(&Accent::ALL, self.accent, forward),
             Setting::Animations => self.animations = !self.animations,
             Setting::Sounds => self.sounds = !self.sounds,
+            Setting::Music => self.music = cycle(&MusicChoice::ALL, self.music, forward),
             Setting::Glyphs => self.glyphs = cycle(&GlyphChoice::ALL, self.glyphs, forward),
             Setting::Language => self.language = cycle(&LanguageChoice::ALL, self.language, forward),
             Setting::KeyboardLayout => {
@@ -245,6 +278,11 @@ mod tests {
         assert_eq!(settings.value_label(Setting::Sounds), "Off");
         settings.change(Setting::Glyphs, true);
         assert_eq!(settings.glyphs, GlyphChoice::PlayStation);
+        settings.change(Setting::Music, true);
+        assert_eq!(settings.music, MusicChoice::Ambient);
+        settings.change(Setting::Music, false);
+        settings.change(Setting::Music, false);
+        assert_eq!(settings.music, MusicChoice::Folder);
         // Sub-pages change no value
         settings.change(Setting::Wifi, true);
         assert_eq!(settings.glyphs, GlyphChoice::PlayStation);
@@ -278,6 +316,8 @@ mod tests {
         // Missing fields get their defaults (e.g. after an update)
         fs::write(&path, r#"{"sounds": false}"#).unwrap();
         assert_eq!(Settings::load(&path), Settings { sounds: false, ..Settings::default() });
+        fs::write(&path, r#"{"music": "ambient"}"#).unwrap();
+        assert_eq!(Settings::load(&path).music, MusicChoice::Ambient);
         fs::write(&path, r#"{"keyboard_layout": "ch"}"#).unwrap();
         assert_eq!(Settings::load(&path).keyboard_layout, KeyboardLayout::Ch);
         fs::remove_dir_all(dir).unwrap();

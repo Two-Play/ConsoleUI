@@ -20,6 +20,7 @@ mod gamescope;
 mod grab;
 mod hero;
 mod loader;
+mod music;
 mod network;
 mod options;
 mod perf;

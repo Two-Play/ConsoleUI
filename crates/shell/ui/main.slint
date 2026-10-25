@@ -77,6 +77,8 @@ export component AppWindow inherits Window {
     in property <string> launch-status;
     in property <image> launch-image;
     in property <color> launch-accent;
+    // The app is still starting (progress indicator on the launch screen)
+    in property <bool> launch-busy;
 
     // Quick menu as a layer of the main window (without gamescope; there it is its own overlay window)
     in property <bool> quick-open;
@@ -113,6 +115,12 @@ export component AppWindow inherits Window {
 
     // The shell takes gamepad input only while focused; otherwise it belongs to the game in front.
     out property <bool> window-active: keys.has-focus;
+
+    // The focused tile of the current page; the launch screen grows out of it and our compositor
+    // zooms the app out of it and back into it (Story 7.7).
+    out property <length> tile-x: root.screen == Screen.home ? home.focus-x : root.screen == Screen.library ? library.focus-x : search.focus-x;
+    out property <length> tile-y: root.screen == Screen.home ? home.focus-y : root.screen == Screen.library ? library.focus-y : search.focus-y;
+    out property <length> tile-size: root.screen == Screen.home ? home.focus-size : root.screen == Screen.library ? library.focus-size : search.focus-size;
 
     callback action(NavAction);
     // Keyboard input in the search; returns whether the character was taken.
@@ -298,7 +306,7 @@ export component AppWindow inherits Window {
         }
 
         // Tabs
-        HorizontalLayout {
+        tabs := HorizontalLayout {
             x: root.margin;
             y: 50px * s;
             width: self.preferred-width;
@@ -313,7 +321,7 @@ export component AppWindow inherits Window {
                 opacity: root.screen == Screen.library || root.screen == Screen.settings ? 1 : 0.35;
             }
 
-            Text {
+            home-tab := Text {
                 text: @tr("Home");
                 color: root.screen == Screen.home ? Theme.text : Theme.text-dim;
                 font-size: 26px * s;
@@ -321,7 +329,7 @@ export component AppWindow inherits Window {
                 vertical-alignment: center;
             }
 
-            Text {
+            library-tab := Text {
                 text: @tr("Library");
                 color: root.screen == Screen.library ? Theme.text : Theme.text-dim;
                 font-size: 26px * s;
@@ -329,7 +337,7 @@ export component AppWindow inherits Window {
                 vertical-alignment: center;
             }
 
-            Text {
+            settings-tab := Text {
                 text: @tr("Settings");
                 color: root.screen == Screen.settings ? Theme.text : Theme.text-dim;
                 font-size: 26px * s;
@@ -344,6 +352,26 @@ export component AppWindow inherits Window {
                 s: root.s;
                 opacity: root.screen == Screen.home || root.screen == Screen.library ? 1 : 0.35;
             }
+        }
+
+        // Underline of the current tab; glides to the next one
+        Rectangle {
+            property <length> tab-x: root.screen == Screen.library ? library-tab.x : root.screen == Screen.settings ? settings-tab.x : home-tab.x;
+            property <length> tab-width: root.screen == Screen.library ? library-tab.width : root.screen == Screen.settings ? settings-tab.width : home-tab.width;
+            x: tabs.x + self.tab-x;
+            y: tabs.y + tabs.height + 6px * s;
+            width: self.tab-width;
+            height: 3px * s;
+            border-radius: self.height / 2;
+            background: Theme.accent;
+            drop-shadow-blur: 8px * s;
+            drop-shadow-color: Theme.accent.with-alpha(0.6);
+            opacity: root.screen == Screen.search ? 0 : 1;
+            animate x, width {
+                duration: Theme.page-duration * 1.6;
+                easing: ease-out-quart;
+            }
+            animate opacity { duration: Theme.page-duration; }
         }
 
         StatusBar {
@@ -479,9 +507,9 @@ export component AppWindow inherits Window {
 
         // Launch screen; when closed it lies invisibly right over the focused tile.
         Rectangle {
-            property <length> origin-x: root.screen == Screen.home ? home.focus-x : root.screen == Screen.library ? library.focus-x : search.focus-x;
-            property <length> origin-y: root.screen == Screen.home ? home.focus-y : root.screen == Screen.library ? library.focus-y : search.focus-y;
-            property <length> origin-size: root.screen == Screen.home ? home.focus-size : root.screen == Screen.library ? library.focus-size : search.focus-size;
+            property <length> origin-x: root.tile-x;
+            property <length> origin-y: root.tile-y;
+            property <length> origin-size: root.tile-size;
 
             x: self.origin-x;
             y: self.origin-y;
@@ -521,6 +549,27 @@ export component AppWindow inherits Window {
                     text: root.launch-status;
                     color: Theme.text-dim;
                     font-size: 26px * s;
+                }
+
+                // Indeterminate progress while the app starts: a light glides along a thin track.
+                Rectangle {
+                    property <duration> tick: root.launching && root.launch-busy ? animation-tick() : 0ms;
+                    property <float> phase: mod(self.tick / 1400ms, 1);
+                    height: 4px * s;
+                    width: 360px * s;
+                    border-radius: self.height / 2;
+                    background: #ffffff1f;
+                    clip: true;
+                    opacity: root.launch-busy ? 1 : 0;
+                    animate opacity { duration: Theme.page-duration; }
+
+                    Rectangle {
+                        x: (parent.phase * 1.6 - 0.4) * parent.width;
+                        width: parent.width * 0.4;
+                        height: 100%;
+                        border-radius: parent.border-radius;
+                        background: @linear-gradient(90deg, #ffffff00 0%, Theme.accent 50%, #ffffff00 100%);
+                    }
                 }
 
                 HintBar {

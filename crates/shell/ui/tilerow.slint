@@ -27,6 +27,7 @@ export component TileRow inherits Rectangle {
 
         data: app;
         focused: self.is-focused;
+        pressed: root.pulse && self.is-focused;
         width: self.size;
         height: self.size;
         x: (i - root.focused) * (root.tile + root.gap) + (i > root.focused && root.active ? root.tile-focused - root.tile : 0px) + (self.base - self.size) / 2;

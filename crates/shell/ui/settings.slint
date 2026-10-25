@@ -1,7 +1,8 @@
 import { SettingRow } from "types.slint";
 import { Theme } from "theme.slint";
 
-// Settings: a list of rows; ◀ ▶ changes the value of the focused row.
+// Settings: a list of rows; ◀ ▶ changes the value of the focused row. The list scrolls when it
+// does not fit above the hint bar, so the focused row stays visible.
 export component SettingsPage inherits Rectangle {
     in property <[SettingRow]> rows;
     in property <int> focused;
@@ -10,6 +11,16 @@ export component SettingsPage inherits Rectangle {
 
     property <length> margin: 110px * root.s;
     property <length> row-height: 92px * root.s;
+    property <length> pitch: root.row-height + 12px * root.s;
+    property <length> list-top: 200px * root.s;
+    // Up to the hint bar
+    property <length> list-height: root.height - root.list-top - 120px * root.s;
+    property <length> content-height: root.rows.length * root.pitch + 60px * root.s;
+    property <length> scroll: max(0px, min((root.focused + 1.5) * root.pitch - root.list-height, root.content-height - root.list-height));
+    animate scroll {
+        duration: Theme.focus-duration;
+        easing: ease-out-quart;
+    }
 
     Text {
         x: root.margin;
@@ -20,53 +31,59 @@ export component SettingsPage inherits Rectangle {
         font-weight: 800;
     }
 
-    for row[i] in root.rows: card := Rectangle {
-        property <bool> is-focused: i == root.focused;
-        x: root.margin;
-        y: 210px * root.s + i * (root.row-height + 12px * root.s);
-        width: min(980px * root.s, root.width - 2 * root.margin);
-        height: root.row-height;
-        border-radius: 18px * root.s;
-        background: self.is-focused ? Theme.accent : Theme.surface;
-        animate background { duration: Theme.focus-duration; }
+    list := Rectangle {
+        y: root.list-top;
+        height: root.list-height;
+        clip: true;
 
-        VerticalLayout {
-            x: 30px * root.s;
-            y: (parent.height - self.height) / 2;
-            height: self.preferred-height;
-            spacing: 4px * root.s;
+        for row[i] in root.rows: card := Rectangle {
+            property <bool> is-focused: i == root.focused;
+            x: root.margin;
+            y: 10px * root.s + i * root.pitch - root.scroll;
+            width: min(980px * root.s, root.width - 2 * root.margin);
+            height: root.row-height;
+            border-radius: 18px * root.s;
+            background: self.is-focused ? Theme.accent : Theme.surface;
+            animate background { duration: Theme.focus-duration; }
 
-            Text {
-                text: row.label;
-                color: card.is-focused ? Theme.base : Theme.text;
-                font-size: 24px * root.s;
-                font-weight: 700;
+            VerticalLayout {
+                x: 30px * root.s;
+                y: (parent.height - self.height) / 2;
+                height: self.preferred-height;
+                spacing: 4px * root.s;
+
+                Text {
+                    text: row.label;
+                    color: card.is-focused ? Theme.base : Theme.text;
+                    font-size: 24px * root.s;
+                    font-weight: 700;
+                }
+
+                Text {
+                    text: row.description;
+                    color: card.is-focused ? Theme.base.with-alpha(0.7) : Theme.text-dim;
+                    font-size: 17px * root.s;
+                }
             }
 
             Text {
-                text: row.description;
-                color: card.is-focused ? Theme.base.with-alpha(0.7) : Theme.text-dim;
-                font-size: 17px * root.s;
+                x: parent.width - self.width - 30px * root.s;
+                height: 100%;
+                text: row.opens-page ? row.value + "   ›"
+                    : (card.is-focused ? "◀  " : "") + row.value + (card.is-focused ? "  ▶" : "");
+                color: card.is-focused ? Theme.base : Theme.text;
+                font-size: 22px * root.s;
+                font-weight: 600;
+                vertical-alignment: center;
             }
         }
 
         Text {
-            x: parent.width - self.width - 30px * root.s;
-            height: 100%;
-            text: row.opens-page ? row.value + "   ›"
-                : (card.is-focused ? "◀  " : "") + row.value + (card.is-focused ? "  ▶" : "");
-            color: card.is-focused ? Theme.base : Theme.text;
-            font-size: 22px * root.s;
-            font-weight: 600;
-            vertical-alignment: center;
+            x: root.margin;
+            y: 10px * root.s + root.rows.length * root.pitch + 24px * root.s - root.scroll;
+            text: root.footer;
+            color: Theme.text-dim;
+            font-size: 16px * root.s;
         }
-    }
-
-    Text {
-        x: root.margin;
-        y: 210px * root.s + root.rows.length * (root.row-height + 12px * root.s) + 24px * root.s;
-        text: root.footer;
-        color: Theme.text-dim;
-        font-size: 16px * root.s;
     }
 }

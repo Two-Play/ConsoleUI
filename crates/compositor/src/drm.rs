@@ -487,6 +487,7 @@ impl State {
 
     fn render_drm(&mut self) {
         let pointer = self.pointer.current_location();
+        let windows = self.frame_windows();
         let Backend::Drm(drm) = &mut self.backend else { return };
         let Some(gpu) = drm.device.as_mut() else { return };
         let Some(surface) = gpu.surface.as_mut() else { return };
@@ -494,7 +495,7 @@ impl State {
             return;
         }
         let output = surface.output.clone();
-        let elements = render::output_elements(&mut gpu.renderer, &self.space, &output, &self.cursor_status, pointer);
+        let elements = render::output_elements(&mut gpu.renderer, &windows, &output, &self.cursor_status, pointer);
         let result =
             surface.drm_output.render_frame(&mut gpu.renderer, &elements, render::CLEAR_COLOR, FrameFlags::DEFAULT);
         let mut rendered = false;

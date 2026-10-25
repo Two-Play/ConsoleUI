@@ -189,9 +189,18 @@ impl Policy {
         self.windows.iter().find(|w| w.id == id).map(|w| w.role)
     }
 
-    #[cfg(test)]
     pub fn layer(&self, id: WindowId) -> Option<Layer> {
         self.windows.iter().find(|w| w.id == id).map(|w| w.layer)
+    }
+
+    /// The quick menu is open (`Overlay` message).
+    pub fn overlay_open(&self) -> bool {
+        self.overlay
+    }
+
+    /// Whether a normal window of the app shows content.
+    pub fn app_has_content(&self, app_id: u32) -> bool {
+        self.has_content(Role::App(app_id))
     }
 
     /// The shell shows the quick menu in its own overlay window (Story 7.6).

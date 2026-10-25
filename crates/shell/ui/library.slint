@@ -122,6 +122,7 @@ export component LibraryPage inherits Rectangle {
                 height: self.size;
                 data: app;
                 focused: parent.is-focused;
+                pressed: root.pulse && parent.is-focused;
                 animate x, y, width, height {
                     duration: Theme.focus-duration;
                     easing: ease-out-quart;
