@@ -812,3 +812,49 @@ msgstr "Für Steam-Spiele nicht verfügbar"
 
 msgid "Steam starts the game itself. Use gamescope … -- %command% in its launch options."
 msgstr "Steam startet das Spiel selbst. Trage dort gamescope … -- %command% in die Startoptionen ein."
+
+# --- Profiles (Story 5.7) ---
+msgid "Who's playing?"
+msgstr "Wer spielt?"
+
+msgid "Switch profile"
+msgstr "Profil wechseln"
+
+msgid "Add profile"
+msgstr "Profil hinzufügen"
+
+msgid "Choose"
+msgstr "Auswählen"
+
+msgid "Playing now"
+msgstr "Spielt gerade"
+
+msgid "Rename"
+msgstr "Umbenennen"
+
+msgid "Change color"
+msgstr "Farbe ändern"
+
+msgid "Delete profile"
+msgstr "Profil löschen"
+
+msgid "Delete “{}” with its history, pins and settings?"
+msgstr "„{}“ mit Verlauf, angepinnten Einträgen und Einstellungen löschen?"
+
+msgid "New profile"
+msgstr "Neues Profil"
+
+msgid "Rename profile"
+msgstr "Profil umbenennen"
+
+msgid "Enter a name"
+msgstr "Namen eingeben"
+
+msgid "⇧ switches to upper case and symbols. “Done” saves the name."
+msgstr "⇧ schaltet auf Großbuchstaben und Sonderzeichen um. „Fertig“ speichert den Namen."
+
+msgid "Hello, {}!"
+msgstr "Hallo, {}!"
+
+msgid "Your games and settings are loaded."
+msgstr "Deine Spiele und Einstellungen sind geladen."

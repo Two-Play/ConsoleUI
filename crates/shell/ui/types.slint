@@ -110,3 +110,36 @@ export struct NetView {
     keys: [KeyCap],
     key-focused: int,
 }
+
+// Tile of the profile screen (Story 5.7)
+export struct ProfileTile {
+    name: string,
+    initial: string,
+    color: color,
+    // The profile the shell runs with right now
+    current: bool,
+    // The "Add profile" tile
+    add: bool,
+}
+
+// "Who's playing?" / "Switch profile" screen with its menu, name entry and delete confirmation
+export struct ProfileView {
+    open: bool,
+    title: string,
+    tiles: [ProfileTile],
+    focused: int,
+    menu-title: string,
+    menu-items: [ContextItem],
+    menu-focused: int,
+    name-open: bool,
+    name-title: string,
+    name-text: string,
+    keys: [KeyCap],
+    key-focused: int,
+    // Question before deleting; empty while not asking
+    confirm-text: string,
+    // The active profile, for the avatar in the top bar
+    active-name: string,
+    active-initial: string,
+    active-color: color,
+}

@@ -22,6 +22,8 @@ pub mod netpages;
 pub mod network;
 pub mod osk;
 pub mod ownership;
+pub mod profile_picker;
+pub mod profiles;
 pub mod protocol;
 pub mod running;
 pub mod search;

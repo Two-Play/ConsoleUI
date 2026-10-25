@@ -59,6 +59,8 @@ export component StatusBar inherits HorizontalLayout {
     in property <bool> battery-charging;
     in property <bool> controller-connected;
     in property <int> controller-battery;
+    in property <string> avatar-initial;
+    in property <color> avatar-color: #7c5cff;
 
     property <length> icon: 28px * s;
     property <length> row-height: 36px * s;
@@ -123,6 +125,7 @@ export component StatusBar inherits HorizontalLayout {
         }
     }
 
+    // Avatar of the active profile (Story 5.7)
     Rectangle {
         width: 36px * root.s;
 
@@ -131,7 +134,18 @@ export component StatusBar inherits HorizontalLayout {
             width: parent.width;
             height: self.width;
             border-radius: self.width / 2;
-            background: @linear-gradient(135deg, #7c5cff 0%, #00d4ff 100%);
+            background: @linear-gradient(135deg, root.avatar-color.brighter(0.25) 0%, root.avatar-color.darker(0.35) 100%);
+
+            Text {
+                width: 100%;
+                height: 100%;
+                text: root.avatar-initial;
+                color: Theme.text;
+                font-size: 18px * root.s;
+                font-weight: 800;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
         }
     }
 

@@ -92,16 +92,17 @@ Schätzung in Story Points (SP): 1, 2, 3, 5, 8, 13. Ein Sprint dauert 2 Wochen.
 | 4.5 | Prozesse laufen als eigener systemd-Scope (`systemd-run --user --scope`), damit Absturz und Beenden sauber gehen | 3 |
 | 4.6 | Quick-Menü als Overlay über laufenden Spielen (Lautstärke, Helligkeit, zurück zur Shell, Spiel beenden) | 8 (Spike 0.3) |
 
-## Epic 5 – System & Einstellungen
+## Epic 5 – System & settings
 
 | ID | User Story | SP |
 |---|---|---|
-| 5.1 | Power-Menü: Ausschalten, Neustart, Standby (logind via `zbus`) | 3 |
-| 5.2 | Lautstärke einstellen (PipeWire) | 3 |
-| 5.3 | WLAN-Liste und Verbinden (NetworkManager via D-Bus) | 8 |
-| 5.4 | Bluetooth-Controller koppeln (BlueZ via D-Bus) | 8 |
-| 5.5 | Einstellungsseite: Theme/Akzentfarbe, Sounds, Auflösung | 5 |
-| 5.6 | Benachrichtigungen als Toasts (Download fertig, Controller verbunden) | 3 |
+| 5.1 | Power menu: power off, restart, sleep (logind via `zbus`) | 3 |
+| 5.2 | Set the volume (PipeWire) | 3 |
+| 5.3 | Wi-Fi list and connecting (NetworkManager via D-Bus) | 8 |
+| 5.4 | Pair Bluetooth controllers (BlueZ via D-Bus) | 8 |
+| 5.5 | Settings page: theme/accent color, sounds, resolution | 5 |
+| 5.6 | Notifications as toasts (download finished, controller connected) | 3 |
+| 5.7 | **Done.** As a player in a household I pick my profile at the start ("Who's playing?", like the users of a PS5): several profiles within one Linux user, each with its own history, pinned/hidden entries, game options and settings in `$XDG_DATA_HOME/consoleui/profiles/<id>/`. Profiles can be added, renamed, recolored and deleted with the gamepad (name entry with the on-screen keyboard); "Switch profile" in the control center; the first profile takes over the existing files. Not a login manager: no passwords, no separate Linux users | 5 |
 
 ## Epic 6 – Polish & Animations
 
@@ -677,6 +678,40 @@ Two agents in parallel; both had to test with real key events (QMP `send-key`), 
 - **Known gaps:** no rounded corners or shadow on the zooming game image (would need a shader);
   the return animation needs the app's window, so an app that quits shows only the shell part;
   "My music" pauses without a fade.
+
+### Story 5.7 – Profiles ("Who's playing?")
+
+- **What:** the user asked for a "user selection"; of the two readings (a real greeter/login
+  manager for Linux users, or PS5-style profiles inside the shell) they chose the profiles. A greeter
+  (greetd IPC or PAM, Linux users with AccountsService avatars) stays open as an idea.
+- **Storage:** `profiles.json` (list, last chosen) and `profiles/<id>/` with `history.json`,
+  `collection.json`, `game_options.json` and `settings.json` under `$XDG_DATA_HOME/consoleui`. The ID
+  is a slug of the first name and stays when renaming. On the first start the profile is named after
+  the login name and gets copies of the old files (`~/.config/consoleui/settings.json` included), so
+  an older ConsoleUI still works.
+- **Flow:** with two or more profiles the shell asks "Who's playing?" after the boot screen (the
+  settings of the profile chosen last apply until then, e.g. its language). ✕ chooses, ≡ opens the
+  menu (rename, change color, delete with a confirmation; the running profile cannot delete itself),
+  "Add profile" opens the name entry (on-screen keyboard with a shift layer, words start with a capital,
+  max. 20 characters, at most 8 profiles). The control center has "Switch profile" (also over a running
+  game: the game goes to the background, like "Home"). Switching reloads settings (language, accent,
+  sounds, music, …), history, pins and game options, re-sorts and greets with a toast; running apps
+  keep running. The top bar shows the active profile's avatar instead of the placeholder circle.
+- **Code:** `consoleui_core::profiles` and `profile_picker` (UI-free, 15 tests), `src/profiles.rs`
+  (start profile, view), `ui/profiles.slint`. The loader no longer reads history/collection/game
+  options; the shell applies the active profile's data. Options `--profile <ID|NAME>` and
+  `--start profiles`.
+- **Tested:** snapshots with a scratch `XDG_DATA_HOME`: the start screen, the menu, the name entry,
+  switching at start and back through the control center with the real library (pins, history and
+  hidden entries differ per profile, accent and language change), the first start creating a profile
+  from the old files, adding and deleting (files removed). 153 core + 8 shell + 21 compositor tests,
+  clippy, fmt.
+  Also "Switch profile" over a running app on the desktop (glxgears via `--dummy-launch`: it keeps running).
+- **Not tested:** with a real gamepad and in the compositor/gamescope session (the screen is a layer
+  of the main window, so nothing session-specific is expected).
+- **Known gaps:** no avatar images (initial and color only); Steam's own "last played" counts for every
+  profile; Steam itself and the games do not know about the profiles (save games are shared); no
+  protection (PIN) for a profile.
 
 ## Risiken / offene Fragen
 

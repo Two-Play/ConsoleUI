@@ -34,6 +34,8 @@ cargo run -p consoleui-core --example ambient_wav -- /tmp/ambient.wav   # the ba
 cargo run --release -- --windowed --start library --snapshot /tmp/lib.png   # render own window to PNG and exit
 cargo run --release -- --windowed --start search --query red --snapshot /tmp/search.png
 cargo run --release -- --windowed --dummy --fake-network --start settings --actions "down,down,down,down,confirm" --snapshot /tmp/wifi.png
+cargo run --release -- --windowed --dummy --start profiles --snapshot /tmp/profiles.png   # "Who's playing?"
+cargo run --release -- --windowed --profile anna      # start as this profile (ID or name), no question
 cargo test -p consoleui-core -p consoleui            # on the host (the compositor needs the dev container)
 cargo test -p consoleui-core carousel   # single test / filter
 dev/toolbox.sh run cargo test --workspace                                   # all crates incl. the compositor
@@ -85,8 +87,10 @@ The compositor logs to stderr; the installed session sends its output to `journa
 
 Quit the running shell with Ctrl+Q. Pressing Enter on a real entry really launches that game or app.
 Use `--snapshot` to check UI changes visually instead of screenshotting the desktop: a screen capture
-can pick up the user's other windows. Set `XDG_CONFIG_HOME` to a scratch directory when scripted actions
-touch the settings page (otherwise they overwrite the user's `~/.config/consoleui/settings.json`), and
+can pick up the user's other windows. Set `XDG_DATA_HOME` to a scratch directory when scripted actions
+touch the settings page or the profile screen (otherwise they overwrite the user's profiles and
+`~/.local/share/consoleui/profiles/<id>/settings.json`; a fresh scratch directory starts with one profile
+copied from the old `~/.config/consoleui/settings.json` and the other files), and
 keep in mind that UI sounds really play through the speakers unless `"sounds": false` is set there
 (background music is off by default; a stand-in `pw-cat` script earlier in `PATH` that reads stdin at
 playback speed records it instead).
@@ -139,8 +143,14 @@ Cargo workspace (edition 2024, `default-members` = the shell):
   - `launch::spawn` starts detached processes (desktop apps in a `systemd-run --user --scope` unit when the
     user bus exists) and returns a `ProcessHandle` that can `stop()`; Steam games are stopped via
     `steam::stop_game` (SIGTERM to processes with `SteamAppId=<id>`). `History` persists to
-    `$XDG_DATA_HOME/consoleui/history.json`, `Collection` (pinned/hidden entry IDs, `collection.rs`)
+    `history.json` in the profile directory, `Collection` (pinned/hidden entry IDs, `collection.rs`)
     to `collection.json` next to it.
+  - `profiles.rs` (Story 5.7): `Profiles` (list + last chosen, `$XDG_DATA_HOME/consoleui/profiles.json`,
+    at most 8), `ProfilePaths` (`profiles/<id>/` with `history.json`, `collection.json`,
+    `game_options.json`, `settings.json`); `ensure_one` creates the first profile from the login name and
+    copies the files from before profiles into it. `profile_picker.rs` is the "Who's playing?" state
+    (tile row with "Add profile", menu: rename/color/delete, name entry with the on-screen keyboard,
+    delete confirmation) and returns `PickerOutcome`s; the shell saves and switches.
   - `Action` / `Carousel` (row) / `Grid` (library) handle input-agnostic navigation; `osk.rs` is the
     on-screen keyboard; `search.rs` ranks titles (`normalize` folds case and umlauts, also used for A–Z
     sorting); `library_view` applies the library filter (incl. `Hidden`) and sort, `home_view` builds the
@@ -151,9 +161,10 @@ Cargo workspace (edition 2024, `default-members` = the shell):
     `steam::running_games()` for Steam games (scans `/proc` for processes with `SteamAppId=<id>`;
     `RunningAppID` in `~/.steam/registry.vdf` is updated by Steam only minutes later), with a minimum hold
     time and a 2 s grace period without game processes.
-  - `settings.rs` (persisted `Settings`, the rows of the settings page), `sound.rs` (synthesized UI sounds
+  - `settings.rs` (`Settings` per profile, the rows of the settings page), `sound.rs` (synthesized UI sounds
     as raw PCM), `music.rs` (generated ambient loop and the music folder for the background music),
-    `backdrop.rs` (per-pixel animated background, rendered small and scaled up by the shell), `input::evdev` (key codes/axis normalization for the exclusive grab).
+    `backdrop.rs` (per-pixel animated background, rendered small and scaled up by the shell),
+    `input::evdev` (key codes/axis normalization for the exclusive grab).
   - `wifi.rs` / `bluetooth.rs`: D-Bus-free models for NetworkManager/BlueZ (merge/sort networks, AP
     security flags, device kind from `Icon`/Class/name, visible devices). `network.rs`: `Request`,
     `Response`, the `Backend` trait and `spawn` (backend thread, coalesces refreshes); `fakenet.rs` is the
@@ -165,8 +176,8 @@ Cargo workspace (edition 2024, `default-members` = the shell):
   - `game_options.rs` (Story 7.10): per-entry nested gamescope options (`GameOptions`: resolution,
     upscaler, FPS limit, HDR, fullscreen); `wrap()` puts `gamescope <args> --` in front of
     `Launch::Command` launches (Steam entries are not supported, Steam starts the game itself),
-    `GameOptionsPanel` is the panel state, `GameOptionsStore` persists to `game_options.json` next to
-    `collection.json`. `launch::plan` removes `ENABLE_GAMESCOPE_WSI` for a nested gamescope.
+    `GameOptionsPanel` is the panel state, `GameOptionsStore` persists to `game_options.json` in the
+    profile directory. `launch::plan` removes `ENABLE_GAMESCOPE_WSI` for a nested gamescope.
   - `i18n.rs` (Story 6.6): `Language` (from `LANGUAGE`/`LC_ALL`/`LC_MESSAGES`/`LANG` or the settings
     row), `tr`/`trf`/`trn`/`tr_noop`, backed by the embedded German catalog (see "Translations" below).
   - `keymap.rs`: the system keyboard layout for the compositor (`XKB_DEFAULT_*`, then `localectl`, then
@@ -254,7 +265,16 @@ Cargo workspace (edition 2024, `default-members` = the shell):
     ignores its position and scales it to the output, hence the fixed near-fullscreen size with the toast
     drawn top-right. Otherwise the toast is a layer in `AppWindow`.
   - `src/main.rs`: wiring and timers: gamepad poll (8 ms), status/clock (1 s), app watcher (500 ms), bench.
-  - `ui/statusbar.slint`: the right side of the top bar; icons in `ui/icons/*.svg` are tinted with `colorize`.
+  - `ui/statusbar.slint`: the right side of the top bar (with the active profile's avatar); icons in
+    `ui/icons/*.svg` are tinted with `colorize`.
+  - Profiles (Story 5.7): `src/profiles.rs` (`ProfileStart`: the profile and its settings at start,
+    before the window exists, because the language decides the desktop names; `to_view` builds the
+    `ProfileView` struct), `ui/profiles.slint` (`ProfilePage`, a layer over the pages). After booting
+    the shell asks "Who's playing?" if there are several profiles (not with `--profile`, another
+    `--start` page or `--bench`); "Switch profile" in the quick menu opens it later.
+    `Shell::switch_profile` reloads settings, history, collection and game options and re-sorts (Steam's
+    own `LastPlayed` counts for every profile); running apps keep running. The loader only discovers;
+    the shell applies the profile's history.
   - `ui/home.slint`, `ui/library.slint`, `ui/search.slint`: one component per `Screen`, all stacked in
     `main.slint` and cross-faded. Each exposes `focus-x/-y/-size` so the launch overlay starts on the right
     tile. `library.slint` computes `columns` from the window width; Rust reads it for grid navigation.

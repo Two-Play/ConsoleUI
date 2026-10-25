@@ -2,13 +2,10 @@
 //! discovery, decoding covers and logos (in parallel), computing accent colors.
 //! Slint `Image`s are only created on the UI thread; only `SharedPixelBuffer`s belong here.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::mpsc;
 
-use consoleui_core::game_options::GameOptionsStore;
-use consoleui_core::{
-    AppEntry, Collection, History, Launch, accent, apply_history, discover_library, dummy_library, sort_by_recent,
-};
+use consoleui_core::{AppEntry, Launch, accent, discover_library, dummy_library};
 use slint::{Rgba8Pixel, SharedPixelBuffer};
 
 /// Covers never get larger than this in the tiles (not even in 4K); smaller textures load faster.
@@ -26,16 +23,12 @@ pub struct LoadedEntry {
     pub logo: Option<SharedPixelBuffer<Rgba8Pixel>>,
 }
 
+/// The entries in discovery order; the shell sorts them by the active profile's history.
 pub struct Library {
     pub entries: Vec<LoadedEntry>,
-    pub history: History,
-    pub history_path: Option<PathBuf>,
-    /// Pinned and hidden entries
-    pub collection: Collection,
-    pub collection_path: Option<PathBuf>,
-    /// Nested gamescope options per entry (Story 7.10)
-    pub game_options: GameOptionsStore,
-    pub game_options_path: Option<PathBuf>,
+    /// Made-up entries: the profile saves neither history, collection nor game options for them
+    /// (their IDs are not real).
+    pub dummy: bool,
 }
 
 pub fn spawn(options: LoadOptions) -> mpsc::Receiver<Library> {
@@ -48,25 +41,9 @@ pub fn spawn(options: LoadOptions) -> mpsc::Receiver<Library> {
 
 fn load(options: &LoadOptions) -> Library {
     if !options.dummy {
-        let history_path = History::default_path();
-        let history = history_path.as_deref().map(History::load).unwrap_or_default();
-        let collection_path = Collection::default_path();
-        let collection = collection_path.as_deref().map(Collection::load).unwrap_or_default();
-        let game_options_path = GameOptionsStore::default_path();
-        let game_options = game_options_path.as_deref().map(GameOptionsStore::load).unwrap_or_default();
-        let mut entries = discover_library();
+        let entries = discover_library();
         if !entries.is_empty() {
-            apply_history(&mut entries, &history);
-            sort_by_recent(&mut entries);
-            return Library {
-                entries: decode_all(entries),
-                history,
-                history_path,
-                collection,
-                collection_path,
-                game_options,
-                game_options_path,
-            };
+            return Library { entries: decode_all(entries), dummy: false };
         }
         eprintln!("No games or apps found, showing dummy entries.");
     }
@@ -77,16 +54,7 @@ fn load(options: &LoadOptions) -> Library {
             entry.launch = Launch::Command(argv.clone());
         }
     }
-    // Dummy entries save neither history, collection nor game options (their IDs are not real).
-    Library {
-        entries: decode_all(entries),
-        history: History::default(),
-        history_path: None,
-        collection: Collection::default(),
-        collection_path: None,
-        game_options: GameOptionsStore::default(),
-        game_options_path: None,
-    }
+    Library { entries: decode_all(entries), dummy: true }
 }
 
 /// Decodes the images on several threads; the order is kept.

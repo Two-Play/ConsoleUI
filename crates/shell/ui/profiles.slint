@@ -1,0 +1,267 @@
+import { Theme } from "theme.slint";
+import { ProfileView, GlyphButton, ControllerStyle } from "types.slint";
+import { ContextMenu } from "contextmenu.slint";
+import { HintBar } from "glyph.slint";
+
+// Round avatar with the initial; the focused one grows and gets a ring with a gap.
+component Avatar inherits Rectangle {
+    in property <string> initial;
+    in property <color> tint;
+    in property <bool> add;
+    in property <bool> is-focused;
+    in property <float> s;
+
+    property <length> size: (self.is-focused ? 220px : 180px) * root.s;
+    animate size {
+        duration: Theme.focus-duration;
+        easing: ease-out-quart;
+    }
+
+    Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: root.size + 20px * root.s;
+        height: self.width;
+        border-radius: self.width / 2;
+        border-width: 4px * root.s;
+        border-color: Theme.accent;
+        opacity: root.is-focused ? 1 : 0;
+        animate opacity { duration: Theme.focus-duration; }
+    }
+
+    Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: root.size;
+        height: self.width;
+        border-radius: self.width / 2;
+        background: root.add ? Theme.surface : @linear-gradient(135deg, root.tint.brighter(0.25) 0%, root.tint.darker(0.35) 100%);
+        border-width: root.add ? 2px * root.s : 0;
+        border-color: #ffffff33;
+        drop-shadow-blur: root.is-focused ? 40px * root.s : 0;
+        drop-shadow-color: (root.add ? Theme.accent : root.tint).with-alpha(0.5);
+
+        Text {
+            width: 100%;
+            height: 100%;
+            text: root.initial;
+            color: root.add ? Theme.text-dim : Theme.text;
+            font-size: root.size * (root.add ? 0.5 : 0.42);
+            font-weight: root.add ? 300 : 800;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+}
+
+// "Who's playing?" at the start, "Switch profile" from the control center (Story 5.7)
+export component ProfilePage inherits Rectangle {
+    in property <ProfileView> view;
+    in property <ControllerStyle> style;
+    in property <float> s;
+
+    property <length> margin: 110px * root.s;
+    property <length> pitch: 260px * root.s;
+    property <length> row-y: root.height * 0.36;
+    property <color> glow: root.view.tiles[root.view.focused].add ? Theme.accent : root.view.tiles[root.view.focused].color;
+    animate glow {
+        duration: Theme.background-duration;
+        easing: ease-in-out;
+    }
+
+    // Covers the shell; only the glow of the focused profile shines through.
+    Rectangle {
+        width: 100%;
+        height: 100%;
+        background: Theme.base;
+    }
+
+    Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: root.row-y - self.height / 2 + 110px * root.s;
+        width: root.width * 1.1;
+        height: self.width * 0.8;
+        background: @radial-gradient(circle, root.glow.with-alpha(0.28) 0%, transparent 60%);
+    }
+
+    Text {
+        y: root.row-y - 260px * root.s;
+        width: 100%;
+        text: root.view.title;
+        color: Theme.text;
+        font-size: 52px * root.s;
+        font-weight: 800;
+        horizontal-alignment: center;
+    }
+
+    for tile[i] in root.view.tiles: Rectangle {
+        property <bool> is-focused: i == root.view.focused;
+        x: (root.width - root.view.tiles.length * root.pitch) / 2 + i * root.pitch;
+        y: root.row-y - 130px * root.s;
+        width: root.pitch;
+        height: 380px * root.s;
+
+        Avatar {
+            width: 100%;
+            height: 260px * root.s;
+            initial: tile.initial;
+            tint: tile.color;
+            add: tile.add;
+            is-focused: parent.is-focused;
+            s: root.s;
+        }
+
+        Text {
+            y: 292px * root.s;
+            height: 36px * root.s;
+            width: 100%;
+            text: tile.name;
+            color: parent.is-focused ? Theme.text : Theme.text-dim;
+            font-size: 28px * root.s;
+            font-weight: parent.is-focused ? 700 : 600;
+            horizontal-alignment: center;
+            overflow: elide;
+        }
+
+        if tile.current: Text {
+            y: 332px * root.s;
+            height: 24px * root.s;
+            width: 100%;
+            text: @tr("Playing now");
+            color: Theme.accent;
+            font-size: 18px * root.s;
+            font-weight: 600;
+            horizontal-alignment: center;
+        }
+    }
+
+    ContextMenu {
+        width: 100%;
+        height: 100%;
+        open: root.view.menu-items.length > 0;
+        title: root.view.menu-title;
+        items: root.view.menu-items;
+        focused: root.view.menu-focused;
+        s: root.s;
+    }
+
+    // Name entry: the on-screen keyboard as on the Wi-Fi password page
+    name := Rectangle {
+        property <length> unit: 62px * root.s;
+        property <length> key-gap: 8px * root.s;
+        property <length> keyboard-y: 330px * root.s;
+        property <length> left: (root.width - 11 * self.unit) / 2;
+
+        width: 100%;
+        height: 100%;
+        background: Theme.base;
+        opacity: root.view.name-open ? 1 : 0;
+        visible: self.opacity > 0.01;
+        animate opacity { duration: Theme.page-duration; }
+
+        Text {
+            x: name.left;
+            y: 120px * root.s;
+            text: root.view.name-title;
+            color: Theme.text;
+            font-size: 44px * root.s;
+            font-weight: 800;
+        }
+
+        Rectangle {
+            x: name.left;
+            y: 210px * root.s;
+            width: 11 * name.unit - name.key-gap;
+            height: 64px * root.s;
+            border-radius: self.height / 2;
+            background: Theme.surface;
+            border-width: 2px;
+            border-color: Theme.accent;
+
+            Text {
+                x: 28px * root.s;
+                height: 100%;
+                width: parent.width - 56px * root.s;
+                text: root.view.name-text == "" ? @tr("Enter a name") : root.view.name-text + "|";
+                color: root.view.name-text == "" ? Theme.text-dim : Theme.text;
+                font-size: 26px * root.s;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+        }
+
+        for key[i] in root.view.keys: Rectangle {
+            property <bool> is-focused: i == root.view.key-focused;
+            x: name.left + key.x * name.unit;
+            y: name.keyboard-y + key.row * name.unit;
+            width: key.width * name.unit - name.key-gap;
+            height: name.unit - name.key-gap;
+            border-radius: 10px * root.s;
+            background: self.is-focused ? Theme.accent : Theme.surface;
+            animate background { duration: 90ms; }
+
+            Text {
+                width: 100%;
+                height: 100%;
+                text: key.label;
+                color: parent.is-focused ? Theme.base : Theme.text;
+                font-size: (key.label.character-count > 1 ? 18px : 24px) * root.s;
+                font-weight: 600;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+
+        Text {
+            x: name.left;
+            y: name.keyboard-y + 5 * name.unit + 20px * root.s;
+            text: @tr("⇧ switches to upper case and symbols. “Done” saves the name.");
+            color: Theme.text-dim;
+            font-size: 18px * root.s;
+        }
+    }
+
+    // Before deleting
+    if root.view.confirm-text != "": Rectangle {
+        width: 100%;
+        height: 100%;
+        background: #000000b3;
+
+        Rectangle {
+            width: 680px * root.s;
+            height: 270px * root.s;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            border-radius: 24px * root.s;
+            background: #191b24;
+            border-width: 1px;
+            border-color: #ffffff22;
+
+            VerticalLayout {
+                padding: 44px * root.s;
+                spacing: 14px * root.s;
+
+                Text {
+                    text: @tr("Delete profile");
+                    color: Theme.text;
+                    font-size: 34px * root.s;
+                    font-weight: 800;
+                }
+
+                Text {
+                    text: root.view.confirm-text;
+                    color: Theme.text-dim;
+                    font-size: 22px * root.s;
+                    wrap: word-wrap;
+                }
+
+                HintBar {
+                    padding-top: 18px * root.s;
+                    hints: [{ button: GlyphButton.confirm, label: @tr("Delete") }, { button: GlyphButton.back, label: @tr("Cancel") }];
+                    style: root.style;
+                    s: root.s;
+                }
+            }
+        }
+    }
+}

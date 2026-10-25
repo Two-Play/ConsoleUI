@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use consoleui_core::Action;
 use consoleui_core::i18n::{self, tr};
 use consoleui_core::input::GlyphStyle;
-use consoleui_core::settings::{GlyphChoice, Settings};
+use consoleui_core::settings::GlyphChoice;
 use consoleui_core::status::{self, Network};
 use slint::{RenderingState, Rgba8Pixel, SharedPixelBuffer, Timer, TimerMode};
 
@@ -25,6 +25,7 @@ mod music;
 mod network;
 mod options;
 mod perf;
+mod profiles;
 mod quick;
 mod shell;
 mod tiles;
@@ -33,6 +34,7 @@ use gamepad::{Connection, Gamepads};
 use loader::LoadOptions;
 use options::{Options, ScriptStep, StartScreen, USAGE};
 use perf::FrameStats;
+use profiles::ProfileStart;
 use shell::{CompositorUi, GamescopeUi, Shell};
 
 slint::include_modules!();
@@ -67,10 +69,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
 
-    // The language decides the desktop entry names the loader reads, so it is set first.
-    let settings_path = Settings::default_path();
-    let settings = settings_path.as_deref().map(Settings::load).unwrap_or_default();
-    let language = settings.language.resolve();
+    // The language decides the desktop entry names the loader reads, so it is set first. It comes
+    // from the settings of the profile chosen last (or given with `--profile`, Story 5.7).
+    let start = ProfileStart::load(options.profile.as_deref());
+    let language = start.settings.language.resolve();
     i18n::set_language(language);
 
     let ui = AppWindow::new()?;
@@ -101,7 +103,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
     let overlay =
         gamescope.as_ref().map(|g| g.overlay.as_weak()).or_else(|| compositor_ui.as_ref().map(|c| c.overlay.as_weak()));
-    let shell = Rc::new(RefCell::new(Shell::new(&ui, gamescope, compositor, compositor_ui, settings, settings_path)));
+    let shell = Rc::new(RefCell::new(Shell::new(&ui, gamescope, compositor, compositor_ui, start)));
     if let Some(overlay) = overlay.and_then(|o| o.upgrade()) {
         overlay.on_action({
             let ui = ui.as_weak();
@@ -260,6 +262,11 @@ fn main() -> Result<(), Box<dyn Error>> {
             let (Some(ready), Some(ui)) = (tasks.take(), ui.upgrade()) else { return };
             shell.borrow_mut().set_library(&ui, library);
             shell.borrow_mut().open(&ui, ready.screen);
+            // "Who's playing?" when several profiles exist (or with `--start profiles`)
+            let several = shell.borrow().profile_count() > 1;
+            if ready.profiles == ProfilePrompt::Always || (ready.profiles == ProfilePrompt::IfSeveral && several) {
+                shell.borrow_mut().open_profiles(&ui, true);
+            }
             if let Some(query) = &ready.query {
                 shell.borrow_mut().type_text(&ui, query);
             }
@@ -282,9 +289,18 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+/// Whether the profile screen opens after booting
+#[derive(PartialEq)]
+enum ProfilePrompt {
+    Always,
+    IfSeveral,
+    Never,
+}
+
 /// What should happen after booting (from the command-line options)
 struct ReadyTasks {
     screen: Screen,
+    profiles: ProfilePrompt,
     query: Option<String>,
     bench: bool,
     actions: Vec<ScriptStep>,
@@ -294,13 +310,20 @@ struct ReadyTasks {
 impl From<&Options> for ReadyTasks {
     fn from(options: &Options) -> Self {
         let screen = match options.start {
-            StartScreen::Home => Screen::Home,
+            StartScreen::Home | StartScreen::Profiles => Screen::Home,
             StartScreen::Library => Screen::Library,
             StartScreen::Settings => Screen::Settings,
             StartScreen::Search => Screen::Search,
         };
+        // A profile given on the command line, another start page or the benchmark skip the question.
+        let profiles = match options.start {
+            StartScreen::Profiles => ProfilePrompt::Always,
+            StartScreen::Home if options.profile.is_none() && !options.bench => ProfilePrompt::IfSeveral,
+            _ => ProfilePrompt::Never,
+        };
         Self {
             screen,
+            profiles,
             query: options.query.clone(),
             bench: options.bench,
             actions: options.actions.clone(),
