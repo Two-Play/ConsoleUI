@@ -10,8 +10,8 @@ reference story IDs (e.g. "Story 1.5") in code comments when deferring work. The
 in German, but everything in the repository is written in English from now on: code (identifiers),
 comments, UI strings, `BACKLOG.md` and the docs. Older parts are still German: whenever you change a
 piece of code, a UI string or a section of a document, translate the comments, strings or that
-section to English as part of the change. Proper translations (German UI) come later with i18n
-(Story 6.6).
+section to English as part of the change. The German UI comes from the translation catalog (see
+"Translations" below).
 
 Planned target architecture: the shell runs as a fullscreen client inside **gamescope** (like Steam's
 Game Mode); an own Smithay compositor is an optional later phase. Keep the shell independent of the
@@ -35,6 +35,21 @@ cargo test --workspace
 cargo test -p consoleui-core carousel   # single test / filter
 cargo clippy --workspace --all-targets -- -D warnings  # must pass (Definition of Done)
 ```
+
+Development container (Fedora toolbox `consoleui-dev`, holds all `-devel` packages incl. the Smithay
+udev backend plus test tools; the code stays on the host, `$HOME` is shared, builds go to
+`target/toolbox`):
+
+```bash
+dev/toolbox.sh create                              # once; idempotent, also installs new packages
+dev/toolbox.sh run cargo test --workspace          # any command, run in this checkout
+dev/toolbox.sh run target/toolbox/release/consoleui --windowed --dummy   # windows appear on the desktop
+```
+
+The container has Mesa only (llvmpipe/lavapipe), not the NVIDIA userspace driver. Build, test and
+snapshot there; run gamescope on the NVIDIA GPU, real games and performance checks on the host.
+Run GPU tests (nested gamescope, compositors) one after another, never from parallel agents: a crashed
+gamescope can leave the NVIDIA driver in a reset-required state until the next reboot.
 
 Quit the running shell with Ctrl+Q. Pressing Enter on a real entry really launches that game or app.
 Use `--snapshot` to check UI changes visually instead of screenshotting the desktop: a screen capture

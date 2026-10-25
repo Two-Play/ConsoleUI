@@ -506,8 +506,10 @@ Three agents worked in parallel in their own worktrees; the branches were merged
   (it showed a "Gamescope WSI Layer Error" inside the session).
   - Tested: unit tests, snapshots, desktop launch with `glxgears` (process tree and scope checked,
     quitting via the quick menu), in the gamescope session the nested window was tagged and in front.
-  - **Not tested:** glxgears visible inside the gamescope session after the WSI fix (GPU fault, see
-    below), HDR, NIS/integer quality, real entries, real gamepad.
+  - After the reboot: in the gamescope session (`gamescope -e`, `--dummy-launch glxgears`, option set
+    via `--actions`) the shell started `gamescope -W 960 -H 540 -f -- glxgears`, and gamescope's own
+    screenshot shows glxgears in front – the WSI fix works.
+  - **Not tested:** HDR, NIS/integer quality, real entries, real gamepad.
 - **i18n (6.6):** English is the source language, German comes from one gettext catalog
   `lang/de/LC_MESSAGES/consoleui.po` (≈ 226 messages), bundled into Slint (`@tr`) and embedded in
   `consoleui_core::i18n` for Rust strings (`tr`/`trf`/`trn`) — no runtime gettext, no `.mo` files.
@@ -522,8 +524,13 @@ Three agents worked in parallel in their own worktrees; the branches were merged
     the German search heading is now "Suchen" (shares the msgid with the △ hint).
 - **GPU fault:** a nested gamescope run in the Smithay spike (gamescope over anvil's XWayland)
   triggered NVIDIA `Xid 51 BAD_TSG` at 12:32; afterwards every new Vulkan device failed
-  (`NV_ERR_RESET_REQUIRED`) until a reboot. After the reboot: re-run the 7.10 test in the gamescope
-  session and the spike's nested-gamescope tests on NVIDIA (X11/SDL path last and alone).
+  (`NV_ERR_RESET_REQUIRED`) until a reboot. After the reboot both re-runs passed without an Xid: the
+  7.10 test in the gamescope session, and nested gamescope via SDL on Wayland and on anvil's XWayland
+  on the NVIDIA GPU (details in the spike doc). The earlier fault most likely came from the spike's
+  frame-dump patch of anvil. Agents now run GPU tests one after another, not in parallel.
+- **Development container:** `dev/toolbox.sh` creates a Fedora toolbox `consoleui-dev` with all
+  `-devel` packages (including the Smithay udev backend) and test tools; the code stays on the host.
+  Tests, clippy, release build, snapshots and the full anvil build run inside it.
 
 ## Risiken / offene Fragen
 

@@ -65,20 +65,22 @@ KDE desktop. Nothing ran on a TTY, the udev/DRM backend was only built and read.
 (MIT, like anvil), start from anvil's `udev.rs` rather than from a GPL compositor, and treat
 "nested gamescope on NVIDIA" as a risk to verify early (after the reboot) before 7.10.
 
-## Re-run after the reboot
+## Re-run after the reboot (done)
 
-Paths are in the spike scratchpad (`$S` = `/tmp/claude-1000/…/scratchpad`, not kept across reboots
-– recreate with the commands in "Commands that were run").
+After the reboot, anvil (same commit, built in the `dev/toolbox.sh` container with the real `-devel`
+packages, so the udev backend is included) ran nested on the host with the NVIDIA EGL renderer, and
+the nested gamescope ran on the NVIDIA GPU. `journalctl -k | grep -i xid` stayed empty throughout.
 
-```bash
-# nested gamescope, Wayland backend, on the NVIDIA GPU (needs the relative-pointer global)
-ANVIL_FORCE_RELATIVE_POINTER=1 ANVIL_BIN=$S/anvil-dump ANVIL_DUMP=$S/dump-request \
-  sh $S/run-anvil.sh sh $S/t4-full.sh          # sections C, D, E = gamescope wayland / sdl-x11 / sdl-wayland
-# then check: journalctl -k | grep -i xid   (must stay empty)
-```
+| Test | Result |
+|---|---|
+| E: `gamescope --backend sdl` with `SDL_VIDEODRIVER=wayland` in anvil | works: `xdg_toplevel` configured by anvil, ~900 buffers attached and frame callbacks answered in 8 s, glxgears inside at 60 fps |
+| `gamescope` with the auto backend | the Wayland backend fails ("Couldn't create Wayland objects", relative-pointer missing in anvil-winit) and gamescope silently falls back to **headless** – no window. 7.2 must offer relative-pointer/pointer-constraints |
+| D: `gamescope --backend sdl` with `SDL_VIDEODRIVER=x11` on anvil's XWayland `:1` | works this time: the window is in `_NET_CLIENT_LIST`, glxgears inside at ~105 fps, **no Xid**. The earlier fault most likely came from the frame-dump patch (`EGL_BAD_ALLOC` on anvil's surface) together with SIGINT, not from this path itself |
+| C: gamescope's native Wayland backend | not re-run (needs the relative-pointer patch, which was lost with the scratchpad) |
 
-Test the X11 path (D) last and on its own; it is the one that preceded the Xid. If it faults again,
-report it to gamescope/NVIDIA and use only gamescope's Wayland backend in 7.10.
+Conclusion: nested gamescope on NVIDIA under a Smithay compositor works through SDL on both Wayland
+and X11. Our compositor should still expose relative-pointer so gamescope's own Wayland backend can be
+used and the auto backend does not fall back to headless.
 
 ## Details
 
