@@ -76,6 +76,11 @@ the guest; `dev/vm.sh ssh '<cmd>'` runs a command there, `dev/vm.sh screenshot <
 display, and `dev/vm.sh seat '<cmd>'` runs a command as an active logind session on seat0/VT 7 (log in
 `~/seat.log` in the guest), which is what `consoleui-compositor --drm` needs. The guest renders with
 llvmpipe only (no gamescope `--backend drm` there); the host GPU is never used. `dev/vm.sh stop` when done.
+Test focus and input with real key events, not only `--actions` (a focus bug slipped through that
+way): `dev/vm.sh keys` sends keys through QMP `send-key` (chords with `-`, `sleep:MS`); a foot terminal
+that writes raw keyboard input to a file makes a good stand-in "game" to prove no key leaks to it.
+`dev/vm.sh output <head> <WxH|off>` (with `VM_HEADS=2`) changes modes and plugs/unplugs monitors.
+The compositor logs to stderr; the installed session sends its output to `journalctl --user -t consoleui`.
 
 Quit the running shell with Ctrl+Q. Pressing Enter on a real entry really launches that game or app.
 Use `--snapshot` to check UI changes visually instead of screenshotting the desktop: a screen capture
@@ -160,6 +165,10 @@ Cargo workspace (edition 2024, `default-members` = the shell):
     `collection.json`. `launch::plan` removes `ENABLE_GAMESCOPE_WSI` for a nested gamescope.
   - `i18n.rs` (Story 6.6): `Language` (from `LANGUAGE`/`LC_ALL`/`LC_MESSAGES`/`LANG` or the settings
     row), `tr`/`trf`/`trn`/`tr_noop`, backed by the embedded German catalog (see "Translations" below).
+  - `keymap.rs`: the system keyboard layout for the compositor (`XKB_DEFAULT_*`, then `localectl`, then
+    `/etc/vconsole.conf` and `00-keyboard.conf`); the shell's "Keyboard layout" row (only under the
+    compositor) overrides it via `ShellMessage::KeyboardLayout`, the compositor answers with `Keymap`
+    and switches with `set_xkb_config` at runtime.
   - `protocol.rs`: the shell ↔ compositor messages (`ShellMessage` / `CompositorMessage`), one JSON
     object per line tagged with `"type"`, `LineReader` and `encode`; unknown types and malformed lines
     are skipped and new fields are optional, so both sides can evolve independently.
@@ -177,8 +186,17 @@ Cargo workspace (edition 2024, `default-members` = the shell):
   offscreen PNG screenshot.
 - `crates/shell` (binary `consoleui`): Slint UI plus glue.
   - `src/compositor.rs`: counterpart of `gamescope.rs`, active when `CONSOLEUI_COMPOSITOR` is set (takes
-    precedence over gamescope). Sends `Hello`/`Launched`/`Exited`/`Focus`/`Overlay`;
-    `Shell::poll_compositor` (50 ms timer) turns `WindowMapped`/`AppGone` into `has_window`.
+    precedence over gamescope). Sends `Hello`/`Launched`/`Exited`/`Focus`/`Overlay`/`KeyboardLayout`;
+    `Shell::poll_compositor` (50 ms timer) turns `WindowMapped`/`AppGone` into `has_window` and `Guide`
+    into `Action::Guide`. In compositor mode the quick menu and toasts are separate shell toplevels
+    (`OverlayWindow`, `NotificationWindow`), announced by title with `WindowRole` (constants
+    `OVERLAY_TITLE`/`NOTIFICATION_TITLE` must match the `.slint` files) and used only if the compositor's
+    `Welcome.features` lists `overlay_windows`. The policy stacks them above the app in front (`Layer`),
+    gives keyboard and pointer only to shell windows while `Overlay` is open, and hands the keyboard
+    back to the app only after all keys are released. F1, Super+Escape and `XF86HomePage` are reserved
+    by the compositor and reach the shell as `Guide`. Gamepads stay with the shell's `EVIOCGRAB`
+    (`grab.rs`; games reading controllers via hidraw are not covered). Slint on Wayland needs
+    `window().request_redraw()` after `show()` for a new toplevel to map.
   - `ui/main.slint`: `AppWindow`, the home screen. All sizes scale from a 1920×1080 reference via the
     `s` factor; tiles are positioned absolutely and animated (`animate x, y, width, height`).
   - `ui/theme.slint`: the `Theme` global with design tokens (colors, durations). Use it instead of

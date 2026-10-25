@@ -138,8 +138,8 @@ are updated after the spike.
 | 7.2 | **Done (Sprint 9).** Minimal compositor `crates/compositor`: DRM/KMS + libinput + libseat (`--drm`) and winit (`--winit`, development), the shell as fullscreen client, control socket (`CONSOLEUI_COMPOSITOR`), relative-pointer/pointer-constraints/`drm_syncobj`, own session file next to the gamescope session | 13 |
 | 7.3 | **Done (Sprint 9).** XWayland basics: `X11Wm`, fullscreen games, override-redirect windows, window → launched app mapping (reuses `consoleui_core::ownership`, fallback for windows without `_NET_WM_PID`) | 13 |
 | 7.4 | Robust XWayland for Steam and games: Steam client, launcher and splash windows, focus changes, special cases from tests with real games | 13 |
-| 7.5 | Focus and input in the compositor: Guide button always goes to the shell, the game gets no input while the quick menu is open (replaces `grab.rs`), keyboard focus returns cleanly | 5 |
-| 7.6 | Shell as overlay above running apps: quick menu and toasts as shell toplevels placed on top by the compositor (Slint has no layer-shell), replaces the `OverlayWindow`/`NotificationWindow` tricks | 5 |
+| 7.5 | **Done (Sprint 10).** Focus and input in the compositor: Guide button always goes to the shell, the game gets no input while the quick menu is open (replaces `grab.rs`), keyboard focus returns cleanly | 5 |
+| 7.6 | **Done (Sprint 10).** Shell as overlay above running apps: quick menu and toasts as shell toplevels placed on top by the compositor (Slint has no layer-shell), replaces the `OverlayWindow`/`NotificationWindow` tricks | 5 |
 | 7.7 | Animated transitions between shell and app in the compositor (tile zooms into the real game image, animated return) | 8 |
 | 7.8 | Direct scanout for the game in front (zero-copy, low latency), falling back to composition while an overlay is open | 5 |
 | 7.9 | VRR (adaptive sync) and tearing for games, simple frame pacing (Smithay has VRR, but no tearing-control/async page flip yet) | 13 |
@@ -185,7 +185,8 @@ Farbmanagement, FPS-Limiter. Das liefert das verschachtelte gamescope (7.10).
 | **7** | Wi-Fi/Bluetooth, context menu, notifications over games, performance | 5.3, 5.4, 2.7, 5.6, 6.3, 6.5 |
 | **8** | "Hybrid start": Smithay spike, nested gamescope per entry, i18n | 7.1, 7.10, 6.6 |
 | **9** | "Own compositor": minimal compositor, XWayland, test VM, license | 7.2, 7.3 |
-| 10+ | Session without gamescope, then transitions and latency | 7.4–7.6 → 7.7–7.9, 7.11, 7.12 |
+| **10** | "Session without gamescope": input isolation, overlays, keyboard layout, DRM checks | 7.5, 7.6 |
+| 11+ | Steam and launchers (with the user), then transitions and latency | 7.4 → 7.7–7.9, 7.11, 7.12 |
 
 ## Sprint-Ergebnisse
 
@@ -589,6 +590,43 @@ changed the least code).
 - **Workflow change:** the whole workspace (`cargo test/clippy --workspace`) now builds only in the dev
   container, because the compositor needs `-devel` packages; on the host, `cargo build`/`cargo run`
   still build the shell. glxgears is in Fedora's `glx-utils` package (added to the toolbox and VM lists).
+
+### Sprint 10 – "Session without gamescope" (done: 7.5, 7.6, keyboard layout, DRM checks)
+
+Two agents in parallel; both had to test with real key events (QMP `send-key`), not only `--actions`.
+
+- **Input isolation (7.5):** while the quick menu is open, keyboard and pointer go only to shell
+  windows; the game's surface gets a pointer leave (its pointer lock/confinement is released and
+  restored afterwards). Keyboard focus returns to the game only after all keys are released, so the
+  game never sees the release of the key that closed the menu — no `restore_keyboard_focus` hacks.
+  F1, Super+Escape and `XF86HomePage` are reserved by the compositor and sent to the shell as `Guide`,
+  so the quick menu opens from the keyboard even while a game has focus (found with real keys in the
+  VM: before, F1 went to the game). Gamepads: the shell keeps the `EVIOCGRAB` (`grab.rs`, driven by
+  the same overlay state) — the shell is the only gamepad reader, and logind revocation would not
+  affect fds a game opened itself.
+- **Overlays (7.6):** quick menu and toasts are separate shell toplevels announced with
+  `ShellMessage::WindowRole`; the policy stacks them above the app (`Layer`), toasts never get input.
+  The game stays visible under the menu. Older peers keep working (`Welcome.features`).
+- **Keyboard layout:** `consoleui_core::keymap` detects the system layout (here `de (nodeadkeys)`);
+  new settings row "Keyboard layout" (only under the compositor, Automatic + 16 layouts), applied at
+  runtime via `KeyboardLayout`/`Keymap` messages.
+- **DRM checks in the VM (with real keys):** VT switching works (also mid-game, no stuck modifiers);
+  a new preferred mode was ignored — fixed; unplugging the output hands over to a second one; login
+  through **SDDM** into "ConsoleUI (own compositor)" works and Ctrl+Q returns to the greeter. The
+  compositor now logs to stderr and the session to the journal (`journalctl --user -t consoleui`);
+  `session/install.sh` accepts a toolbox build. New VM helpers: `dev/vm.sh keys`, `dev/vm.sh output`,
+  `VM_HEADS`, a second VM via `CONSOLEUI_VM_DIR`/`VM_SSH_PORT`.
+- **Tested:** a foot terminal as stand-in game logged exactly the keys typed outside the menu
+  (`abcde`), none of the keys pressed while the menu was open; nested on the NVIDIA host the quick
+  menu and a toast showed over glxgears and the game came back (no Xid); gamescope mode regression
+  checked; 136 core + 15 compositor + 8 shell tests, clippy, fmt.
+- **Not tested:** real gamepad (also the grab in compositor mode), hidraw games and Steam, a real
+  game's pointer lock, keyboard isolation of an X11 game with logged keys, password login at the
+  greeter (autologin only), GDM/greetd, real monitors (EDID, HDR, refresh rates), HiDPI.
+- **Known gaps:** games no longer get F1/Super+Escape/Home under the compositor; hidraw controllers
+  still reach the game while the menu is open (possible later fix: `SDL_JOYSTICK_HIDAPI=0`, loses
+  gyro/LED/rumble); the overlay stays on top ~450 ms while fading out; a monitor that comes back after
+  a hand-over stays dark (single output); shutdown logs a harmless DRM "restore previous state" error.
 
 ## Risiken / offene Fragen
 
