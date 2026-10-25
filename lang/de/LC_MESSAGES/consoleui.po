@@ -25,6 +25,10 @@ msgstr "Einstellungen"
 msgid "Search"
 msgstr "Suchen"
 
+# Heading of the search page (the △ hint above is "Search")
+msgid "Find"
+msgstr "Suche"
+
 msgid "Navigate"
 msgstr "Navigieren"
 

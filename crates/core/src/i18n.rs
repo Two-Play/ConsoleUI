@@ -29,6 +29,8 @@ pub enum Language {
 }
 
 impl Language {
+    pub const ALL: [Language; 2] = [Self::English, Self::German];
+
     /// Code of the language, also the directory name of its catalog (as Slint expects it in
     /// `select_bundled_translation`).
     pub const fn code(self) -> &'static str {
@@ -114,6 +116,12 @@ pub fn desktop_languages(language: Language, env: Vec<String>) -> Vec<String> {
 /// Translates `msgid` into the current language.
 pub fn tr(msgid: &str) -> &str {
     lookup(language(), msgid)
+}
+
+/// Translates `msgid` into `language` instead of the current one (e.g. for texts that are built
+/// for a language before it is selected, or in tests).
+pub fn tr_in(language: Language, msgid: &str) -> &str {
+    lookup(language, msgid)
 }
 
 /// Translates `msgid` and fills its placeholders (`{}`, `{0}`, …).
