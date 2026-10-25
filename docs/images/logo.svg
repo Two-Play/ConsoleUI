@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="ConsoleUI logo">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5aa9ff"/>
+      <stop offset="1" stop-color="#2f5fd0"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.3" cy="0.25" r="0.8">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="56" fill="#070b18"/>
+  <rect x="8" y="8" width="240" height="240" rx="56" fill="none" stroke="#1d2a4d" stroke-width="2"/>
+  <!-- focused tile -->
+  <rect x="34" y="62" width="104" height="132" rx="22" fill="url(#bg)" stroke="#ffffff" stroke-width="5"/>
+  <rect x="34" y="62" width="104" height="132" rx="22" fill="url(#glow)"/>
+  <!-- neighbour tiles -->
+  <rect x="156" y="84" width="66" height="88" rx="16" fill="#8a4fc7" opacity="0.85"/>
+  <rect x="234" y="96" width="30" height="64" rx="12" fill="#e0a030" opacity="0.7"/>
+  <!-- d-pad -->
+  <g fill="#ffffff">
+    <rect x="76" y="104" width="20" height="48" rx="5"/>
+    <rect x="62" y="118" width="48" height="20" rx="5"/>
+  </g>
+</svg>

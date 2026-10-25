@@ -1,0 +1,33 @@
+name: Bug report
+description: Something does not work as expected
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, what happened instead?
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: How do you run ConsoleUI?
+      options: [Window on a desktop, Nested gamescope, Gamescope session, Own compositor (nested), Own compositor (DRM session)]
+    validations:
+      required: true
+  - type: input
+    id: controller
+    attributes:
+      label: Controller
+      placeholder: e.g. DualSense, Xbox Series, 8BitDo Pro 2, keyboard only
+  - type: input
+    id: system
+    attributes:
+      label: Distro, GPU and driver
+      placeholder: e.g. Fedora 44, NVIDIA RTX 4070 595.x
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      render: shell

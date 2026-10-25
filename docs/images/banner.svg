@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 360" width="1280" height="360" role="img" aria-label="ConsoleUI – a console shell for Linux">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#050813"/>
+      <stop offset="1" stop-color="#0b1a3d"/>
+    </linearGradient>
+    <radialGradient id="halo" cx="0.82" cy="0.45" r="0.5">
+      <stop offset="0" stop-color="#3a7bff" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#3a7bff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="blue" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5aa9ff"/><stop offset="1" stop-color="#2f5fd0"/></linearGradient>
+    <linearGradient id="purple" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#a06be0"/><stop offset="1" stop-color="#6b3aa8"/></linearGradient>
+    <linearGradient id="orange" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f0b040"/><stop offset="1" stop-color="#c0701c"/></linearGradient>
+    <linearGradient id="green" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2fc58a"/><stop offset="1" stop-color="#127a58"/></linearGradient>
+    <linearGradient id="red" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#e65a5a"/><stop offset="1" stop-color="#a02838"/></linearGradient>
+  </defs>
+  <rect width="1280" height="360" fill="url(#bg)"/>
+  <rect width="1280" height="360" fill="url(#halo)"/>
+  <!-- tile row -->
+  <g>
+    <rect x="690" y="70" width="170" height="220" rx="30" fill="url(#blue)" stroke="#ffffff" stroke-width="6"/>
+    <rect x="884" y="100" width="120" height="160" rx="22" fill="url(#purple)" opacity="0.9"/>
+    <rect x="1024" y="100" width="120" height="160" rx="22" fill="url(#orange)" opacity="0.8"/>
+    <rect x="1164" y="100" width="120" height="160" rx="22" fill="url(#green)" opacity="0.7"/>
+    <text x="775" y="205" font-family="DejaVu Sans, Arial, sans-serif" font-size="96" font-weight="700" fill="#fff" text-anchor="middle">C</text>
+  </g>
+  <!-- text -->
+  <text x="64" y="160" font-family="DejaVu Sans, Arial, sans-serif" font-size="88" font-weight="700" fill="#ffffff">ConsoleUI</text>
+  <text x="68" y="212" font-family="DejaVu Sans, Arial, sans-serif" font-size="30" fill="#9db4e6">A gamepad-first console ecosystem for Linux</text>
+  <text x="68" y="262" font-family="DejaVu Sans, Arial, sans-serif" font-size="22" fill="#6c82b5">Games · Apps · Store · Home theater — all from your couch</text>
+</svg>

@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 520" width="1100" height="520" role="img" aria-label="ConsoleUI ecosystem layers">
+  <defs>
+    <linearGradient id="g1" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#2f5fd0"/><stop offset="1" stop-color="#5aa9ff"/></linearGradient>
+    <linearGradient id="g2" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#6b3aa8"/><stop offset="1" stop-color="#a06be0"/></linearGradient>
+    <linearGradient id="g3" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#127a58"/><stop offset="1" stop-color="#2fc58a"/></linearGradient>
+    <linearGradient id="g4" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#a0561c"/><stop offset="1" stop-color="#f0b040"/></linearGradient>
+  </defs>
+  <style>
+    text { font-family: DejaVu Sans, Arial, sans-serif; }
+    .t { font-size: 22px; font-weight: 700; fill: #fff; }
+    .s { font-size: 15px; fill: #e8eefc; }
+    .tag { font-size: 13px; fill: #fff; font-weight: 700; }
+  </style>
+  <rect width="1100" height="520" rx="24" fill="#070b18"/>
+  <!-- layer 4 -->
+  <rect x="40" y="30" width="1020" height="96" rx="18" fill="url(#g4)" opacity="0.95"/>
+  <text x="70" y="70" class="t">Experiences</text>
+  <text x="70" y="98" class="s">Home theater (streaming hub) · Media center · Gamepad-first apps · Couch co-op launcher</text>
+  <rect x="940" y="48" width="100" height="26" rx="13" fill="#00000055"/><text x="990" y="66" class="tag" text-anchor="middle">PLANNED</text>
+  <!-- layer 3 -->
+  <rect x="40" y="142" width="1020" height="96" rx="18" fill="url(#g2)" opacity="0.95"/>
+  <text x="70" y="182" class="t">Store &amp; app format</text>
+  <text x="70" y="210" class="s">Catalog of gamepad-ready software · ratings · Flatpak / Steam (Proton) / native · themes &amp; plugins</text>
+  <rect x="940" y="160" width="100" height="26" rx="13" fill="#00000055"/><text x="990" y="178" class="tag" text-anchor="middle">PLANNED</text>
+  <!-- layer 2 -->
+  <rect x="40" y="254" width="1020" height="96" rx="18" fill="url(#g1)" opacity="0.95"/>
+  <text x="70" y="294" class="t">Console shell</text>
+  <text x="70" y="322" class="s">Home · Library · Search · Quick menu · Profiles · Wi-Fi/Bluetooth · Sounds · Wayland UI (Rust + Slint)</text>
+  <rect x="940" y="272" width="100" height="26" rx="13" fill="#00000055"/><text x="990" y="290" class="tag" text-anchor="middle">WORKING</text>
+  <!-- layer 1 -->
+  <rect x="40" y="366" width="1020" height="124" rx="18" fill="url(#g3)" opacity="0.95"/>
+  <text x="70" y="406" class="t">Session &amp; compositor</text>
+  <text x="70" y="434" class="s">Own Smithay compositor · nested gamescope per game (upscaling, HDR) · native controller input</text>
+  <text x="70" y="460" class="s">Login-manager session like Steam's Game Mode · also runs as a plain window on any desktop</text>
+  <rect x="940" y="384" width="100" height="26" rx="13" fill="#00000055"/><text x="990" y="402" class="tag" text-anchor="middle">BETA</text>
+</svg>

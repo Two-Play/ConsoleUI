@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 420" width="1100" height="420" role="img" aria-label="ConsoleUI roadmap">
+  <style>
+    text { font-family: DejaVu Sans, Arial, sans-serif; fill: #e8eefc; }
+    .h { font-size: 20px; font-weight: 700; fill: #fff; }
+    .p { font-size: 13px; font-weight: 700; fill: #fff; }
+    .i { font-size: 15px; }
+  </style>
+  <rect width="1100" height="420" rx="24" fill="#070b18"/>
+  <line x1="60" y1="92" x2="1040" y2="92" stroke="#1d2a4d" stroke-width="4"/>
+  <!-- phases -->
+  <g>
+    <circle cx="150" cy="92" r="16" fill="#2fc58a"/><text x="150" y="98" text-anchor="middle" class="p">✓</text>
+    <circle cx="410" cy="92" r="16" fill="#5aa9ff"/><text x="410" y="97" text-anchor="middle" class="p">2</text>
+    <circle cx="670" cy="92" r="16" fill="#a06be0"/><text x="670" y="97" text-anchor="middle" class="p">3</text>
+    <circle cx="930" cy="92" r="16" fill="#f0b040"/><text x="930" y="97" text-anchor="middle" class="p">4</text>
+  </g>
+  <g>
+    <text x="150" y="50" text-anchor="middle" class="h">Foundation</text>
+    <text x="410" y="50" text-anchor="middle" class="h">Open ecosystem</text>
+    <text x="670" y="50" text-anchor="middle" class="h">Store</text>
+    <text x="930" y="50" text-anchor="middle" class="h">Home theater</text>
+  </g>
+  <g class="i">
+    <text x="40" y="150">✓ Console shell (Slint)</text>
+    <text x="40" y="180">✓ Steam/Proton + desktop apps</text>
+    <text x="40" y="210">✓ Gamepad input &amp; hints</text>
+    <text x="40" y="240">✓ Profiles, Wi-Fi, Bluetooth</text>
+    <text x="40" y="270">✓ gamescope session</text>
+    <text x="40" y="300">✓ Smithay compositor (WIP)</text>
+
+    <text x="300" y="150">○ Public alpha releases</text>
+    <text x="300" y="180">○ Packages (Flatpak, RPM, AUR)</text>
+    <text x="300" y="210">○ Controller SDK / crate</text>
+    <text x="300" y="240">○ "Gamepad ready" manifest</text>
+    <text x="300" y="270">○ Theme system (colors, sounds)</text>
+    <text x="300" y="300">○ Plugin API (tiles, pages)</text>
+
+    <text x="560" y="150">○ Catalog format &amp; index</text>
+    <text x="560" y="180">○ Store UI in the shell</text>
+    <text x="560" y="210">○ Install via Flatpak/Steam</text>
+    <text x="560" y="240">○ Gamepad-optimized apps</text>
+    <text x="560" y="270">○ Ratings &amp; controller tags</text>
+    <text x="560" y="300">○ Theme &amp; plugin gallery</text>
+
+    <text x="820" y="150">○ Streaming launcher tiles</text>
+    <text x="820" y="180">○ Media player (HDR, DRM*)</text>
+    <text x="820" y="210">○ Remote / phone control</text>
+    <text x="820" y="240">○ CEC &amp; TV integration</text>
+    <text x="820" y="270">○ Living-room UI scale</text>
+    <text x="820" y="300">○ Replace Google/Apple TV</text>
+  </g>
+  <text x="40" y="380" class="i" style="fill:#6c82b5">✓ done · ○ planned · *depends on browser/CDM licensing</text>
+</svg>
