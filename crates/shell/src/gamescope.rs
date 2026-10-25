@@ -6,7 +6,8 @@ use std::collections::HashMap;
 use std::error::Error;
 
 use x11rb::connection::Connection;
-use x11rb::protocol::xproto::{AtomEnum, ConnectionExt as _, MapState, PropMode, Window, WindowClass};
+use x11rb::protocol::xproto::{AtomEnum, ConnectionExt as _, InputFocus, MapState, PropMode, Window, WindowClass};
+use x11rb::CURRENT_TIME;
 use x11rb::rust_connection::RustConnection;
 use x11rb::wrapper::ConnectionExt as _;
 
@@ -59,6 +60,16 @@ impl Gamescope {
     /// Reihenfolge der App-IDs, die gamescope zeigen soll; die erste vorhandene ist vorne.
     pub fn set_baselayer(&self, app_ids: &[u32]) {
         report(self.change_cardinal(self.root, self.atoms.baselayer, app_ids));
+    }
+
+    /// Tastaturfokus auf ein Fenster setzen. gamescope gibt ihn nach dem Schließen des Overlays
+    /// nicht von selbst an die Shell zurück, obwohl sie vorne ist.
+    pub fn focus(&self, window: Window) {
+        report((|| {
+            self.conn.set_input_focus(InputFocus::POINTER_ROOT, window, CURRENT_TIME)?;
+            self.conn.flush()?;
+            Ok(())
+        })());
     }
 
     /// Fenster als Overlay vorbereiten. gamescope liest die Atome beim Mappen, deshalb muss das

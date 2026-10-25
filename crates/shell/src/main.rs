@@ -152,9 +152,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     shell.borrow_mut().toast(&ui, "◉", title, &name);
                 }
                 for action in actions {
-                    // gilrs liest die Geräte direkt; ohne Fensterfokus gehören die Eingaben dem
-                    // Spiel, bis auf die PS-Taste und das offene Quick-Menü.
-                    let accepted = ui.get_window_active() || shell.borrow().accepts_unfocused(action);
+                    let accepted = shell.borrow().accepts_gamepad(&ui, action);
                     if accepted {
                         shell.borrow_mut().apply(&ui, action);
                     }

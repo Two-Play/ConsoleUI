@@ -1,0 +1,25 @@
+#!/bin/sh
+# Simuliert die Konsolen-Session in einem Fenster auf dem Desktop: gamescope läuft verschachtelt
+# im Steam-Modus, und alles, was die Shell startet, öffnet sich in diesem Fenster (die Programme
+# sehen nur das XWayland von gamescope). Zum Testen ohne Abmelden.
+#
+#   session/consoleui-nested                 # 1920×1080, Release-Build aus diesem Repo
+#   session/consoleui-nested --dummy         # Optionen gehen an die Shell
+#   CONSOLEUI_GAMESCOPE_ARGS="-W 2560 -H 1440" session/consoleui-nested
+set -eu
+
+root="$(cd "$(dirname "$0")/.." && pwd)"
+export CONSOLEUI_BIN="${CONSOLEUI_BIN:-$root/target/release/consoleui}"
+export CONSOLEUI_GAMESCOPE_ARGS="${CONSOLEUI_GAMESCOPE_ARGS:--W 1920 -H 1080}"
+
+if [ ! -x "$CONSOLEUI_BIN" ]; then
+    echo "Bitte zuerst 'cargo build --release' ausführen." >&2
+    exit 1
+fi
+# Ein schon laufendes Steam nimmt steam://-Aufrufe an und öffnet Spiele auf dem Desktop.
+if pgrep -x steam >/dev/null; then
+    echo "Hinweis: Steam läuft schon auf dem Desktop; Steam-Spiele öffnen sich dann dort." >&2
+    echo "         Für den Test Steam vorher beenden, dann startet es in der Session." >&2
+fi
+
+exec "$root/session/consoleui-session" "$@"

@@ -40,7 +40,7 @@ Snapshot, `--actions` and `--bench` start only after the boot screen is gone (li
 Console session (see `docs/spike-gamescope.md`; gamescope runs in Steam mode `-e` and the shell acts as Steam):
 
 ```bash
-CONSOLEUI_BIN=$PWD/target/release/consoleui CONSOLEUI_GAMESCOPE_ARGS="-W 1280 -H 720" session/consoleui-session   # nested test
+session/consoleui-nested   # simulate the console session in a desktop window (nested gamescope -e)
 sudo session/install.sh   # after `cargo build --release`; installs to /usr/local/bin + wayland-sessions
 ```
 

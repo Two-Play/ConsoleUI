@@ -277,10 +277,29 @@ impl Shell {
         self.quick.is_some()
     }
 
-    /// Eingaben, die auch ohne Fensterfokus gelten: alles im offenen Quick-Menü und in gamescope
-    /// die PS-/Guide-Taste (dort liegt das Spiel vorne und hat den Fokus).
-    pub fn accepts_unfocused(&self, action: Action) -> bool {
-        self.quick.is_some() || (self.gamescope.is_some() && action == Action::Guide)
+    /// Ob eine Controller-Eingabe an die Shell geht. gilrs liest die Geräte direkt, also bekäme die
+    /// Shell sonst auch Tasten, die für das Spiel vorne gedacht sind. Im Quick-Menü gilt alles,
+    /// die PS-Taste immer. In gamescope entscheidet, ob die Shell vorne ist (der X11-Fokus ist dort
+    /// nach dem Overlay unzuverlässig), auf dem Desktop der Fensterfokus.
+    pub fn accepts_gamepad(&self, ui: &AppWindow, action: Action) -> bool {
+        if self.quick.is_some() {
+            return true;
+        }
+        if self.gamescope.is_none() {
+            return ui.get_window_active();
+        }
+        action == Action::Guide || self.shell_in_front(ui)
+    }
+
+    /// In gamescope: Die Shell ist zu sehen, solange keine App vorne ist, der Startbildschirm läuft
+    /// oder die App vorne noch kein Fenster hat.
+    fn shell_in_front(&self, ui: &AppWindow) -> bool {
+        match self.foreground {
+            None => true,
+            Some(app_id) => {
+                ui.get_launching() || !self.running.iter().any(|r| r.app_id == app_id && r.has_window)
+            }
+        }
     }
 
     pub fn apply(&mut self, ui: &AppWindow, action: Action) {
@@ -890,6 +909,7 @@ impl Shell {
             ui.set_launching(false);
         }
         self.tag_windows(ui);
+        self.restore_keyboard_focus(ui);
 
         let now = Instant::now();
         let steam_running =
@@ -920,6 +940,16 @@ impl Shell {
             }
         }
         self.refresh(ui);
+    }
+
+    /// Ist die Shell vorne, hat aber keinen Tastaturfokus (passiert nach dem Overlay), holt sie ihn sich.
+    fn restore_keyboard_focus(&self, ui: &AppWindow) {
+        let Some(gamescope) = &self.gamescope else { return };
+        if self.quick.is_none() && self.shell_in_front(ui) && !ui.get_window_active()
+            && let Some(window) = x11_window_id(ui.window())
+        {
+            gamescope.control.focus(window);
+        }
     }
 
     /// gamescope zeigt im Steam-Modus nur Fenster mit App-ID; die vergibt die Shell hier.

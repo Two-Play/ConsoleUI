@@ -294,6 +294,16 @@ Deck o. Ä.) sollten wir später den Skia-Renderer vergleichen (Story 6.5).
   sehen ihn trotz Grab. Toasts erscheinen nur, wenn die Shell sichtbar ist, nicht über einem
   laufenden Spiel.
 
+### Nachtrag – Fehler „Controller reagiert nach Home nicht mehr“
+
+- Ursache: Nach dem Overlay gibt gamescope den X11-Tastaturfokus nicht an die Shell zurück, obwohl
+  sie wieder vorne ist. Die Controller-Sperre aus Sprint 4 hing am Fensterfokus, deshalb ging nur
+  noch die PS-Taste.
+- Lösung: In gamescope entscheidet jetzt `Shell::shell_in_front` (keine App vorne, Startbildschirm
+  offen oder die App vorne hat noch kein Fenster), ob Controller-Eingaben an die Shell gehen.
+  Die Tastatur holt sich den Fokus per `XSetInputFocus` zurück (spätestens nach 500 ms).
+- Dazu `session/consoleui-nested`: simuliert die Session in einem Desktop-Fenster.
+
 ## Risiken / offene Fragen
 
 - **gamescope-Fokussteuerung** ist kaum dokumentiert und auf XWayland bzw. Steam ausgelegt → deshalb Spike 0.3 früh einplanen. Falls das nicht klappt, wird Epic 7 wichtiger.
