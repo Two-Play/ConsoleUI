@@ -7,7 +7,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ConsoleUI is a gamepad-driven, PS5/Xbox-style console shell for Linux, written in Rust with Slint.
 The roadmap, Scrum backlog (epics, story IDs, sprint plan) and sprint results live in `BACKLOG.md`;
 reference story IDs (e.g. "Story 1.5") in code comments when deferring work. The user communicates
-in German, and UI strings and comments are German.
+in German, but everything in the repository is written in English from now on: code (identifiers),
+comments, UI strings, `BACKLOG.md` and the docs. Older parts are still German: whenever you change a
+piece of code, a UI string or a section of a document, translate the comments, strings or that
+section to English as part of the change. Proper translations (German UI) come later with i18n
+(Story 6.6).
 
 Planned target architecture: the shell runs as a fullscreen client inside **gamescope** (like Steam's
 Game Mode); an own Smithay compositor is an optional later phase. Keep the shell independent of the

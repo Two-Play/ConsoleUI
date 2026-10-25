@@ -103,15 +103,16 @@ Schätzung in Story Points (SP): 1, 2, 3, 5, 8, 13. Ein Sprint dauert 2 Wochen.
 | 5.5 | Einstellungsseite: Theme/Akzentfarbe, Sounds, Auflösung | 5 |
 | 5.6 | Benachrichtigungen als Toasts (Download fertig, Controller verbunden) | 3 |
 
-## Epic 6 – Polish & Animationen
+## Epic 6 – Polish & Animations
 
 | ID | User Story | SP |
 |---|---|---|
-| 6.1 | Animierter Boot-/Startbildschirm mit Logo | 2 |
-| 6.2 | Übergänge zwischen Seiten (Home ↔ Bibliothek ↔ Einstellungen) mit Slide/Fade | 3 |
-| 6.3 | Parallax bzw. leichte Bewegung im Hintergrund-Artwork | 3 |
-| 6.4 | Theme-System mit zentralen Design-Tokens (Farben, Radien, Timings) | 3 |
-| 6.5 | Performance-Pass: Bilder asynchron laden, Thumbnail-Cache, Framezeit-Overlay zum Debuggen | 5 |
+| 6.1 | Animated boot/start screen with logo | 2 |
+| 6.2 | Transitions between pages (Home ↔ Library ↔ Settings) with slide/fade | 3 |
+| 6.3 | Parallax or subtle motion in the background artwork | 3 |
+| 6.4 | Theme system with central design tokens (colors, radii, timings) | 3 |
+| 6.5 | Performance pass: load images asynchronously, thumbnail cache, frame-time overlay for debugging | 5 |
+| 6.6 | i18n: UI strings in English as the source language, German translation (e.g. Slint's `@tr()` with gettext catalogs), language follows `LANG` and can be changed on the settings page; remaining German strings in the code are moved to English | 5 |
 
 ## Epic 7 (optional, Phase 3) – Eigener Smithay-Compositor (Hybrid)
 
