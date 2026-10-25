@@ -29,15 +29,14 @@ export component NotificationWindow inherits Window {
     property <float> s: max(0.4, min(root.width / 1920px, root.height / 1080px));
     property <length> margin: 64px * s;
 
-    // Where the toast is in this frame: our compositor blurs the game below it (Story 7.13),
-    // fading the blur like the toast.
+    // Where the toast is in this frame and where it rests: our compositor blurs the game below
+    // the resting toast (Story 7.13).
     out property <length> toast-x: toast.x;
-    out property <bool> toast-visible: toast.visible;
+    out property <length> toast-rest-x: root.width - root.margin - toast.width;
     out property <length> toast-y: root.margin;
     out property <length> toast-width: toast.width;
     out property <length> toast-height: toast.height;
     out property <length> toast-radius: toast.border-radius;
-    out property <duration> blur-fade: Theme.page-duration * 1.5;
 
     toast := Toast {
         x: root.width - root.margin - self.width + (root.shown ? 0 : 60px * root.s);

@@ -17,7 +17,7 @@
   <rect width="1280" height="360" fill="url(#bg)"/>
   <rect width="1280" height="360" fill="url(#halo)"/>
   <!-- tile row -->
-  <g>
+  <g transform="translate(150 0)">
     <rect x="690" y="70" width="170" height="220" rx="30" fill="url(#blue)" stroke="#ffffff" stroke-width="6"/>
     <rect x="884" y="100" width="120" height="160" rx="22" fill="url(#purple)" opacity="0.9"/>
     <rect x="1024" y="100" width="120" height="160" rx="22" fill="url(#orange)" opacity="0.8"/>
@@ -25,7 +25,7 @@
     <text x="775" y="205" font-family="DejaVu Sans, Arial, sans-serif" font-size="96" font-weight="700" fill="#fff" text-anchor="middle">C</text>
   </g>
   <!-- text -->
-  <text x="64" y="160" font-family="DejaVu Sans, Arial, sans-serif" font-size="88" font-weight="700" fill="#ffffff">ConsoleUI</text>
-  <text x="68" y="212" font-family="DejaVu Sans, Arial, sans-serif" font-size="30" fill="#9db4e6">A gamepad-first console ecosystem for Linux</text>
-  <text x="68" y="262" font-family="DejaVu Sans, Arial, sans-serif" font-size="22" fill="#6c82b5">Games · Apps · Store · Home theater — all from your couch</text>
+  <text x="64" y="160" font-family="DejaVu Sans, Arial, sans-serif" font-size="80" font-weight="700" fill="#ffffff">ConsoleUI</text>
+  <text x="68" y="212" font-family="DejaVu Sans, Arial, sans-serif" font-size="25" fill="#9db4e6">A gamepad-first console ecosystem for Linux</text>
+  <text x="68" y="262" font-family="DejaVu Sans, Arial, sans-serif" font-size="18" fill="#6c82b5">Games · Apps · Store · Home theater — all from your couch</text>
 </svg>

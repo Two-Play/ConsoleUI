@@ -209,6 +209,8 @@ pub struct Shell {
 
 /// How long a toast stays visible
 const TOAST_DURATION: Duration = Duration::from_millis(3500);
+/// The compositor's blur fades in this fast once a quick menu bar or toast rests (Story 7.13).
+const BLUR_FADE_IN_MS: u32 = 150;
 /// Below this battery level the shell warns once
 const LOW_BATTERY: u8 = 15;
 
@@ -511,9 +513,14 @@ impl Shell {
         self.compositor_ui.as_ref().filter(|_| self.compositor.as_ref().is_some_and(Compositor::overlays))
     }
 
-    /// Tells our compositor where the quick menu bar and the toast are, so it blurs what is below
-    /// them (Story 7.13). Called after every frame of their windows (the blur follows the sliding
-    /// bar) and from the compositor poll; only changes are sent.
+    /// Tells our compositor where the quick menu bar and the toast rest, so it blurs what is below
+    /// them (Story 7.13). Called after every frame of their windows and from the compositor poll;
+    /// only changes are sent.
+    ///
+    /// Only a resting panel is blurred: a region sent for a frame can reach the compositor before
+    /// that frame's buffer (the shell's swap waits for vsync), so a blur following a sliding panel
+    /// runs a frame ahead and flickers at the edge. The blur fades in once the panel has arrived
+    /// and goes at once when it starts to leave.
     pub fn sync_blur(&mut self) {
         let Some(windows) = self.compositor_ui() else { return };
         let Some(blur) = self.compositor.as_ref().map(Compositor::blur) else { return };
@@ -533,28 +540,32 @@ impl Shell {
         };
         let overlay = &windows.overlay;
         let mut menu = Vec::new();
-        if overlay.window().is_visible() {
+        if overlay.get_open() && overlay.window().is_visible() {
             let size = overlay.window().size().to_logical(overlay.window().scale_factor());
-            let top = overlay.get_panel_y();
-            let height = overlay.get_panel_height().min(size.height - top);
-            if height >= 1.0 {
-                menu.push(region(0.0, top, size.width, height, 0.0));
+            let height = overlay.get_panel_height();
+            let rest = size.height - height;
+            if (overlay.get_panel_y() - rest).abs() < 0.5 {
+                menu.push(region(0.0, rest, size.width, height, 0.0));
             }
         }
         let notification = &windows.notification;
         let mut toast = Vec::new();
-        if notification.get_shown() && notification.get_toast_visible() && notification.window().is_visible() {
+        if notification.get_shown()
+            && notification.window().is_visible()
+            && (notification.get_toast_x() - notification.get_toast_rest_x()).abs() < 0.5
+        {
             toast.push(region(
-                notification.get_toast_x(),
+                notification.get_toast_rest_x(),
                 notification.get_toast_y(),
                 notification.get_toast_width(),
                 notification.get_toast_height(),
                 notification.get_toast_radius(),
             ));
         }
-        let toast_fade = notification.get_blur_fade().clamp(0, 2000) as u32;
+        let fade = |regions: &Vec<BlurRegion>| if regions.is_empty() { 0 } else { BLUR_FADE_IN_MS };
+        let (menu_fade, toast_fade) = (fade(&menu), fade(&toast));
         let Some(compositor) = &mut self.compositor else { return };
-        compositor.set_blur(WindowRole::Overlay, menu, 0);
+        compositor.set_blur(WindowRole::Overlay, menu, menu_fade);
         compositor.set_blur(WindowRole::Notification, toast, toast_fade);
     }
 
