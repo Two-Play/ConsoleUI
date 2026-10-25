@@ -180,7 +180,8 @@ impl GameOptions {
         if let Some(game_height) = self.resolution.height() {
             let (out_w, out_h) = output.unwrap_or((16, 9));
             // Width from the output's aspect ratio, rounded to an even number
-            let game_width = ((u64::from(game_height) * u64::from(out_w) + u64::from(out_h)) / (2 * u64::from(out_h))) * 2;
+            let game_width =
+                ((u64::from(game_height) * u64::from(out_w) + u64::from(out_h)) / (2 * u64::from(out_h))) * 2;
             args.extend(["-w".into(), game_width.to_string(), "-h".into(), game_height.to_string()]);
         }
         args.extend(self.upscaler.args().iter().map(|a| a.to_string()));

@@ -142,7 +142,8 @@ impl DbusBackend {
             self.call(NM, NM_SETTINGS_PATH, NM_SETTINGS, "ListConnections", &()).unwrap_or_default();
         let mut profiles = HashMap::new();
         for path in paths {
-            let Ok(settings) = self.call::<_, HashMap<String, Props>>(NM, path.as_str(), NM_CONNECTION, "GetSettings", &())
+            let Ok(settings) =
+                self.call::<_, HashMap<String, Props>>(NM, path.as_str(), NM_CONNECTION, "GetSettings", &())
             else {
                 continue;
             };
@@ -413,7 +414,13 @@ impl Backend for DbusBackend {
             }
             Request::BtDiscovery(on) => {
                 let adapter = self.adapter()?;
-                self.call_unit(BLUEZ, &adapter, BLUEZ_ADAPTER, if *on { "StartDiscovery" } else { "StopDiscovery" }, &())
+                self.call_unit(
+                    BLUEZ,
+                    &adapter,
+                    BLUEZ_ADAPTER,
+                    if *on { "StartDiscovery" } else { "StopDiscovery" },
+                    &(),
+                )
             }
             Request::BtPair { address, .. } => self.pair(address),
             Request::BtConnect { address, .. } => {

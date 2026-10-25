@@ -7,13 +7,13 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use consoleui_core::i18n::{self, Language, tr, trf};
 use consoleui_core::game_options::{GameOptions, GameOptionsPanel, GameOptionsStore, PanelOutcome};
+use consoleui_core::i18n::{self, Language, tr, trf};
 use consoleui_core::launch::{self, ProcessHandle};
 use consoleui_core::netpages::Page;
 use consoleui_core::osk::{KeyboardEvent, OnScreenKeyboard};
-use consoleui_core::protocol::{CompositorMessage, ShellMessage};
 use consoleui_core::ownership::{self, FIRST_DESKTOP_APP_ID, Owner, SHELL_APP_ID};
+use consoleui_core::protocol::{CompositorMessage, ShellMessage};
 use consoleui_core::running::{MIN_HOLD, Phase, RunningApp};
 use consoleui_core::settings::{GlyphChoice, Setting, Settings};
 use consoleui_core::sound::Sound;
@@ -32,7 +32,10 @@ use crate::hero::Heroes;
 use crate::loader::Library;
 use crate::network::Network;
 use crate::quick::{ForegroundApp, QuickAction, QuickMenu, QuickOutcome};
-use crate::{AppTile, AppWindow, ControllerStyle, GlyphButton, Hint, KeyCap, NotificationWindow, OverlayWindow, Screen, SettingRow, Theme, tiles};
+use crate::{
+    AppTile, AppWindow, ControllerStyle, GlyphButton, Hint, KeyCap, NotificationWindow, OverlayWindow, Screen,
+    SettingRow, Theme, tiles,
+};
 
 /// Number of entries the home row shows before the library tile (pinned ones always all).
 const HOME_COUNT: usize = 12;
@@ -375,9 +378,7 @@ impl Shell {
     fn shell_in_front(&self, ui: &AppWindow) -> bool {
         match self.foreground {
             None => true,
-            Some(app_id) => {
-                ui.get_launching() || !self.running.iter().any(|r| r.app_id == app_id && r.has_window)
-            }
+            Some(app_id) => ui.get_launching() || !self.running.iter().any(|r| r.app_id == app_id && r.has_window),
         }
     }
 
@@ -676,8 +677,8 @@ impl Shell {
     /// Input from the real keyboard in the search. Control characters and special keys (Slint reports
     /// them as characters from the Private Use Area) are rejected.
     pub fn type_text(&mut self, ui: &AppWindow, text: &str) -> bool {
-        let printable = !text.is_empty()
-            && text.chars().all(|c| !c.is_control() && !('\u{e000}'..='\u{f8ff}').contains(&c));
+        let printable =
+            !text.is_empty() && text.chars().all(|c| !c.is_control() && !('\u{e000}'..='\u{f8ff}').contains(&c));
         if printable && self.screen == Screen::Settings && self.quick.is_none() && self.network.pages.type_text(text) {
             ui.set_net_view(self.network.view());
             return true;
@@ -1211,13 +1212,21 @@ impl Shell {
         match launch::spawn(&launch) {
             Ok(handle) => {
                 let (app_id, app, stop, owner) = match entry.launch {
-                    Launch::Steam(steam_id) => {
-                        (steam_id, RunningApp::steam(steam_id, now), Stop::Steam(steam_id), Some(Owner::Steam(steam_id)))
-                    }
+                    Launch::Steam(steam_id) => (
+                        steam_id,
+                        RunningApp::steam(steam_id, now),
+                        Stop::Steam(steam_id),
+                        Some(Owner::Steam(steam_id)),
+                    ),
                     _ => {
                         let app_id = self.next_app_id;
                         self.next_app_id += 1;
-                        (app_id, RunningApp::process(handle.clone(), now), Stop::Process(handle.clone()), handle.owner())
+                        (
+                            app_id,
+                            RunningApp::process(handle.clone(), now),
+                            Stop::Process(handle.clone()),
+                            handle.owner(),
+                        )
                     }
                 };
                 if let Some(compositor) = &mut self.compositor {
@@ -1260,9 +1269,12 @@ impl Shell {
             self.set_foreground(Some(app_id));
             return;
         }
-        let Some(index) = self.running.iter().find(|r| r.app_id == app_id).and_then(|r| {
-            self.entries.iter().position(|e| e.id == r.entry_id)
-        }) else {
+        let Some(index) = self
+            .running
+            .iter()
+            .find(|r| r.app_id == app_id)
+            .and_then(|r| self.entries.iter().position(|e| e.id == r.entry_id))
+        else {
             return;
         };
         ui.set_launch_title(self.tiles[index].title.clone());
@@ -1447,7 +1459,8 @@ impl Shell {
         tile.monogram = entry.monogram().into();
         tile.kind = tiles::kind_label(entry.kind).into();
         tile.action_label = tiles::action_label(entry.kind, tile.running).into();
-        tile.subtitle = if tile.running { tr("Running now").into() } else { tiles::subtitle(entry, tiles::today()).into() };
+        tile.subtitle =
+            if tile.running { tr("Running now").into() } else { tiles::subtitle(entry, tiles::today()).into() };
     }
 
     fn ask_quit(&mut self, ui: &AppWindow, index: usize) {

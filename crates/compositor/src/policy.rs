@@ -198,10 +198,7 @@ impl Policy {
         // but below the shell while the shell is in front.
         let unknown_popups = self.windows.iter().filter(|w| w.role == Role::Unknown && w.popup).map(|w| w.id);
         if front == Target::Shell {
-            let shell_start = order
-                .iter()
-                .position(|id| self.role(*id) == Some(Role::Shell))
-                .unwrap_or(order.len());
+            let shell_start = order.iter().position(|id| self.role(*id) == Some(Role::Shell)).unwrap_or(order.len());
             let popups: Vec<WindowId> = unknown_popups.collect();
             order.splice(shell_start..shell_start, popups);
         } else {
@@ -294,7 +291,11 @@ impl Policy {
                 return;
             };
             let Some(window) = self.windows.iter_mut().find(|w| w.role == Role::Unknown && !w.popup) else { return };
-            tracing::info!("window {} ({:?}) has no known owner, assigning it to app {app_id}", window.id, window.title);
+            tracing::info!(
+                "window {} ({:?}) has no known owner, assigning it to app {app_id}",
+                window.id,
+                window.title
+            );
             window.role = Role::App(app_id);
         }
     }

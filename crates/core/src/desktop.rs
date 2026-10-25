@@ -177,12 +177,11 @@ pub fn parse(id: &str, content: &str) -> Option<DesktopEntry> {
     }
 
     let localized = |key: &str, clean: fn(String) -> String| {
-        let mut text = LocalizedText {
-            default: values.get(key).map(|v| clean(unescape(v)).into()),
-            ..LocalizedText::default()
-        };
+        let mut text =
+            LocalizedText { default: values.get(key).map(|v| clean(unescape(v)).into()), ..LocalizedText::default() };
         for (full, value) in &values {
-            if let Some(locale) = full.strip_prefix(key).and_then(|k| k.strip_prefix('[')).and_then(|k| k.strip_suffix(']'))
+            if let Some(locale) =
+                full.strip_prefix(key).and_then(|k| k.strip_prefix('[')).and_then(|k| k.strip_suffix(']'))
                 && is_supported_locale(locale)
             {
                 text.variants.push((locale.into(), clean(unescape(value)).into()));
@@ -307,7 +306,10 @@ fn ini_value(content: &str, section: &str, key: &str) -> Option<String> {
     for line in content.lines().map(str::trim) {
         if line.starts_with('[') {
             in_section = line == header;
-        } else if in_section && let Some((k, v)) = line.split_once('=') && k.trim() == key {
+        } else if in_section
+            && let Some((k, v)) = line.split_once('=')
+            && k.trim() == key
+        {
             return Some(v.trim().to_string());
         }
     }
@@ -391,7 +393,10 @@ Exec=firefox --new-window %u
     #[test]
     fn exec_field_codes_and_quotes() {
         assert_eq!(exec_to_argv("firefox %u"), ["firefox"]);
-        assert_eq!(exec_to_argv(r#""/opt/My App/run" --title "a \"b\"" 100%%"#), ["/opt/My App/run", "--title", r#"a "b""#, "100%"]);
+        assert_eq!(
+            exec_to_argv(r#""/opt/My App/run" --title "a \"b\"" 100%%"#),
+            ["/opt/My App/run", "--title", r#"a "b""#, "100%"]
+        );
         assert_eq!(
             exec_to_argv("/usr/bin/flatpak run --command=vlc org.videolan.VLC @@u %U @@"),
             ["/usr/bin/flatpak", "run", "--command=vlc", "org.videolan.VLC"]

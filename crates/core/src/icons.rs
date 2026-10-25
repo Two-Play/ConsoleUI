@@ -39,8 +39,5 @@ pub fn find(name: &str, theme: &str, data_dirs: &[PathBuf]) -> Option<PathBuf> {
 }
 
 fn with_extension(dir: &Path, name: &str) -> Option<PathBuf> {
-    EXTENSIONS
-        .iter()
-        .map(|ext| dir.join(format!("{name}.{ext}")))
-        .find(|p| p.is_file())
+    EXTENSIONS.iter().map(|ext| dir.join(format!("{name}.{ext}"))).find(|p| p.is_file())
 }

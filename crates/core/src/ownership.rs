@@ -113,7 +113,8 @@ mod tests {
 
     #[test]
     fn finds_direct_child_and_ignores_strangers() {
-        let lookup = table(&[(81, process(Some(80), None, "")), (80, process(Some(5), None, "")), (5, process(None, None, ""))]);
+        let lookup =
+            table(&[(81, process(Some(80), None, "")), (80, process(Some(5), None, "")), (5, process(None, None, ""))]);
         let apps = [(42, Owner::Process(80))];
         assert_eq!(owner_of(81, &apps, &lookup), Some(42));
         assert_eq!(owner_of(5, &apps, &lookup), None);

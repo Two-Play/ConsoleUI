@@ -16,15 +16,32 @@ pub enum Request {
     WifiEnable(bool),
     WifiScan,
     /// Without a password: open network or saved profile
-    WifiConnect { ssid: String, password: Option<String> },
-    WifiDisconnect { ssid: String },
+    WifiConnect {
+        ssid: String,
+        password: Option<String>,
+    },
+    WifiDisconnect {
+        ssid: String,
+    },
     BtPower(bool),
     BtDiscovery(bool),
     /// Pair, trust and connect
-    BtPair { address: String, name: String },
-    BtConnect { address: String, name: String },
-    BtDisconnect { address: String, name: String },
-    BtRemove { address: String, name: String },
+    BtPair {
+        address: String,
+        name: String,
+    },
+    BtConnect {
+        address: String,
+        name: String,
+    },
+    BtDisconnect {
+        address: String,
+        name: String,
+    },
+    BtRemove {
+        address: String,
+        name: String,
+    },
 }
 
 /// Notice for the UI (shown as a toast)
@@ -73,9 +90,7 @@ impl Request {
         Some(match self {
             Self::Refresh => return None,
             Self::WifiConnect { ssid, .. } if ok => Notice::new("✓", trf("Connected to {}", &[ssid]), tr("Wi-Fi")),
-            Self::WifiConnect { ssid, .. } => {
-                Notice::new("⚠", tr("Connection failed"), trf("{}: {}", &[ssid, &err]))
-            }
+            Self::WifiConnect { ssid, .. } => Notice::new("⚠", tr("Connection failed"), trf("{}: {}", &[ssid, &err])),
             Self::WifiDisconnect { ssid } if ok => Notice::new("✓", tr("Wi-Fi disconnected"), ssid.clone()),
             Self::BtPair { name, .. } if ok => Notice::new("✓", trf("Paired: {}", &[name]), tr("Bluetooth")),
             Self::BtPair { name, .. } => Notice::new("⚠", tr("Pairing failed"), trf("{}: {}", &[name, &err])),
@@ -84,7 +99,9 @@ impl Request {
             Self::BtDisconnect { name, .. } if ok => Notice::new("✓", tr("Disconnected"), name.clone()),
             Self::BtRemove { name, .. } if ok => Notice::new("✓", tr("Device removed"), name.clone()),
             _ if ok => return None,
-            Self::WifiDisconnect { .. } | Self::BtDisconnect { .. } => Notice::new("⚠", tr("Disconnecting failed"), err),
+            Self::WifiDisconnect { .. } | Self::BtDisconnect { .. } => {
+                Notice::new("⚠", tr("Disconnecting failed"), err)
+            }
             Self::BtRemove { .. } => Notice::new("⚠", tr("Removing failed"), err),
             Self::WifiScan => Notice::new("⚠", tr("Wi-Fi scan failed"), err),
             Self::BtDiscovery(_) => Notice::new("⚠", tr("Bluetooth search failed"), err),

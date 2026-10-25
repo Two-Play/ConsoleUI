@@ -21,9 +21,7 @@ pub fn load_icon(path: &Path) -> Option<Image> {
     {
         return Some(image);
     }
-    let data = std::fs::read(path)
-        .map_err(|err| eprintln!("Cannot read image {}: {err}", path.display()))
-        .ok()?;
+    let data = std::fs::read(path).map_err(|err| eprintln!("Cannot read image {}: {err}", path.display())).ok()?;
     let image = match sniff(&data) {
         Some(ImageFormat::Svg) => Image::load_from_svg_data(&data).ok(),
         Some(ImageFormat::Png | ImageFormat::Jpeg) => image::load_from_memory(&data).ok().map(|img| {
@@ -55,8 +53,7 @@ pub fn to_tile(loaded: &LoadedEntry, index: usize, today: NaiveDate) -> AppTile 
         icon: icon.unwrap_or_default(),
         has_logo: logo.is_some(),
         logo: logo.unwrap_or_default(),
-        cover: real_cover
-            .unwrap_or_else(|| cover::generate(entry.accent, entry.accent2, index as u32, COVER_SIZE)),
+        cover: real_cover.unwrap_or_else(|| cover::generate(entry.accent, entry.accent2, index as u32, COVER_SIZE)),
         accent: Color::from_rgb_u8(entry.accent[0], entry.accent[1], entry.accent[2]),
         running: false,
         pinned: false,

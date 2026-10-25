@@ -19,7 +19,11 @@ enum Liveness {
     Process(ProcessHandle),
     /// `steam://` returns immediately; whether the game is running is shown by its processes
     /// (see [`crate::steam::running_games`]).
-    Steam { app_id: u32, seen: bool, missing_since: Option<Instant> },
+    Steam {
+        app_id: u32,
+        seen: bool,
+        missing_since: Option<Instant>,
+    },
 }
 
 #[derive(Debug)]

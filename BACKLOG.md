@@ -135,8 +135,8 @@ are updated after the spike.
 | ID | Story | SP |
 |---|---|---|
 | 7.1 | Spike: build Smithay's `anvil` example, run the shell (Slint, Wayland) and a nested `gamescope` inside it — **done (Sprint 8)** | 5 |
-| 7.2 | Minimal compositor `crates/compositor`: DRM/KMS + libinput + libseat (`--drm`) and winit (`--winit`, development), the shell as fullscreen client, control socket (`CONSOLEUI_COMPOSITOR`), relative-pointer/pointer-constraints/`drm_syncobj`, own session file next to the gamescope session | 13 |
-| 7.3 | XWayland basics: `X11Wm`, fullscreen games, override-redirect windows, window → launched app mapping (reuses `consoleui_core::ownership`, fallback for windows without `_NET_WM_PID`) | 13 |
+| 7.2 | **Done (Sprint 9).** Minimal compositor `crates/compositor`: DRM/KMS + libinput + libseat (`--drm`) and winit (`--winit`, development), the shell as fullscreen client, control socket (`CONSOLEUI_COMPOSITOR`), relative-pointer/pointer-constraints/`drm_syncobj`, own session file next to the gamescope session | 13 |
+| 7.3 | **Done (Sprint 9).** XWayland basics: `X11Wm`, fullscreen games, override-redirect windows, window → launched app mapping (reuses `consoleui_core::ownership`, fallback for windows without `_NET_WM_PID`) | 13 |
 | 7.4 | Robust XWayland for Steam and games: Steam client, launcher and splash windows, focus changes, special cases from tests with real games | 13 |
 | 7.5 | Focus and input in the compositor: Guide button always goes to the shell, the game gets no input while the quick menu is open (replaces `grab.rs`), keyboard focus returns cleanly | 5 |
 | 7.6 | Shell as overlay above running apps: quick menu and toasts as shell toplevels placed on top by the compositor (Slint has no layer-shell), replaces the `OverlayWindow`/`NotificationWindow` tricks | 5 |
@@ -184,7 +184,8 @@ Farbmanagement, FPS-Limiter. Das liefert das verschachtelte gamescope (7.10).
 | **6** | "Polish": animations, settings, performance | 6.x, 5.5, 5.6, 1.6 |
 | **7** | Wi-Fi/Bluetooth, context menu, notifications over games, performance | 5.3, 5.4, 2.7, 5.6, 6.3, 6.5 |
 | **8** | "Hybrid start": Smithay spike, nested gamescope per entry, i18n | 7.1, 7.10, 6.6 |
-| 9+ | Own compositor: session without gamescope, then transitions and latency | 7.2–7.3 → 7.4–7.6 → 7.7–7.9, 7.11, 7.12 |
+| **9** | "Own compositor": minimal compositor, XWayland, test VM, license | 7.2, 7.3 |
+| 10+ | Session without gamescope, then transitions and latency | 7.4–7.6 → 7.7–7.9, 7.11, 7.12 |
 
 ## Sprint-Ergebnisse
 
@@ -531,6 +532,58 @@ Three agents worked in parallel in their own worktrees; the branches were merged
 - **Development container:** `dev/toolbox.sh` creates a Fedora toolbox `consoleui-dev` with all
   `-devel` packages (including the Smithay udev backend) and test tools; the code stays on the host.
   Tests, clippy, release build, snapshots and the full anvil build run inside it.
+
+### Sprint 9 – "Own compositor" (done: 7.2, 7.3, test VM, i18n follow-up)
+
+License: the project is now GPL-3.0-or-later (`LICENSE`), so code from niri can be reused.
+Three agents worked in parallel (compositor, test VM, i18n), then `cargo fmt` ran over the whole
+workspace with a new `rustfmt.toml` (max_width 120, `use_small_heuristics = "Max"`, chosen because it
+changed the least code).
+
+- **Compositor (7.2):** new crate `crates/compositor` (binary `consoleui-compositor`, Smithay git
+  `24647fc8d001`, built in the dev container). Backends `--winit` (nested) and `--drm` (DRM/KMS +
+  libinput + libseat/logind; accepts a software EGL device). All toplevels are fullscreen;
+  `set_fullscreen` before the first commit is honoured. Globals: linux-dmabuf v4 with feedback,
+  `wl_drm`, drm-syncobj (explicit sync), presentation-time, relative-pointer, pointer-constraints,
+  viewporter, single-pixel-buffer, xdg-decoration, data device/primary selection. The compositor starts
+  the shell with `CONSOLEUI_COMPOSITOR` and quits with it (SIGTERM/SIGINT/Ctrl+Alt+Backspace clean up
+  sockets). `--screenshot-after MS PNG` renders the output offscreen into a PNG (basis for 7.12).
+- **Control protocol:** `consoleui_core::protocol`, a Unix socket with one JSON object per line.
+  Shell → compositor: `Hello`, `Launched`, `Exited`, `Focus`, `Overlay`, `Screenshot`. Compositor →
+  shell: `Welcome`, `Output`, `WindowMapped`, `AppGone`, `FocusChanged`, `ScreenshotDone`. An app comes
+  to the front once one of its windows shows content. Shell side: `src/compositor.rs` (takes
+  precedence over gamescope; gamescope and desktop mode unchanged).
+- **XWayland (7.3):** `X11Wm`; X11 toplevels fullscreen, dialogs centered, override-redirect windows
+  above their owner, keyboard focus and X stacking follow the front window, clipboard bridged. Window
+  → app mapping via `_NET_WM_PID` or the X-Resource client PID (glxgears has no `_NET_WM_PID`) plus
+  `consoleui_core::ownership`; unclaimed windows go to the newest app without a window.
+- **Session files:** `session/consoleui-compositor-session` (`--drm`) and
+  `session/consoleui-compositor.desktop`; `session/install.sh` installs them when the compositor is
+  built; `session/consoleui-nested --compositor` runs the nested session on our compositor.
+- **Test VM:** `dev/vm.sh` (plain QEMU/KVM as the user, Fedora 44 Cloud image verified via the signed
+  CHECKSUM, cloud-init user `tester`, virtiofs share of the checkout at the same path, `virtio-vga`
+  without host GL, `ssh`/`screenshot`/`seat` helpers), see `docs/dev-vm.md`. `seat` runs a command as an
+  active logind session on seat0/VT 7.
+- **i18n follow-up:** entry names and descriptions follow a runtime language switch (`AppEntry.names`,
+  `localize_entries`); the German search heading is "Suche" again (English heading: "Find").
+- **Tested:**
+  - Nested (`--winit`) on the NVIDIA GPU, one run at a time, no Xid: shell fullscreen, a Wayland app
+    and an X11 app (glxgears) through launch → front → quick menu → resume → exit → back to the shell,
+    nested gamescope via the 7.10 option with gamescope's own Wayland backend.
+  - In the VM with `--drm` on seat0 (llvmpipe): mode 1280×800 set on Virtual-1, the shell rendered,
+    glxgears launched through XWayland, mapped to its app and shown fullscreen, focus went to the shell
+    for the quick menu and back to the game. ("Unable to become drm master" is logged but harmless.)
+  - 128 core + 10 compositor + 8 shell tests, clippy, `cargo fmt --check` (in the dev container).
+- **Not tested:** VT switching and hotplug on DRM, real games, Steam, real gamepad, HiDPI, other
+  keyboard layouts, the login session through a display manager.
+- **Known gaps (next stories):** toasts are not visible over a running app and the quick menu shows the
+  whole shell window above the game (7.6); the game still gets input while the quick menu is open,
+  gamepads still use `grab.rs` (7.5); no popup grabs, no cursor on DRM unless the client sets one, no
+  `wp_fifo`/commit-timing; background apps get frame callbacks only once a second; unclaimed normal
+  windows stay invisible (Steam and launcher windows: 7.4).
+- **Workflow change:** the whole workspace (`cargo test/clippy --workspace`) now builds only in the dev
+  container, because the compositor needs `-devel` packages; on the host, `cargo build`/`cargo run`
+  still build the shell. glxgears is in Fedora's `glx-utils` package (added to the toolbox and VM lists).
 
 ## Risiken / offene Fragen
 

@@ -9,8 +9,8 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use smithay::backend::allocator::format::FormatSet;
-use smithay::backend::allocator::{Fourcc, Modifier};
 use smithay::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags, GbmDevice};
+use smithay::backend::allocator::{Fourcc, Modifier};
 use smithay::backend::drm::compositor::FrameFlags;
 use smithay::backend::drm::exporter::gbm::GbmFramebufferExporter;
 use smithay::backend::drm::output::{DrmOutput, DrmOutputManager, DrmOutputRenderElements};
@@ -58,8 +58,12 @@ type GbmDrmOutputManager = DrmOutputManager<
     Option<OutputPresentationFeedback>,
     DrmDeviceFd,
 >;
-type GbmDrmOutput =
-    DrmOutput<GbmAllocator<DrmDeviceFd>, GbmFramebufferExporter<DrmDeviceFd>, Option<OutputPresentationFeedback>, DrmDeviceFd>;
+type GbmDrmOutput = DrmOutput<
+    GbmAllocator<DrmDeviceFd>,
+    GbmFramebufferExporter<DrmDeviceFd>,
+    Option<OutputPresentationFeedback>,
+    DrmDeviceFd,
+>;
 
 pub struct DrmData {
     session: LibSeatSession,
@@ -118,13 +122,12 @@ pub fn run(options: &Options) -> Result<i32, Box<dyn std::error::Error>> {
 
     let (session, notifier) = LibSeatSession::new().map_err(|err| format!("no session (libseat/logind): {err}"))?;
     let seat = session.seat();
-    let gpu_path = primary_gpu(&seat)?
-        .or_else(|| all_gpus(&seat).ok()?.into_iter().next())
-        .ok_or("no GPU found")?;
+    let gpu_path = primary_gpu(&seat)?.or_else(|| all_gpus(&seat).ok()?.into_iter().next()).ok_or("no GPU found")?;
     info!("seat {seat}, GPU {}", gpu_path.display());
 
     let udev = UdevBackend::new(&seat)?;
-    let data = DrmData { session: session.clone(), gpu_path, device: None, keyboards: Vec::new(), render_scheduled: false };
+    let data =
+        DrmData { session: session.clone(), gpu_path, device: None, keyboards: Vec::new(), render_scheduled: false };
     let mut state = State::new(display, event_loop.handle(), event_loop.get_signal(), Backend::Drm(Box::new(data)))?;
 
     for (device_id, path) in udev.device_list() {
@@ -237,9 +240,7 @@ impl State {
         // such devices; we accept them (slow, but enough to test the session).
         let egl_device = EGLDevice::device_for_display(&egl_display).ok();
         let software = egl_device.as_ref().is_some_and(EGLDevice::is_software);
-        let render_node = egl_device
-            .and_then(|device| device.try_get_render_node().ok().flatten())
-            .unwrap_or(node);
+        let render_node = egl_device.and_then(|device| device.try_get_render_node().ok().flatten()).unwrap_or(node);
         if software {
             warn!("{} only has software rendering (llvmpipe); expect low frame rates", path.display());
         }
@@ -259,8 +260,14 @@ impl State {
             .filter(|format| !software || format.modifier == Modifier::Linear)
             .copied()
             .collect();
-        let manager =
-            DrmOutputManager::new(device, allocator, exporter, Some(gbm), COLOR_FORMATS.iter().copied(), render_formats);
+        let manager = DrmOutputManager::new(
+            device,
+            allocator,
+            exporter,
+            Some(gbm),
+            COLOR_FORMATS.iter().copied(),
+            render_formats,
+        );
 
         let token = self.loop_handle.insert_source(notifier, move |event, metadata, state| match event {
             DrmEvent::VBlank(crtc) => state.drm_frame_finish(crtc, metadata),
@@ -284,7 +291,8 @@ impl State {
         self.shm_state.update_formats(shm_formats);
         match DmabufFeedbackBuilder::new(render_dev, formats.clone()).build() {
             Ok(feedback) => {
-                self.dmabuf_global = Some(self.dmabuf_state.create_global_with_default_feedback::<State>(&dh, &feedback));
+                self.dmabuf_global =
+                    Some(self.dmabuf_state.create_global_with_default_feedback::<State>(&dh, &feedback));
             }
             Err(err) => {
                 warn!("no dmabuf feedback ({err}), linux-dmabuf v3");
@@ -394,7 +402,14 @@ impl State {
         };
         let global = output.create_global::<State>(&dh);
         info!("output {name}: {}x{}@{}", wl_mode.size.w, wl_mode.size.h, wl_mode.refresh);
-        gpu.surface = Some(Surface { crtc, connector: connector.handle(), output: output.clone(), drm_output, global, queued: false });
+        gpu.surface = Some(Surface {
+            crtc,
+            connector: connector.handle(),
+            output: output.clone(),
+            drm_output,
+            global,
+            queued: false,
+        });
         self.set_output(output);
         self.schedule_drm_render(Duration::ZERO);
     }
@@ -446,7 +461,8 @@ impl State {
         }
         let output = surface.output.clone();
         let elements = render::output_elements(&mut gpu.renderer, &self.space, &output, &self.cursor_status, pointer);
-        let result = surface.drm_output.render_frame(&mut gpu.renderer, &elements, render::CLEAR_COLOR, FrameFlags::DEFAULT);
+        let result =
+            surface.drm_output.render_frame(&mut gpu.renderer, &elements, render::CLEAR_COLOR, FrameFlags::DEFAULT);
         let mut rendered = false;
         match result {
             Ok(result) => {

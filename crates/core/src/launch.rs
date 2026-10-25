@@ -15,7 +15,10 @@ enum Stopper {
     None,
     /// Transient systemd scope unit: also catches child processes that detach from the launcher.
     /// The PID serves as fallback while systemd has not registered the unit yet.
-    Scope { unit: String, pid: u32 },
+    Scope {
+        unit: String,
+        pid: u32,
+    },
     /// Fallback without systemd: the own process group.
     ProcessGroup(u32),
 }
@@ -139,12 +142,8 @@ pub fn spawn(launch: &Launch) -> io::Result<ProcessHandle> {
     }
     let unit = systemd_run_available().then(unique_unit_name);
     let Some((mut command, scope)) = plan(launch, unit.as_deref()) else { return Ok(ProcessHandle::finished()) };
-    let mut child = command
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .process_group(0)
-        .spawn()?;
+    let mut child =
+        command.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).process_group(0).spawn()?;
     let stopper = match scope {
         Some(unit) => Stopper::Scope { unit, pid: child.id() },
         None if matches!(launch, Launch::Command(_)) => Stopper::ProcessGroup(child.id()),
@@ -175,8 +174,7 @@ pub fn program_exists(program: &str) -> bool {
     if path.is_absolute() {
         return path.is_file();
     }
-    std::env::var_os("PATH")
-        .is_some_and(|paths| std::env::split_paths(&paths).any(|dir| dir.join(program).is_file()))
+    std::env::var_os("PATH").is_some_and(|paths| std::env::split_paths(&paths).any(|dir| dir.join(program).is_file()))
 }
 
 #[cfg(test)]
@@ -212,7 +210,17 @@ mod tests {
         let (scoped, scope) = plan(&vlc, Some("consoleui-app-1")).unwrap();
         assert_eq!(
             argv(&scoped),
-            ["systemd-run", "--user", "--scope", "--collect", "--quiet", "--unit=consoleui-app-1", "--", "vlc", "--fullscreen"]
+            [
+                "systemd-run",
+                "--user",
+                "--scope",
+                "--collect",
+                "--quiet",
+                "--unit=consoleui-app-1",
+                "--",
+                "vlc",
+                "--fullscreen"
+            ]
         );
         assert_eq!(scope.as_deref(), Some("consoleui-app-1.scope"));
         assert!(scoped.get_envs().next().is_none());

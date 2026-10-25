@@ -444,7 +444,8 @@ mod tests {
                 let plural = if slint {
                     rest.trim_start().strip_prefix('|').and_then(literal).map(|(p, _)| p)
                 } else if *call == "trn(" {
-                    let rest = rest.trim_start().strip_prefix(',').unwrap_or_else(|| panic!("{place}: trn needs a plural"));
+                    let rest =
+                        rest.trim_start().strip_prefix(',').unwrap_or_else(|| panic!("{place}: trn needs a plural"));
                     Some(literal(rest).unwrap_or_else(|| panic!("{place}: plural must be a literal")).0)
                 } else {
                     None
@@ -462,7 +463,8 @@ mod tests {
             let path = entry.path();
             if path.is_dir() {
                 sources(&path, out);
-            } else if path.extension().is_some_and(|e| e == "rs" || e == "slint") && !path.ends_with("core/src/i18n.rs") {
+            } else if path.extension().is_some_and(|e| e == "rs" || e == "slint") && !path.ends_with("core/src/i18n.rs")
+            {
                 out.push(path);
             }
         }

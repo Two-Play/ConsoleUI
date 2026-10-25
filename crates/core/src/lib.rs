@@ -35,8 +35,8 @@ pub use collection::{Collection, home_view};
 pub use grid::Grid;
 pub use history::History;
 pub use library::{
-    AppEntry, AppKind, Artwork, Launch, LibraryFilter, LibrarySort, Names, apply_history, compare_recent, dummy_library,
-    last_used_label, library_view, localize_entries, palette_for, sort_by_recent,
+    AppEntry, AppKind, Artwork, Launch, LibraryFilter, LibrarySort, Names, apply_history, compare_recent,
+    dummy_library, last_used_label, library_view, localize_entries, palette_for, sort_by_recent,
 };
 pub use nav::{Action, Carousel};
 

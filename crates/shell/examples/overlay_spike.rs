@@ -46,7 +46,13 @@ fn main() -> Result<(), Box<dyn Error>> {
         conn.change_property32(PropMode::REPLACE, window, atom(b"STEAM_GAME")?, AtomEnum::CARDINAL, &[id])?;
     }
     if std::env::var_os("SPIKE_EXTERNAL").is_some() {
-        conn.change_property32(PropMode::REPLACE, window, atom(b"GAMESCOPE_EXTERNAL_OVERLAY")?, AtomEnum::CARDINAL, &[1])?;
+        conn.change_property32(
+            PropMode::REPLACE,
+            window,
+            atom(b"GAMESCOPE_EXTERNAL_OVERLAY")?,
+            AtomEnum::CARDINAL,
+            &[1],
+        )?;
     }
     conn.map_window(window)?;
     conn.flush()?;

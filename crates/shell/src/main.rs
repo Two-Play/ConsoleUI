@@ -3,11 +3,11 @@ use std::error::Error;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
+use consoleui_core::Action;
 use consoleui_core::i18n::{self, tr};
 use consoleui_core::input::GlyphStyle;
 use consoleui_core::settings::{GlyphChoice, Settings};
 use consoleui_core::status::{self, Network};
-use consoleui_core::Action;
 use slint::{RenderingState, Rgba8Pixel, SharedPixelBuffer, Timer, TimerMode};
 
 mod audio;
@@ -89,9 +89,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // menu as its own overlay window.
     let compositor = compositor::Compositor::connect();
     let gamescope = match compositor.is_none().then(gamescope::Gamescope::connect).flatten() {
-        Some(control) => {
-            Some(GamescopeUi::new(control, OverlayWindow::new()?, NotificationWindow::new()?))
-        }
+        Some(control) => Some(GamescopeUi::new(control, OverlayWindow::new()?, NotificationWindow::new()?)),
         None => None,
     };
     let overlay = gamescope.as_ref().map(|g| g.overlay.as_weak());
@@ -321,7 +319,12 @@ impl ReadyTasks {
             // Wait a bit until the page change and hero crossfade are done.
             timer.start(TimerMode::SingleShot, snapshot_delay, move || {
                 if let Some(ui) = ui.upgrade() {
-                    match ui.window().take_snapshot().map_err(Box::<dyn Error>::from).and_then(|px| save_png(&path, &px)) {
+                    match ui
+                        .window()
+                        .take_snapshot()
+                        .map_err(Box::<dyn Error>::from)
+                        .and_then(|px| save_png(&path, &px))
+                    {
                         Ok(()) => println!("Snapshot saved: {}", path.display()),
                         Err(err) => eprintln!("Snapshot failed: {err}"),
                     }
@@ -360,7 +363,9 @@ fn run_script(ui: &AppWindow, shell: Rc<RefCell<Shell>>, steps: Vec<ScriptStep>)
             Some(ScriptStep::Wait(ms)) => due = Instant::now() + Duration::from_millis(*ms),
             Some(ScriptStep::Action(action)) => shell.borrow_mut().apply(&ui, *action),
             // Development aid for testing toasts (also over running apps)
-            Some(ScriptStep::Toast) => shell.borrow_mut().toast(&ui, "◆", "Test notice", "From --actions (development)"),
+            Some(ScriptStep::Toast) => {
+                shell.borrow_mut().toast(&ui, "◆", "Test notice", "From --actions (development)")
+            }
             None => return,
         }
         next += 1;
@@ -411,7 +416,9 @@ fn update_status(ui: &AppWindow, gamepads: Option<&RefCell<Gamepads>>, shell: &S
     ui.set_controller_connected(controller.is_some());
     ui.set_controller_battery(controller.as_ref().and_then(|c| c.battery).map_or(-1, i32::from));
     let style = match (shell.glyph_choice(), controller.map(|c| c.style)) {
-        (GlyphChoice::PlayStation, _) | (GlyphChoice::Auto, Some(GlyphStyle::PlayStation)) => ControllerStyle::Playstation,
+        (GlyphChoice::PlayStation, _) | (GlyphChoice::Auto, Some(GlyphStyle::PlayStation)) => {
+            ControllerStyle::Playstation
+        }
         (GlyphChoice::Xbox, _) | (GlyphChoice::Auto, Some(GlyphStyle::Xbox)) => ControllerStyle::Xbox,
         (GlyphChoice::Auto, None) => ControllerStyle::Keyboard,
     };

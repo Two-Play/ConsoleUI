@@ -30,7 +30,7 @@ PACKAGES=(
     libinput-devel mesa-libgbm-devel libseat-devel libdrm-devel libdisplay-info-devel libei-devel
     mesa-libEGL-devel mesa-libGLES-devel pixman-devel xorg-x11-server-Xwayland
     # Runtime and test tools (Mesa software rendering, nested runs, snapshots)
-    mesa-dri-drivers mesa-vulkan-drivers vulkan-tools mesa-demos gamescope
+    mesa-dri-drivers mesa-vulkan-drivers vulkan-tools mesa-demos glx-utils gamescope
     xprop xdpyinfo wayland-utils pipewire-utils
 )
 

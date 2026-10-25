@@ -52,7 +52,8 @@ pub fn render(sound: Sound) -> Vec<u8> {
             phase = (phase + hz / SAMPLE_RATE as f32).fract();
             let envelope = (i.min(samples - 1 - i) as f32 / fade as f32).min(1.0) * (1.0 - t * 0.5);
             // Sine plus a little overtone sounds softer than a pure beep.
-            let wave = (phase * std::f32::consts::TAU).sin() * 0.85 + (phase * 2.0 * std::f32::consts::TAU).sin() * 0.15;
+            let wave =
+                (phase * std::f32::consts::TAU).sin() * 0.85 + (phase * 2.0 * std::f32::consts::TAU).sin() * 0.15;
             let sample = (wave * envelope * tone.gain * i16::MAX as f32) as i16;
             let le = sample.to_le_bytes();
             bytes.extend_from_slice(&le);

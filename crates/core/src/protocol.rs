@@ -26,7 +26,9 @@ pub const VERSION: u32 = 1;
 pub enum Target {
     Shell,
     /// A launched app (the `app_id` from [`ShellMessage::Launched`])
-    App { app_id: u32 },
+    App {
+        app_id: u32,
+    },
 }
 
 /// Shell → compositor
@@ -92,10 +94,7 @@ impl ShellMessage {
     /// How the compositor recognizes the processes of a [`ShellMessage::Launched`] app.
     pub fn launched_owner(&self) -> Option<Owner> {
         let ShellMessage::Launched { pid, scope, steam_app_id, .. } = self else { return None };
-        steam_app_id
-            .map(Owner::Steam)
-            .or_else(|| scope.clone().map(Owner::Scope))
-            .or_else(|| pid.map(Owner::Process))
+        steam_app_id.map(Owner::Steam).or_else(|| scope.clone().map(Owner::Scope)).or_else(|| pid.map(Owner::Process))
     }
 }
 
@@ -146,7 +145,10 @@ mod tests {
 
     #[test]
     fn messages_have_a_stable_json_shape() {
-        assert_eq!(encode(&ShellMessage::Focus { target: Target::Shell }), "{\"type\":\"Focus\",\"target\":{\"kind\":\"shell\"}}\n");
+        assert_eq!(
+            encode(&ShellMessage::Focus { target: Target::Shell }),
+            "{\"type\":\"Focus\",\"target\":{\"kind\":\"shell\"}}\n"
+        );
         assert_eq!(
             encode(&ShellMessage::Focus { target: Target::App { app_id: 7 } }),
             "{\"type\":\"Focus\",\"target\":{\"kind\":\"app\",\"app_id\":7}}\n"
@@ -158,7 +160,12 @@ mod tests {
     fn round_trips_every_message() {
         let shell = [
             ShellMessage::Hello { version: VERSION, pid: 42 },
-            ShellMessage::Launched { app_id: 1, pid: Some(9), scope: Some("consoleui-app-1.scope".into()), steam_app_id: None },
+            ShellMessage::Launched {
+                app_id: 1,
+                pid: Some(9),
+                scope: Some("consoleui-app-1.scope".into()),
+                steam_app_id: None,
+            },
             ShellMessage::Exited { app_id: 1 },
             ShellMessage::Focus { target: Target::App { app_id: 1 } },
             ShellMessage::Overlay { open: true },

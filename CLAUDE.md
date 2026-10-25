@@ -13,9 +13,11 @@ piece of code, a UI string or a section of a document, translate the comments, s
 section to English as part of the change. The German UI comes from the translation catalog (see
 "Translations" below).
 
-Planned target architecture: the shell runs as a fullscreen client inside **gamescope** (like Steam's
-Game Mode); an own Smithay compositor is an optional later phase. Keep the shell independent of the
-compositor.
+Target architecture (hybrid, Epic 7): the shell is a fullscreen client of our own Smithay compositor
+(`crates/compositor`); games that need upscaling/HDR run in a nested gamescope per entry (Story 7.10).
+The gamescope session (shell inside `gamescope -e`, like Steam's Game Mode) stays as a fallback, and the
+shell also runs as a plain window on any desktop. Keep the shell independent of the compositor: it only
+talks to it through the control socket.
 
 ## Commands
 
@@ -31,9 +33,11 @@ cargo run -p consoleui-core --example list_library   # print what discovery find
 cargo run --release -- --windowed --start library --snapshot /tmp/lib.png   # render own window to PNG and exit
 cargo run --release -- --windowed --start search --query red --snapshot /tmp/search.png
 cargo run --release -- --windowed --dummy --fake-network --start settings --actions "down,down,down,down,confirm" --snapshot /tmp/wifi.png
-cargo test --workspace
+cargo test -p consoleui-core -p consoleui            # on the host (the compositor needs the dev container)
 cargo test -p consoleui-core carousel   # single test / filter
-cargo clippy --workspace --all-targets -- -D warnings  # must pass (Definition of Done)
+dev/toolbox.sh run cargo test --workspace                                   # all crates incl. the compositor
+dev/toolbox.sh run cargo clippy --workspace --all-targets -- -D warnings    # must pass (Definition of Done)
+cargo fmt --all                          # rustfmt.toml: max_width 120, use_small_heuristics = "Max"
 ```
 
 Development container (Fedora toolbox `consoleui-dev`, holds all `-devel` packages incl. the Smithay
@@ -50,6 +54,27 @@ The container has Mesa only (llvmpipe/lavapipe), not the NVIDIA userspace driver
 snapshot there; run gamescope on the NVIDIA GPU, real games and performance checks on the host.
 Run GPU tests (nested gamescope, compositors) one after another, never from parallel agents: a crashed
 gamescope can leave the NVIDIA driver in a reset-required state until the next reboot.
+
+Own compositor (Epic 7; build in the dev container, binaries in `target/toolbox/release`):
+
+```bash
+dev/toolbox.sh run cargo build --release --workspace
+target/toolbox/release/consoleui-compositor --winit --size 960x540 \
+  --screenshot-after 8000 /tmp/c.png -- target/release/consoleui --dummy --dummy-launch glxgears \
+  --actions "wait:1500,confirm,wait:4000,guide"    # nested compositor + shell; PNG of the composed output
+session/consoleui-nested --compositor --dummy      # nested session on our compositor instead of gamescope
+```
+
+Compositor options: `--winit`/`--drm` (default: winit when `WAYLAND_DISPLAY`/`DISPLAY` is set),
+`--size WxH`, `--no-xwayland`, `--no-shell`, `--screenshot-after MS PNG` (repeatable), the shell command
+after `--` or `--shell`. **Never run `--drm` on the host** (it takes over the display); test it in the VM.
+
+Test VM for the DRM backend and the login session (`docs/dev-vm.md`): `dev/vm.sh create` once, then
+`dev/vm.sh start [--headless]`. The main checkout is shared at the same path, so toolbox builds run in
+the guest; `dev/vm.sh ssh '<cmd>'` runs a command there, `dev/vm.sh screenshot <png>` captures the guest
+display, and `dev/vm.sh seat '<cmd>'` runs a command as an active logind session on seat0/VT 7 (log in
+`~/seat.log` in the guest), which is what `consoleui-compositor --drm` needs. The guest renders with
+llvmpipe only (no gamescope `--backend drm` there); the host GPU is never used. `dev/vm.sh stop` when done.
 
 Quit the running shell with Ctrl+Q. Pressing Enter on a real entry really launches that game or app.
 Use `--snapshot` to check UI changes visually instead of screenshotting the desktop: a screen capture
@@ -95,7 +120,10 @@ Cargo workspace (edition 2024, `default-members` = the shell):
   be tested without Slint.
   - `AppEntry` (in `library.rs`) is the common model for every source. Its `id` is prefixed by source
     (`steam:<appid>`, `desktop:<desktop-file-id>`, `dummy:<n>`), and that ID is also the key in the history.
-    `Artwork` holds only paths; images are loaded in the shell.
+    `Artwork` holds only paths; images are loaded in the shell. `title`/`description` are the
+    current-language texts; `names` (`Names`: Fixed / Dummy / `Arc<DesktopNames>` with only the supported
+    languages' `.desktop` variants) keeps their sources, and `localize_entries` re-resolves them when
+    `Shell::apply_language` switches the language (followed by a re-sort of entries and tiles).
   - `discover_library()` = `steam::discover` (own KeyValues parser in `vdf.rs`) + `desktop::discover`
     (own `.desktop` parser, category allow/deny lists, `icons.rs` lookup). Then `apply_history` +
     `sort_by_recent` (most recent first, then alphabetical).
@@ -131,7 +159,25 @@ Cargo workspace (edition 2024, `default-members` = the shell):
     `collection.json`. `launch::plan` removes `ENABLE_GAMESCOPE_WSI` for a nested gamescope.
   - `i18n.rs` (Story 6.6): `Language` (from `LANGUAGE`/`LC_ALL`/`LC_MESSAGES`/`LANG` or the settings
     row), `tr`/`trf`/`trn`/`tr_noop`, backed by the embedded German catalog (see "Translations" below).
+  - `protocol.rs`: the shell ↔ compositor messages (`ShellMessage` / `CompositorMessage`), one JSON
+    object per line tagged with `"type"`, `LineReader` and `encode`; unknown types and malformed lines
+    are skipped and new fields are optional, so both sides can evolve independently.
+- `crates/compositor` (binary `consoleui-compositor`, workspace member but not a default member; needs
+  the dev container's `-devel` packages; Smithay pinned to git `24647fc8d001`): the session compositor of
+  Epic 7. `winit.rs` (nested) and `drm.rs` (DRM/KMS + libinput + libseat, single GPU and output, accepts
+  a software EGL device) sit behind `backend::Backend`. `state.rs` holds the globals and protocol
+  handlers (dmabuf, drm-syncobj, presentation-time, relative-pointer, pointer-constraints, …).
+  `policy.rs` is the Smithay-free, unit-tested window policy (owner shell/app/unknown, front, stacking,
+  keyboard focus; every toplevel is fullscreen, an app comes to the front once its window shows
+  content). `xwayland.rs` runs `X11Wm` and maps windows to apps via `_NET_WM_PID` or the X-Resource
+  client PID plus `consoleui_core::ownership`. `control.rs` is the control socket
+  (`$XDG_RUNTIME_DIR/consoleui-<wayland-socket>.sock`), `child.rs` starts the shell with
+  `WAYLAND_DISPLAY`, `DISPLAY` and `CONSOLEUI_COMPOSITOR`, `render.rs` builds frame elements and the
+  offscreen PNG screenshot.
 - `crates/shell` (binary `consoleui`): Slint UI plus glue.
+  - `src/compositor.rs`: counterpart of `gamescope.rs`, active when `CONSOLEUI_COMPOSITOR` is set (takes
+    precedence over gamescope). Sends `Hello`/`Launched`/`Exited`/`Focus`/`Overlay`;
+    `Shell::poll_compositor` (50 ms timer) turns `WindowMapped`/`AppGone` into `has_window`.
   - `ui/main.slint`: `AppWindow`, the home screen. All sizes scale from a 1920×1080 reference via the
     `s` factor; tiles are positioned absolutely and animated (`animate x, y, width, height`).
   - `ui/theme.slint`: the `Theme` global with design tokens (colors, durations). Use it instead of
@@ -214,9 +260,8 @@ One msgid has exactly one German text; use a different English text if the Germa
 `Shell::apply_language` switches the language at runtime (the on-screen keyboard is QWERTZ for German,
 QWERTY for English).
 
-License: GPL-3.0-or-later (`LICENSE`, `license.workspace` in every crate). The Smithay compositor
-(Epic 7) is planned in `docs/spike-smithay.md` (a separate `crates/compositor`); code may be taken from
-anvil/smallvil (MIT) and niri (GPL-3.0-or-later) with attribution in a comment. cosmic-comp is
+License: GPL-3.0-or-later (`LICENSE`, `license.workspace` in every crate). Code may be taken from
+Smithay's anvil/smallvil (MIT) and niri (GPL-3.0-or-later) with attribution in a comment. cosmic-comp is
 GPL-3.0-only: copying from it would pin the project to GPL-3.0-only, so only take ideas from it.
 
 If the GPU renderer fails (e.g. the NVIDIA driver needs a reset after a gamescope crash),

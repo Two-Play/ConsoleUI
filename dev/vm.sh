@@ -169,6 +169,7 @@ packages:
   - gamescope
   # test clients and tools
   - mesa-demos
+  - glx-utils
   - kmscube
   - drm-utils
   - vulkan-tools

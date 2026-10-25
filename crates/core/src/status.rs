@@ -30,7 +30,10 @@ pub fn read() -> SystemStatus {
 
 /// `class_dir` corresponds to `/sys/class`, `proc_wireless` to the content of `/proc/net/wireless`.
 pub fn read_from(class_dir: &Path, proc_wireless: &str) -> SystemStatus {
-    SystemStatus { battery: battery(&class_dir.join("power_supply")), network: network(&class_dir.join("net"), proc_wireless) }
+    SystemStatus {
+        battery: battery(&class_dir.join("power_supply")),
+        network: network(&class_dir.join("net"), proc_wireless),
+    }
 }
 
 fn read_trimmed(path: &Path) -> Option<String> {

@@ -68,12 +68,7 @@ fn ms(d: Duration) -> f64 {
 
 /// Text for the FPS overlay; `sample` covers exactly one second.
 pub fn format_second(sample: &Sample) -> String {
-    format!(
-        "{} fps · Ø {:.2} ms · max {:.2} ms",
-        sample.frames,
-        ms(sample.average()),
-        ms(sample.worst)
-    )
+    format!("{} fps · Ø {:.2} ms · max {:.2} ms", sample.frames, ms(sample.average()), ms(sample.worst))
 }
 
 pub fn print_bench_summary(tiles: usize, steps: usize, elapsed: Duration, total: Sample, worst_step: Duration) {

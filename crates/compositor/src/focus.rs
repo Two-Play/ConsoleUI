@@ -256,11 +256,15 @@ impl DndFocus<State> for FocusTarget {
             (FocusTarget::Wayland(surface), Some(FocusOfferData::Wayland(offer))) => {
                 DndFocus::motion(surface, data, Some(offer), seat, location, time)
             }
-            (FocusTarget::Wayland(surface), None) => DndFocus::motion(surface, data, None::<&mut WlOfferData<S>>, seat, location, time),
+            (FocusTarget::Wayland(surface), None) => {
+                DndFocus::motion(surface, data, None::<&mut WlOfferData<S>>, seat, location, time)
+            }
             (FocusTarget::X11(surface), Some(FocusOfferData::X11(offer))) => {
                 DndFocus::motion(surface, data, Some(offer), seat, location, time)
             }
-            (FocusTarget::X11(surface), None) => DndFocus::motion(surface, data, None::<&mut XwmOfferData<S>>, seat, location, time),
+            (FocusTarget::X11(surface), None) => {
+                DndFocus::motion(surface, data, None::<&mut XwmOfferData<S>>, seat, location, time)
+            }
             _ => {}
         }
     }

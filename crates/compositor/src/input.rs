@@ -6,8 +6,8 @@
 //! Copyright (c) 2017 Victor Berger).
 
 use smithay::backend::input::{
-    AbsolutePositionEvent, Axis, AxisSource, Event, InputBackend, InputEvent, KeyState,
-    KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, PointerMotionEvent,
+    AbsolutePositionEvent, Axis, AxisSource, Event, InputBackend, InputEvent, KeyState, KeyboardKeyEvent,
+    PointerAxisEvent, PointerButtonEvent, PointerMotionEvent,
 };
 use smithay::desktop::WindowSurfaceType;
 use smithay::input::keyboard::{FilterResult, Keysym, ModifiersState, keysyms};
@@ -102,7 +102,11 @@ impl State {
         let position = event.position_transformed(size);
         let under = self.surface_under(position);
         let pointer = self.pointer.clone();
-        pointer.motion(self, under, &MotionEvent { location: position, serial: SERIAL_COUNTER.next_serial(), time: event.time() });
+        pointer.motion(
+            self,
+            under,
+            &MotionEvent { location: position, serial: SERIAL_COUNTER.next_serial(), time: event.time() },
+        );
         pointer.frame(self);
     }
 
@@ -144,9 +148,7 @@ impl State {
         }
 
         let mut delta = self.clamp_to_output(location + event.delta()) - location;
-        if confined
-            && let (Some((_, surface_location)), Some(region)) = (&under, &confine_region)
-        {
+        if confined && let (Some((_, surface_location)), Some(region)) = (&under, &confine_region) {
             if !region.contains((location + Point::from((delta.x, 0.0)) - *surface_location).to_i32_round()) {
                 delta.x = 0.0;
             }
@@ -163,7 +165,11 @@ impl State {
             pointer.frame(self);
             return;
         }
-        pointer.motion(self, new_under.clone(), &MotionEvent { location, serial: SERIAL_COUNTER.next_serial(), time: event.time() });
+        pointer.motion(
+            self,
+            new_under.clone(),
+            &MotionEvent { location, serial: SERIAL_COUNTER.next_serial(), time: event.time() },
+        );
         pointer.frame(self);
 
         // Activate a constraint the pointer just entered.
@@ -186,7 +192,12 @@ impl State {
         let state = event.state();
         pointer.button(
             self,
-            &ButtonEvent { button: event.button_code(), state, serial: SERIAL_COUNTER.next_serial(), time: event.time() },
+            &ButtonEvent {
+                button: event.button_code(),
+                state,
+                serial: SERIAL_COUNTER.next_serial(),
+                time: event.time(),
+            },
         );
         pointer.frame(self);
     }

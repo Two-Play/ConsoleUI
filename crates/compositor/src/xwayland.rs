@@ -276,9 +276,10 @@ impl XwmHandler for State {
 
     fn allow_selection_access(&mut self, xwm: XwmId, _selection: SelectionTarget) -> bool {
         // Only the focused X11 client may read the clipboard.
-        self.seat.get_keyboard().and_then(|keyboard| keyboard.current_focus()).is_some_and(
-            |focus| matches!(focus, FocusTarget::X11(surface) if surface.xwm_id() == Some(xwm)),
-        )
+        self.seat
+            .get_keyboard()
+            .and_then(|keyboard| keyboard.current_focus())
+            .is_some_and(|focus| matches!(focus, FocusTarget::X11(surface) if surface.xwm_id() == Some(xwm)))
     }
 
     fn send_selection(&mut self, _xwm: XwmId, selection: SelectionTarget, mime_type: String, fd: OwnedFd) {

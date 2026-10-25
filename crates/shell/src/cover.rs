@@ -20,12 +20,7 @@ pub fn generate(from: [u8; 3], to: [u8; 3], seed: u32, size: u32) -> Image {
             let base = (a as f32 + (b as f32 - a as f32) * t) * shade;
             (base + (255.0 - base) * (light + stripe)).clamp(0.0, 255.0) as u8
         };
-        *px = Rgba8Pixel {
-            r: channel(from[0], to[0]),
-            g: channel(from[1], to[1]),
-            b: channel(from[2], to[2]),
-            a: 255,
-        };
+        *px = Rgba8Pixel { r: channel(from[0], to[0]), g: channel(from[1], to[1]), b: channel(from[2], to[2]), a: 255 };
     }
     Image::from_rgba8(buffer)
 }

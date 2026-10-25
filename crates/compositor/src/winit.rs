@@ -202,7 +202,8 @@ impl State {
         let results: Vec<_> = requests
             .into_iter()
             .map(|request| {
-                let result = render::save_screenshot(renderer, &elements, size, &request.path).map_err(|e| e.to_string());
+                let result =
+                    render::save_screenshot(renderer, &elements, size, &request.path).map_err(|e| e.to_string());
                 (request, result)
             })
             .collect();

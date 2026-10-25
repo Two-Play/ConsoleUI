@@ -89,8 +89,7 @@ impl Options {
                 "-h" | "--help" => options.help = true,
                 "--tiles" => {
                     let value = value(&mut args, "--tiles")?;
-                    options.tiles =
-                        value.parse().map_err(|_| format!("Invalid tile count: {value}"))?;
+                    options.tiles = value.parse().map_err(|_| format!("Invalid tile count: {value}"))?;
                 }
                 "--start" => {
                     options.start = match value(&mut args, "--start")?.as_str() {

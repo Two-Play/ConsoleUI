@@ -208,12 +208,7 @@ mod tests {
         );
         assert_eq!(
             manifest,
-            Some(Manifest {
-                app_id: 2695940,
-                name: "PANICORE".into(),
-                installed: true,
-                last_played: Some(1790020703),
-            })
+            Some(Manifest { app_id: 2695940, name: "PANICORE".into(), installed: true, last_played: Some(1790020703) })
         );
     }
 

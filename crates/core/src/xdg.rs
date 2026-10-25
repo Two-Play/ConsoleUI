@@ -8,10 +8,7 @@ pub fn home() -> Option<PathBuf> {
 }
 
 fn from_env_or_home(var: &str, fallback: &str) -> Option<PathBuf> {
-    env::var_os(var)
-        .filter(|v| !v.is_empty())
-        .map(PathBuf::from)
-        .or_else(|| home().map(|h| h.join(fallback)))
+    env::var_os(var).filter(|v| !v.is_empty()).map(PathBuf::from).or_else(|| home().map(|h| h.join(fallback)))
 }
 
 pub fn data_home() -> Option<PathBuf> {

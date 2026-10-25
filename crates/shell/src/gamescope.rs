@@ -6,9 +6,9 @@
 use std::collections::HashMap;
 use std::error::Error;
 
+use x11rb::CURRENT_TIME;
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{AtomEnum, ConnectionExt as _, InputFocus, MapState, PropMode, Window, WindowClass};
-use x11rb::CURRENT_TIME;
 use x11rb::rust_connection::RustConnection;
 use x11rb::wrapper::ConnectionExt as _;
 

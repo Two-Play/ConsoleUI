@@ -71,11 +71,7 @@ pub struct AppEntry {
 impl AppEntry {
     /// First alphanumeric character of the title in upper case (for placeholder covers).
     pub fn monogram(&self) -> String {
-        self.title
-            .chars()
-            .find(|c| c.is_alphanumeric())
-            .map(|c| c.to_uppercase().collect())
-            .unwrap_or_default()
+        self.title.chars().find(|c| c.is_alphanumeric()).map(|c| c.to_uppercase().collect()).unwrap_or_default()
     }
 
     /// Resolves `title` and `description` again for `language`; `desktop_langs` are the locale

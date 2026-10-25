@@ -113,7 +113,8 @@ mod tests {
 
     #[test]
     fn parses_size_and_screenshots() {
-        let options = parse(&["--size", "960x540", "--screenshot-after", "1500", "/tmp/a.png", "--no-xwayland"]).unwrap();
+        let options =
+            parse(&["--size", "960x540", "--screenshot-after", "1500", "/tmp/a.png", "--no-xwayland"]).unwrap();
         assert_eq!(options.size, (960, 540));
         assert_eq!(options.screenshots, vec![(Duration::from_millis(1500), PathBuf::from("/tmp/a.png"))]);
         assert!(!options.xwayland);

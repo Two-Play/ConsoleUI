@@ -359,10 +359,8 @@ impl NetPages {
             Some(Page::Wifi) => 1,
             Some(Page::Bluetooth) => 2,
         };
-        let (key, len, open) = self
-            .password
-            .as_ref()
-            .map_or((0, 0, 0), |p| (p.keyboard.focused(), p.text.chars().count(), 1));
+        let (key, len, open) =
+            self.password.as_ref().map_or((0, 0, 0), |p| (p.keyboard.focused(), p.text.chars().count(), 1));
         [page, self.focus, key, len, open]
     }
 
@@ -379,9 +377,7 @@ impl NetPages {
                 Page::Bluetooth if self.bt_state().is_some_and(BluetoothState::powered) => tr("Turn off"),
                 _ => tr("Turn on"),
             }),
-            Item::Network(_) => {
-                Some(if self.focused_network()?.connected { tr("Disconnect") } else { tr("Connect") })
-            }
+            Item::Network(_) => Some(if self.focused_network()?.connected { tr("Disconnect") } else { tr("Connect") }),
             Item::Device(_) => {
                 let device = self.focused_device()?;
                 Some(if device.connected {
@@ -423,11 +419,7 @@ impl NetPages {
 
     pub fn password_view(&self) -> Option<PasswordView> {
         let password = self.password.as_ref()?;
-        let text = if password.visible {
-            password.text.clone()
-        } else {
-            "•".repeat(password.text.chars().count())
-        };
+        let text = if password.visible { password.text.clone() } else { "•".repeat(password.text.chars().count()) };
         Some(PasswordView {
             ssid: password.ssid.clone(),
             text,
@@ -677,10 +669,11 @@ mod tests {
         assert!(!pages.password_open() && pages.is_open());
         pages.apply(Action::Confirm);
         pages.type_text("kurz");
-        let notices = run(&mut pages, &mut fake, vec![Request::WifiConnect {
-            ssid: "FRITZ!Box 7590 XY".into(),
-            password: Some("kurz".into()),
-        }]);
+        let notices = run(
+            &mut pages,
+            &mut fake,
+            vec![Request::WifiConnect { ssid: "FRITZ!Box 7590 XY".into(), password: Some("kurz".into()) }],
+        );
         assert_eq!(notices[0].title, "Connection failed");
         pages.apply(Action::Back);
         pages.apply(Action::Back);

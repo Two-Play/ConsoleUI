@@ -12,7 +12,9 @@ use consoleui_core::protocol::{self, CompositorMessage, ShellMessage};
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::renderer::ImportDma;
 use smithay::backend::renderer::utils::{on_commit_buffer_handler, with_renderer_surface_state};
-use smithay::desktop::{PopupKind, PopupManager, Space, Window, WindowSurface, find_popup_root_surface, get_popup_toplevel_coords};
+use smithay::desktop::{
+    PopupKind, PopupManager, Space, Window, WindowSurface, find_popup_root_surface, get_popup_toplevel_coords,
+};
 use smithay::input::dnd::{DndGrabHandler, GrabType, Source};
 use smithay::input::keyboard::XkbConfig;
 use smithay::input::pointer::{CursorImageStatus, PointerHandle};
@@ -36,7 +38,9 @@ use smithay::wayland::compositor::{
 use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportNotifier, get_dmabuf};
 use smithay::wayland::drm_syncobj::{DrmSyncobjCachedState, DrmSyncobjHandler, DrmSyncobjState};
 use smithay::wayland::output::{OutputHandler, OutputManagerState};
-use smithay::wayland::pointer_constraints::{PointerConstraintsHandler, PointerConstraintsState, with_pointer_constraint};
+use smithay::wayland::pointer_constraints::{
+    PointerConstraintsHandler, PointerConstraintsState, with_pointer_constraint,
+};
 use smithay::wayland::presentation::PresentationState;
 use smithay::wayland::relative_pointer::RelativePointerManagerState;
 use smithay::wayland::seat::WaylandFocus;
@@ -44,17 +48,17 @@ use smithay::wayland::selection::SelectionHandler;
 use smithay::wayland::selection::data_device::{
     DataDeviceHandler, DataDeviceState, WaylandDndGrabHandler, set_data_device_focus,
 };
+use smithay::wayland::selection::primary_selection::{PrimarySelectionHandler, PrimarySelectionState};
 use smithay::wayland::shell::xdg::decoration::{XdgDecorationHandler, XdgDecorationState};
 use smithay::wayland::shell::xdg::{
     PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState, XdgToplevelSurfaceData,
 };
-use smithay::wayland::selection::primary_selection::{PrimarySelectionHandler, PrimarySelectionState};
 use smithay::wayland::shm::{ShmHandler, ShmState};
-use smithay::wayland::xwayland_shell::XWaylandShellState;
-use smithay::xwayland::X11Wm;
 use smithay::wayland::single_pixel_buffer::SinglePixelBufferState;
 use smithay::wayland::socket::ListeningSocketSource;
 use smithay::wayland::viewporter::ViewporterState;
+use smithay::wayland::xwayland_shell::XWaylandShellState;
+use smithay::xwayland::X11Wm;
 use tracing::{debug, info, warn};
 
 use crate::backend::Backend;
@@ -470,15 +474,12 @@ impl CompositorHandler for State {
         add_pre_commit_hook::<Self, _>(surface, |state, _dh, surface| {
             let (acquire_point, dmabuf) = with_states(surface, |data| {
                 let acquire = data.cached_state.get::<DrmSyncobjCachedState>().pending().acquire_point.clone();
-                let dmabuf = data
-                    .cached_state
-                    .get::<SurfaceAttributes>()
-                    .pending()
-                    .buffer
-                    .as_ref()
-                    .and_then(|assignment| match assignment {
-                        BufferAssignment::NewBuffer(buffer) => get_dmabuf(buffer).cloned().ok(),
-                        _ => None,
+                let dmabuf =
+                    data.cached_state.get::<SurfaceAttributes>().pending().buffer.as_ref().and_then(|assignment| {
+                        match assignment {
+                            BufferAssignment::NewBuffer(buffer) => get_dmabuf(buffer).cloned().ok(),
+                            _ => None,
+                        }
                     });
                 (acquire, dmabuf)
             });
