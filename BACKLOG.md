@@ -17,7 +17,8 @@ Login-Manager oder TTY, so wie der Steam Deck „Game Mode“.
 **Entscheidung:** Wir bauen in Phase 1 die Shell als eigenständige Rust-App, die auch auf dem
 normalen Desktop im Fenster läuft, damit die Entwicklung schnell geht. In Phase 2 läuft sie in
 gamescope (so macht es auch Steam im Game Mode). Phase 3 ist optional ein eigener
-Smithay-Compositor. Weil die Shell vom Compositor getrennt ist, bleibt der Code der Shell
+Smithay-Compositor als Hybrid: Shell, Overlays, Eingabe und Fokus im eigenen Compositor,
+gamescope nur noch verschachtelt pro Spiel für Upscaling/HDR (siehe Epic 7). Weil die Shell vom Compositor getrennt ist, bleibt der Code der Shell
 dabei erhalten.
 
 **Tech-Stack (Vorschlag)**
@@ -112,15 +113,39 @@ Schätzung in Story Points (SP): 1, 2, 3, 5, 8, 13. Ein Sprint dauert 2 Wochen.
 | 6.4 | Theme-System mit zentralen Design-Tokens (Farben, Radien, Timings) | 3 |
 | 6.5 | Performance-Pass: Bilder asynchron laden, Thumbnail-Cache, Framezeit-Overlay zum Debuggen | 5 |
 
-## Epic 7 (optional, Phase 3) – Eigener Smithay-Compositor
+## Epic 7 (optional, Phase 3) – Eigener Smithay-Compositor (Hybrid)
+
+**Ansatz:** Wir wollen nicht alles nachbauen, was gamescope kann. Volle Gleichwertigkeit
+(FSR/NIS, HDR, Frame-Limiter, viele Sonderfälle für einzelne Spiele) wären grob 110–170 SP und
+danach viel Pflege. Unser eigener Smithay-Compositor übernimmt die Teile, für die wir heute
+gamescope umgehen müssen: Shell, Overlays, Eingabe, Fokus und die Übergänge zwischen Shell und App.
+Spiele laufen direkt im Compositor (über XWayland). Spiele, die Upscaling, HDR oder einen
+FPS-Limiter brauchen, starten wir in einem **verschachtelten gamescope** (`gamescope -- <spiel>`,
+gamescope als Wayland-Client). Diese teuren Funktionen bekommen wir so pro Spiel von gamescope.
+
+Was dadurch wegfällt: `STEAM_GAME`-Atome und die Prozess-Zuordnung in `src/gamescope.rs`,
+der `EVIOCGRAB` in `src/grab.rs`, das 1 px schmalere Benachrichtigungsfenster und der Fokus,
+den gamescope nach dem Overlay nicht zurückgibt. Die Shell bleibt ein normaler Client. Der Modus
+mit gamescope (`CONSOLEUI_GAMESCOPE=steam`) bleibt als Fallback erhalten.
 
 | ID | Story | SP |
 |---|---|---|
-| 7.1 | Spike: Smithay-Beispiel `anvil` bauen und auf einem TTY starten | 5 |
-| 7.2 | Minimaler Compositor: DRM/KMS + libinput, ein Vollbild-Client | 13 |
-| 7.3 | XWayland-Support (für Steam und die meisten Spiele nötig) | 13 |
-| 7.4 | Animierte Übergänge zwischen Shell und App direkt im Compositor | 8 |
-| 7.5 | Shell als Layer-Shell-Overlay über laufenden Apps | 8 |
+| 7.1 | Spike: Smithay-Beispiel `anvil` bauen und auf einem TTY starten; prüfen, ob die Shell (Slint, Wayland) und `gamescope` verschachtelt darin laufen | 5 |
+| 7.2 | Minimaler Compositor: DRM/KMS + libinput + libseat, die Shell als Vollbild-Client, eigene Session-Datei neben der gamescope-Session | 13 |
+| 7.3 | XWayland-Grundlagen: `X11Wm`, Vollbild-Spiele, Fenster ohne Rahmen (Override-Redirect), Zuordnung Fenster → gestartete App (wiederverwendet `consoleui_core::ownership`) | 13 |
+| 7.4 | XWayland robust für Steam und Spiele: Steam-Client, Launcher- und Splash-Fenster, Fokuswechsel, Sonderfälle aus Tests mit echten Spielen | 13 |
+| 7.5 | Fokus und Eingabe im Compositor: Guide-Taste immer zur Shell, Spiel bekommt während des Quick-Menüs keine Eingaben (ersetzt `grab.rs`), Tastaturfokus kommt sauber zurück | 8 |
+| 7.6 | Shell als Overlay über laufenden Apps (Quick-Menü und Toasts als Layer-Shell-Flächen, ersetzt `OverlayWindow`/`NotificationWindow`-Tricks) | 8 |
+| 7.7 | Animierte Übergänge zwischen Shell und App direkt im Compositor (Kachel zoomt in das echte Spielbild, Rückkehr mit Animation) | 8 |
+| 7.8 | Direct Scanout für das Spiel im Vordergrund (Zero-Copy, niedrige Latenz) und Fallback auf Komposition, sobald ein Overlay offen ist | 8 |
+| 7.9 | VRR (Adaptive Sync) und Tearing-Control für Spiele, einfaches Frame-Pacing | 8 |
+| 7.10 | Verschachteltes gamescope pro Spiel: Option im Kontextmenü/Spiel-Einstellungen (Auflösung, FSR/NIS, FPS-Limit, HDR), wird in `Collection`/Einstellungen gespeichert und beim Start als `gamescope -W … -H … -F fsr -r … --` vorangestellt | 5 |
+| 7.11 | Mehrere Monitore/Hotplug (Ausgabe wählen, beim Abstecken auf den verbleibenden wechseln) | 5 |
+| 7.12 | Screenshot per Tastenkombination (Compositor rendert in eine Datei, Toast mit Pfad) | 3 |
+
+Zusammen ≈ 97 SP, davon 7.1–7.6 (≈ 60 SP) als erstes Ziel: eine Session, die ohne gamescope
+genauso gut läuft wie heute. Bewusst **nicht** im Compositor: eigenes Upscaling, HDR und
+Farbmanagement, FPS-Limiter. Das liefert das verschachtelte gamescope (7.10).
 
 ---
 
@@ -135,6 +160,7 @@ Schätzung in Story Points (SP): 1, 2, 3, 5, 8, 13. Ein Sprint dauert 2 Wochen.
 | **5** | „System“: Power, Lautstärke, Quick-Menü | 5.1, 5.2, 3.4, 4.6 |
 | **6** | „Polish“: Animationen, Einstellungen, Performance | 6.x, 5.5, 5.6, 1.6 |
 | 7+ | WLAN/Bluetooth, danach entscheiden: Smithay-Compositor ja/nein | 5.3, 5.4, Epic 7 |
+| Epic 7 (falls ja) | „Eigener Compositor“: Spike, dann Session ohne gamescope, dann Übergänge und Latenz | 7.1–7.3 → 7.4–7.6 → 7.7–7.12 |
 
 ## Sprint-Ergebnisse
 
