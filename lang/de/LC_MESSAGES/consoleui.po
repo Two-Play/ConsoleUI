@@ -364,6 +364,63 @@ msgstr "Sprache"
 msgid "Language of the interface"
 msgstr "Sprache der Oberfläche"
 
+msgid "Keyboard layout"
+msgstr "Tastaturbelegung"
+
+msgid "Layout of the connected keyboard"
+msgstr "Belegung der angeschlossenen Tastatur"
+
+msgid "Automatic: {}"
+msgstr "Automatisch: {}"
+
+msgid "German"
+msgstr "Deutsch"
+
+msgid "German (Austria)"
+msgstr "Deutsch (Österreich)"
+
+msgid "German (Switzerland)"
+msgstr "Deutsch (Schweiz)"
+
+msgid "English (US)"
+msgstr "Englisch (US)"
+
+msgid "English (UK)"
+msgstr "Englisch (UK)"
+
+msgid "French"
+msgstr "Französisch"
+
+msgid "Belgian"
+msgstr "Belgisch"
+
+msgid "Dutch"
+msgstr "Niederländisch"
+
+msgid "Spanish"
+msgstr "Spanisch"
+
+msgid "Portuguese"
+msgstr "Portugiesisch"
+
+msgid "Italian"
+msgstr "Italienisch"
+
+msgid "Swedish"
+msgstr "Schwedisch"
+
+msgid "Norwegian"
+msgstr "Norwegisch"
+
+msgid "Danish"
+msgstr "Dänisch"
+
+msgid "Finnish"
+msgstr "Finnisch"
+
+msgid "Polish"
+msgstr "Polnisch"
+
 msgid "Show and join networks"
 msgstr "Netzwerke anzeigen und verbinden"
 

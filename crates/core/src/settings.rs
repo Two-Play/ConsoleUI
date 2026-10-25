@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::i18n::{LanguageChoice, tr};
+use crate::keymap::KeyboardLayout;
 use crate::xdg;
 
 /// Color of focus frames, buttons and selected cards
@@ -77,6 +78,9 @@ pub struct Settings {
     pub sounds: bool,
     pub glyphs: GlyphChoice,
     pub language: LanguageChoice,
+    /// Layout of the physical keyboard in our compositor (the on-screen keyboard follows the
+    /// language instead)
+    pub keyboard_layout: KeyboardLayout,
 }
 
 impl Default for Settings {
@@ -87,6 +91,7 @@ impl Default for Settings {
             sounds: true,
             glyphs: GlyphChoice::default(),
             language: LanguageChoice::default(),
+            keyboard_layout: KeyboardLayout::default(),
         }
     }
 }
@@ -100,6 +105,8 @@ pub enum Setting {
     Glyphs,
     /// Story 6.6
     Language,
+    /// Only under our compositor, which applies it to the seat keyboard
+    KeyboardLayout,
     /// Opens the Wi-Fi page (Story 5.3)
     Wifi,
     /// Opens the Bluetooth page (Story 5.4)
@@ -107,8 +114,22 @@ pub enum Setting {
 }
 
 impl Setting {
-    pub const ALL: [Setting; 7] =
-        [Self::Accent, Self::Animations, Self::Sounds, Self::Glyphs, Self::Language, Self::Wifi, Self::Bluetooth];
+    pub const ALL: [Setting; 8] = [
+        Self::Accent,
+        Self::Animations,
+        Self::Sounds,
+        Self::Glyphs,
+        Self::Language,
+        Self::KeyboardLayout,
+        Self::Wifi,
+        Self::Bluetooth,
+    ];
+
+    /// The rows of the settings page; the keyboard layout only where it has an effect (in our
+    /// compositor; gamescope and the desktop use the layout of their own session).
+    pub fn rows(keyboard_layout: bool) -> Vec<Setting> {
+        Self::ALL.into_iter().filter(|&row| keyboard_layout || row != Self::KeyboardLayout).collect()
+    }
 
     /// Rows that open a sub-page instead of changing a value
     pub fn opens_page(self) -> bool {
@@ -122,6 +143,7 @@ impl Setting {
             Self::Sounds => tr("Sounds"),
             Self::Glyphs => tr("Button symbols"),
             Self::Language => tr("Language"),
+            Self::KeyboardLayout => tr("Keyboard layout"),
             Self::Wifi => tr("Wi-Fi"),
             Self::Bluetooth => tr("Bluetooth"),
         }
@@ -134,6 +156,7 @@ impl Setting {
             Self::Sounds => tr("Sounds while navigating"),
             Self::Glyphs => tr("Symbols in the button hints"),
             Self::Language => tr("Language of the interface"),
+            Self::KeyboardLayout => tr("Layout of the connected keyboard"),
             Self::Wifi => tr("Show and join networks"),
             Self::Bluetooth => tr("Pair controllers and other devices"),
         }
@@ -185,6 +208,7 @@ impl Settings {
             Setting::Sounds => on_off(self.sounds),
             Setting::Glyphs => self.glyphs.label(),
             Setting::Language => self.language.label(),
+            Setting::KeyboardLayout => self.keyboard_layout.label(),
             Setting::Wifi | Setting::Bluetooth => "",
         }
     }
@@ -197,6 +221,9 @@ impl Settings {
             Setting::Sounds => self.sounds = !self.sounds,
             Setting::Glyphs => self.glyphs = cycle(&GlyphChoice::ALL, self.glyphs, forward),
             Setting::Language => self.language = cycle(&LanguageChoice::ALL, self.language, forward),
+            Setting::KeyboardLayout => {
+                self.keyboard_layout = cycle(&KeyboardLayout::ALL, self.keyboard_layout, forward);
+            }
             Setting::Wifi | Setting::Bluetooth => {}
         }
     }
@@ -227,6 +254,18 @@ mod tests {
         settings.change(Setting::Language, false);
         settings.change(Setting::Language, false);
         assert_eq!(settings.language, LanguageChoice::German);
+        settings.change(Setting::KeyboardLayout, false);
+        assert_eq!(settings.keyboard_layout, KeyboardLayout::Pl);
+        settings.change(Setting::KeyboardLayout, true);
+        settings.change(Setting::KeyboardLayout, true);
+        assert_eq!(settings.keyboard_layout, KeyboardLayout::De);
+    }
+
+    #[test]
+    fn keyboard_layout_row_only_in_our_compositor() {
+        assert!(!Setting::rows(false).contains(&Setting::KeyboardLayout));
+        assert_eq!(Setting::rows(false).len(), Setting::ALL.len() - 1);
+        assert_eq!(Setting::rows(true), Setting::ALL.to_vec());
     }
 
     #[test]
@@ -239,6 +278,8 @@ mod tests {
         // Missing fields get their defaults (e.g. after an update)
         fs::write(&path, r#"{"sounds": false}"#).unwrap();
         assert_eq!(Settings::load(&path), Settings { sounds: false, ..Settings::default() });
+        fs::write(&path, r#"{"keyboard_layout": "ch"}"#).unwrap();
+        assert_eq!(Settings::load(&path).keyboard_layout, KeyboardLayout::Ch);
         fs::remove_dir_all(dir).unwrap();
     }
 }
