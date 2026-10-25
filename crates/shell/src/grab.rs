@@ -1,6 +1,15 @@
 //! Exclusive access to the controllers while the control center is open: `EVIOCGRAB` locks the
 //! evdev device for all other readers (the game, but also gilrs). The shell then reads the events
-//! itself. Games that read the controller via hidraw (e.g. Steam Input) are not affected.
+//! itself. Games that read the controller via hidraw (Steam Input, SDL's HIDAPI drivers, which SDL
+//! prefers for PlayStation, Switch and some Xbox controllers) are not affected.
+//!
+//! In our own compositor (Story 7.5) the shell keeps this grab instead of the compositor: the shell
+//! is the only gamepad reader (gilrs with SDL mappings, this evdev fallback while grabbed), so a
+//! compositor-side grab would have to forward every controller event over the control socket. The
+//! compositor gains nothing by owning it either: `EVIOCGRAB` works from any process that can open
+//! the node (uaccess), and logind's device revocation only applies to file descriptors the session
+//! controller got from logind, not to the ones a game opened itself. The grab follows the same
+//! quick-menu state the shell reports with `Overlay`, while the compositor cuts keyboard and pointer.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::Read;

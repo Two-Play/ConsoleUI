@@ -6,12 +6,18 @@
 //! - Every window belongs to the shell, to a launched app, or is unknown.
 //! - The shell asks for a [`Target`]. An app comes to the front only once one of its windows
 //!   shows content; until then the shell (with its launch screen) stays visible.
-//! - While the overlay (quick menu) is open, the shell is on top and has the keyboard.
+//! - While the overlay (quick menu) is open, the shell has the keyboard and the pointer; the app
+//!   in front gets no input at all (Story 7.5). If the shell announced an overlay window
+//!   ([`WindowRole::Overlay`], Story 7.6), only that window is stacked above the app, which stays
+//!   visible; otherwise the whole shell window comes to the front.
+//! - Shell windows with a role are stacked above everything else: overlay windows, then
+//!   notification windows on top. Notification windows never get keyboard or pointer input,
+//!   overlay windows only while the overlay is open.
 //! - Popups (X11 override-redirect windows) are drawn directly above their owner's windows and
 //!   never get the keyboard focus.
 
 use consoleui_core::ownership::{self, Owner, ProcessInfo};
-use consoleui_core::protocol::{CompositorMessage, Target};
+use consoleui_core::protocol::{CompositorMessage, Target, WindowRole};
 
 pub type WindowId = u64;
 
@@ -22,11 +28,20 @@ pub enum Role {
     Unknown,
 }
 
+/// Where a window is stacked: the normal layer, or one of the shell's role windows above it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Layer {
+    Normal,
+    Overlay,
+    Notification,
+}
+
 #[derive(Debug, Clone)]
 struct Window {
     id: WindowId,
     pid: Option<u32>,
     role: Role,
+    layer: Layer,
     popup: bool,
     /// Has shown content (a buffer was committed)
     visible: bool,
@@ -49,6 +64,8 @@ pub struct Policy {
     shell_pid: Option<u32>,
     target: Option<Target>,
     overlay: bool,
+    /// Titles of shell windows with a role (`WindowRole` messages)
+    window_roles: Vec<(String, WindowRole)>,
 }
 
 impl Policy {
@@ -84,6 +101,14 @@ impl Policy {
         self.change(|policy| policy.overlay = open)
     }
 
+    /// The shell's window with `title` gets `role` (Story 7.6).
+    pub fn set_window_role(&mut self, title: &str, role: WindowRole) -> Vec<CompositorMessage> {
+        self.change(|policy| {
+            policy.window_roles.retain(|(t, r)| t != title && *r != role);
+            policy.window_roles.push((title.to_owned(), role));
+        })
+    }
+
     /// A new window (not visible until [`Policy::show`]). `pid` is the process that owns it.
     pub fn add_window(
         &mut self,
@@ -96,7 +121,15 @@ impl Policy {
         self.change(|policy| {
             let role = policy.classify(pid, lookup);
             policy.windows.retain(|w| w.id != id);
-            policy.windows.push(Window { id, pid, role, popup, visible: false, title: title.to_owned() });
+            policy.windows.push(Window {
+                id,
+                pid,
+                role,
+                layer: Layer::Normal,
+                popup,
+                visible: false,
+                title: title.to_owned(),
+            });
             policy.assign_fallback();
         })
     }
@@ -125,10 +158,13 @@ impl Policy {
         self.windows.iter().any(|w| w.id == id && w.visible)
     }
 
-    pub fn set_title(&mut self, id: WindowId, title: &str) {
-        if let Some(window) = self.window_mut(id) {
-            title.clone_into(&mut window.title);
-        }
+    /// A new title may give a shell window its role.
+    pub fn set_title(&mut self, id: WindowId, title: &str) -> Vec<CompositorMessage> {
+        self.change(|policy| {
+            if let Some(window) = policy.window_mut(id) {
+                title.clone_into(&mut window.title);
+            }
+        })
     }
 
     pub fn remove_window(&mut self, id: WindowId) -> Vec<CompositorMessage> {
@@ -153,9 +189,19 @@ impl Policy {
         self.windows.iter().find(|w| w.id == id).map(|w| w.role)
     }
 
-    /// What is actually visible in front.
+    #[cfg(test)]
+    pub fn layer(&self, id: WindowId) -> Option<Layer> {
+        self.windows.iter().find(|w| w.id == id).map(|w| w.layer)
+    }
+
+    /// The shell shows the quick menu in its own overlay window (Story 7.6).
+    fn has_overlay_window(&self) -> bool {
+        self.window_roles.iter().any(|(_, role)| *role == WindowRole::Overlay)
+    }
+
+    /// What is actually visible in front (the app stays in front under an overlay window).
     pub fn front(&self) -> Target {
-        if self.overlay {
+        if self.overlay && !self.has_overlay_window() {
             return Target::Shell;
         }
         match self.target {
@@ -188,7 +234,7 @@ impl Policy {
 
         let mut order = Vec::new();
         for role in &groups {
-            let windows = self.windows.iter().filter(|w| w.role == *role);
+            let windows = self.windows.iter().filter(|w| w.role == *role && w.layer == Layer::Normal);
             // Unknown popups are handled below; everything else: normal windows, then popups.
             let popups = |w: &&Window| w.popup;
             if *role == Role::Unknown {
@@ -209,20 +255,47 @@ impl Policy {
         } else {
             order.extend(unknown_popups);
         }
+        // The shell's role windows on top, whatever is in front; an overlay window stays there
+        // while it fades out after the overlay closed.
+        for layer in [Layer::Overlay, Layer::Notification] {
+            order.extend(self.windows.iter().filter(|w| w.layer == layer).map(|w| w.id));
+        }
         order
     }
 
-    /// The window that should have the keyboard: the newest visible normal window in front.
+    /// The window that should have the keyboard: the newest visible normal window in front. While
+    /// the overlay is open: the shell's overlay window, or its main window until the overlay
+    /// window shows content, never the app (Story 7.5).
     pub fn keyboard_focus(&self) -> Option<WindowId> {
-        let role = match self.front() {
-            Target::Shell => Role::Shell,
-            Target::App { app_id } => Role::App(app_id),
+        let newest = |role: Role, layer: Layer| {
+            self.windows
+                .iter()
+                .rev()
+                .find(|w| w.role == role && w.layer == layer && !w.popup && w.visible)
+                .map(|w| w.id)
         };
-        self.windows.iter().rev().find(|w| w.role == role && !w.popup && w.visible).map(|w| w.id)
+        if self.overlay {
+            return newest(Role::Shell, Layer::Overlay).or_else(|| newest(Role::Shell, Layer::Normal));
+        }
+        match self.front() {
+            Target::Shell => newest(Role::Shell, Layer::Normal),
+            Target::App { app_id } => newest(Role::App(app_id), Layer::Normal),
+        }
+    }
+
+    /// Whether pointer input may go to the window: never to notification windows; while the
+    /// overlay is open only to the shell, otherwise not to the (fading) overlay window.
+    pub fn accepts_pointer(&self, id: WindowId) -> bool {
+        let Some(window) = self.windows.iter().find(|w| w.id == id) else { return false };
+        match window.layer {
+            Layer::Notification => false,
+            Layer::Overlay => self.overlay,
+            Layer::Normal => !self.overlay || window.role == Role::Shell,
+        }
     }
 
     fn has_content(&self, role: Role) -> bool {
-        self.windows.iter().any(|w| w.role == role && !w.popup && w.visible)
+        self.windows.iter().any(|w| w.role == role && w.layer == Layer::Normal && !w.popup && w.visible)
     }
 
     fn window_mut(&mut self, id: WindowId) -> Option<&mut Window> {
@@ -235,6 +308,7 @@ impl Policy {
         let front = self.front();
         let roles: Vec<(WindowId, Role)> = self.windows.iter().map(|w| (w.id, w.role)).collect();
         mutate(self);
+        self.assign_layers();
         let mut events = Vec::new();
         for window in &self.windows {
             let was = roles.iter().find(|(id, _)| *id == window.id).map(|(_, role)| *role);
@@ -250,6 +324,18 @@ impl Policy {
             events.push(CompositorMessage::FocusChanged { target: now });
         }
         events
+    }
+
+    /// Shell windows whose title was announced with a role go to that layer.
+    fn assign_layers(&mut self) {
+        for window in &mut self.windows {
+            let role = self.window_roles.iter().find(|(title, _)| *title == window.title).map(|(_, role)| *role);
+            window.layer = match (window.role, window.popup, role) {
+                (Role::Shell, false, Some(WindowRole::Overlay)) => Layer::Overlay,
+                (Role::Shell, false, Some(WindowRole::Notification)) => Layer::Notification,
+                _ => Layer::Normal,
+            };
+        }
     }
 
     fn classify(&self, pid: Option<u32>, lookup: &impl Fn(u32) -> Option<ProcessInfo>) -> Role {
@@ -454,6 +540,117 @@ mod tests {
 
         policy.set_target(Target::Shell);
         assert_eq!(policy.stacking(), vec![2, 3, 4, 1]);
+    }
+
+    const OVERLAY: &str = "ConsoleUI Overlay";
+    const NOTIFICATION: &str = "ConsoleUI notification";
+
+    /// Shell (window 1) with announced role windows, game (window 2, app 7) in front.
+    fn game_in_front() -> Policy {
+        let lookup = processes();
+        let mut policy = policy();
+        policy.set_window_role(OVERLAY, WindowRole::Overlay);
+        policy.set_window_role(NOTIFICATION, WindowRole::Notification);
+        policy.launched(7, Some(Owner::Process(200)), &lookup);
+        policy.set_target(Target::App { app_id: 7 });
+        policy.add_window(2, Some(200), false, "game", &lookup);
+        policy.show(2);
+        policy
+    }
+
+    #[test]
+    fn overlay_window_goes_above_the_running_game() {
+        let lookup = processes();
+        let mut policy = game_in_front();
+        assert!(policy.add_window(3, Some(SHELL), false, OVERLAY, &lookup).is_empty());
+        assert_eq!(policy.layer(3), Some(Layer::Overlay));
+        policy.show(3);
+        assert_eq!(policy.keyboard_focus(), Some(2), "a mapped overlay window alone takes nothing");
+        assert!(!policy.accepts_pointer(3));
+
+        assert!(policy.set_overlay(true).is_empty(), "the game stays in front");
+        assert_eq!(policy.front(), Target::App { app_id: 7 });
+        assert_eq!(policy.stacking(), vec![1, 2, 3]);
+        assert_eq!(policy.keyboard_focus(), Some(3));
+        assert!(policy.accepts_pointer(3));
+        assert!(!policy.accepts_pointer(2), "no pointer input for the game");
+
+        // Closing: the keyboard goes straight back to the game; the window fades out on top.
+        assert!(policy.set_overlay(false).is_empty());
+        assert_eq!(policy.keyboard_focus(), Some(2));
+        assert_eq!(policy.stacking(), vec![1, 2, 3]);
+        assert!(policy.accepts_pointer(2));
+        assert!(!policy.accepts_pointer(3));
+        policy.remove_window(3);
+        assert_eq!(policy.stacking(), vec![1, 2]);
+    }
+
+    #[test]
+    fn the_game_gets_no_keyboard_before_the_overlay_window_shows() {
+        let lookup = processes();
+        let mut policy = game_in_front();
+        policy.set_overlay(true);
+        assert_eq!(policy.keyboard_focus(), Some(1), "the shell's main window until then");
+        policy.add_window(3, Some(SHELL), false, OVERLAY, &lookup);
+        assert_eq!(policy.keyboard_focus(), Some(1));
+        policy.show(3);
+        assert_eq!(policy.keyboard_focus(), Some(3));
+    }
+
+    #[test]
+    fn notifications_are_on_top_and_never_focused() {
+        let lookup = processes();
+        let mut policy = game_in_front();
+        policy.add_window(3, Some(SHELL), false, OVERLAY, &lookup);
+        policy.add_window(4, Some(SHELL), false, NOTIFICATION, &lookup);
+        policy.show(4);
+        policy.show(3);
+        assert_eq!(policy.stacking(), vec![1, 2, 3, 4]);
+        assert_eq!(policy.keyboard_focus(), Some(2));
+        assert!(!policy.accepts_pointer(4));
+        policy.set_overlay(true);
+        assert_eq!(policy.keyboard_focus(), Some(3));
+        assert!(!policy.accepts_pointer(4));
+
+        // Over the shell as well
+        policy.set_overlay(false);
+        policy.set_target(Target::Shell);
+        assert_eq!(policy.stacking(), vec![2, 1, 3, 4]);
+        assert_eq!(policy.keyboard_focus(), Some(1));
+    }
+
+    #[test]
+    fn roles_follow_late_titles_and_only_shell_windows() {
+        let lookup = processes();
+        let mut policy = game_in_front();
+        // Slint maps the window with a default title and sets its own one afterwards.
+        policy.add_window(3, Some(SHELL), false, "consoleui", &lookup);
+        policy.show(3);
+        assert_eq!(policy.layer(3), Some(Layer::Normal));
+        policy.set_title(3, NOTIFICATION);
+        assert_eq!(policy.layer(3), Some(Layer::Notification));
+        assert_eq!(policy.stacking(), vec![1, 2, 3]);
+
+        // A game window with the same title is no overlay.
+        policy.add_window(4, Some(201), false, OVERLAY, &lookup);
+        assert_eq!(policy.layer(4), Some(Layer::Normal));
+        assert_eq!(policy.role(4), Some(Role::App(7)));
+    }
+
+    #[test]
+    fn without_overlay_window_the_shell_comes_to_the_front_and_takes_all_input() {
+        let lookup = processes();
+        let mut policy = policy();
+        policy.launched(7, Some(Owner::Process(200)), &lookup);
+        policy.set_target(Target::App { app_id: 7 });
+        policy.add_window(2, Some(200), false, "game", &lookup);
+        policy.show(2);
+        policy.set_overlay(true);
+        assert_eq!(policy.front(), Target::Shell);
+        assert!(policy.accepts_pointer(1));
+        assert!(!policy.accepts_pointer(2));
+        policy.set_overlay(false);
+        assert!(policy.accepts_pointer(2));
     }
 
     #[test]

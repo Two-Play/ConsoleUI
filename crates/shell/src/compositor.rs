@@ -2,11 +2,21 @@
 //! `CONSOLEUI_COMPOSITOR`; the counterpart of `gamescope.rs`. The shell says which apps it
 //! launched and what should be in front, the compositor maps the windows and reports back
 //! (`consoleui_core::protocol`).
+//!
+//! Story 7.6: the quick menu and toasts are separate toplevels (`OverlayWindow`,
+//! `NotificationWindow`); their titles are announced with `WindowRole`, and the compositor stacks
+//! them above the app in front. They are used only if the compositor lists the feature in its
+//! `Welcome`; with an older compositor the whole shell window comes to the front as before.
 
 use std::io::{self, Read, Write};
 use std::os::unix::net::UnixStream;
 
-use consoleui_core::protocol::{self, CompositorMessage, LineReader, ShellMessage, Target};
+use consoleui_core::protocol::{self, CompositorMessage, LineReader, ShellMessage, Target, WindowRole};
+
+/// Title of `OverlayWindow` (`ui/overlay.slint`); the compositor recognizes the window by it.
+pub const OVERLAY_TITLE: &str = "ConsoleUI Overlay";
+/// Title of `NotificationWindow` (`ui/notification.slint`)
+pub const NOTIFICATION_TITLE: &str = "ConsoleUI notification";
 
 pub struct Compositor {
     stream: UnixStream,
@@ -17,6 +27,8 @@ pub struct Compositor {
     output: Option<(u32, u32)>,
     /// Last overlay state sent (the quick menu re-renders often)
     overlay: bool,
+    /// Optional features from the compositor's `Welcome`
+    features: Vec<String>,
     /// Keymap the compositor reports for the seat keyboard, e.g. `de (nodeadkeys)`
     keymap: Option<String>,
 }
@@ -43,9 +55,14 @@ impl Compositor {
             connected: true,
             output: None,
             overlay: false,
+            features: Vec::new(),
             keymap: None,
         };
         compositor.send(&ShellMessage::Hello { version: protocol::VERSION, pid: std::process::id() });
+        // An older compositor skips these; the windows are then never shown (see `overlays`).
+        for (title, role) in [(OVERLAY_TITLE, WindowRole::Overlay), (NOTIFICATION_TITLE, WindowRole::Notification)] {
+            compositor.send(&ShellMessage::WindowRole { title: title.to_owned(), role });
+        }
         Some(compositor)
     }
 
@@ -74,6 +91,11 @@ impl Compositor {
 
     pub fn output_size(&self) -> Option<(u32, u32)> {
         self.output
+    }
+
+    /// The compositor places the overlay and notification windows above the app (Story 7.6).
+    pub fn overlays(&self) -> bool {
+        self.features.iter().any(|f| f == protocol::FEATURE_OVERLAYS)
     }
 
     pub fn keymap(&self) -> Option<String> {
@@ -105,8 +127,11 @@ impl Compositor {
                     };
                     self.keymap = Some(keymap.describe());
                 }
-                CompositorMessage::Welcome { version } if *version != protocol::VERSION => {
-                    eprintln!("compositor speaks protocol {version}, shell {}", protocol::VERSION);
+                CompositorMessage::Welcome { version, features } => {
+                    if *version != protocol::VERSION {
+                        eprintln!("compositor speaks protocol {version}, shell {}", protocol::VERSION);
+                    }
+                    self.features = features.clone();
                 }
                 _ => {}
             }

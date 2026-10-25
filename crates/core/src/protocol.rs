@@ -7,9 +7,10 @@
 //! to those apps (with [`crate::ownership`]) and reports what it sees.
 //!
 //! Unknown message types or malformed lines are skipped by the reader, so either side can add
-//! messages later (7.5 input grab, 7.6 overlay toplevels, 7.7 transitions, 7.12 screenshots)
-//! without breaking an older peer. Fields that may be added later must be `Option` or
-//! `#[serde(default)]`.
+//! messages later (7.7 transitions, 7.12 screenshots) without breaking an older peer. Fields that
+//! may be added later must be `Option` or `#[serde(default)]`. Optional features are announced in
+//! [`CompositorMessage::Welcome`] (`features`), so a newer shell keeps working with an older
+//! compositor (Story 7.6: overlay toplevels only when the compositor lists [`FEATURE_OVERLAYS`]).
 
 use serde::{Deserialize, Serialize};
 
@@ -19,6 +20,24 @@ use crate::ownership::Owner;
 pub const SOCKET_ENV: &str = "CONSOLEUI_COMPOSITOR";
 /// Bumped on incompatible changes; both sides log a mismatch but keep going.
 pub const VERSION: u32 = 1;
+
+/// Feature (Story 7.6): the compositor places shell toplevels announced with
+/// [`ShellMessage::WindowRole`] above the app in front.
+pub const FEATURE_OVERLAYS: &str = "overlay_windows";
+/// Feature (Story 7.5): the compositor reserves a Guide key combination for the shell and reports
+/// it as [`CompositorMessage::Guide`], whatever window has the keyboard.
+pub const FEATURE_GUIDE_KEY: &str = "guide_key";
+
+/// What a separate shell toplevel is for (Story 7.6). The shell's main window has no role.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WindowRole {
+    /// The quick menu: stacked above the app in front, gets keyboard and pointer while
+    /// [`ShellMessage::Overlay`] is open; the app stays visible underneath.
+    Overlay,
+    /// Toasts: always on top, never focused, no pointer input.
+    Notification,
+}
 
 /// What should be in front.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -57,9 +76,13 @@ pub enum ShellMessage {
     /// Bring the shell or an app to the front. An app without a window yet stays behind the
     /// shell until its first window shows content.
     Focus { target: Target },
-    /// The quick menu is open: the shell is drawn above the app and gets the keyboard. Story 7.5
-    /// will also cut the app's input here, 7.6 will show only the shell's overlay toplevel.
+    /// The quick menu is open: the shell gets keyboard and pointer, the app in front gets no input
+    /// at all (Story 7.5). With a [`WindowRole::Overlay`] window only that window is placed above
+    /// the app (Story 7.6); without one the whole shell window comes to the front.
     Overlay { open: bool },
+    /// Gives the shell's toplevel with this title a role (Story 7.6). Only windows of the shell
+    /// process are matched; the title may also be set after the window is mapped.
+    WindowRole { title: String, role: WindowRole },
     /// Save the composed output as PNG (development, basis for Story 7.12).
     Screenshot { path: String },
     /// Layout of the physical keyboard (settings row "Keyboard layout"): an xkb layout name such
@@ -75,8 +98,13 @@ pub enum ShellMessage {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum CompositorMessage {
-    /// Answer to [`ShellMessage::Hello`]
-    Welcome { version: u32 },
+    /// Answer to [`ShellMessage::Hello`], with the optional features this compositor supports
+    /// ([`FEATURE_OVERLAYS`], [`FEATURE_GUIDE_KEY`]).
+    Welcome {
+        version: u32,
+        #[serde(default)]
+        features: Vec<String>,
+    },
     /// Size of the output in pixels (sent on connect and when it changes)
     Output { width: u32, height: u32 },
     /// A window of a launched app shows content for the first time.
@@ -89,6 +117,8 @@ pub enum CompositorMessage {
     AppGone { app_id: u32 },
     /// What is actually in front now (e.g. the shell again after the app closed its window).
     FocusChanged { target: Target },
+    /// The Guide key combination was pressed (Story 7.5); the focused window does not get it.
+    Guide,
     /// Result of [`ShellMessage::Screenshot`]
     ScreenshotDone {
         path: String,
@@ -169,6 +199,11 @@ mod tests {
         );
         assert_eq!(encode(&CompositorMessage::AppGone { app_id: 3 }), "{\"type\":\"AppGone\",\"app_id\":3}\n");
         assert_eq!(
+            encode(&ShellMessage::WindowRole { title: "T".into(), role: WindowRole::Notification }),
+            "{\"type\":\"WindowRole\",\"title\":\"T\",\"role\":\"notification\"}\n"
+        );
+        assert_eq!(encode(&CompositorMessage::Guide), "{\"type\":\"Guide\"}\n");
+        assert_eq!(
             encode(&ShellMessage::KeyboardLayout { layout: Some("ch".into()) }),
             "{\"type\":\"KeyboardLayout\",\"layout\":\"ch\"}\n"
         );
@@ -187,6 +222,8 @@ mod tests {
             ShellMessage::Exited { app_id: 1 },
             ShellMessage::Focus { target: Target::App { app_id: 1 } },
             ShellMessage::Overlay { open: true },
+            ShellMessage::WindowRole { title: "ConsoleUI Overlay".into(), role: WindowRole::Overlay },
+            ShellMessage::WindowRole { title: "ConsoleUI notification".into(), role: WindowRole::Notification },
             ShellMessage::Screenshot { path: "/tmp/a.png".into() },
             ShellMessage::KeyboardLayout { layout: Some("de".into()) },
             ShellMessage::KeyboardLayout { layout: None },
@@ -201,7 +238,8 @@ mod tests {
         assert_eq!(reader.next_message::<ShellMessage>(), None);
 
         let compositor = [
-            CompositorMessage::Welcome { version: VERSION },
+            CompositorMessage::Welcome { version: VERSION, features: vec![FEATURE_OVERLAYS.into()] },
+            CompositorMessage::Guide,
             CompositorMessage::Output { width: 1920, height: 1080 },
             CompositorMessage::WindowMapped { app_id: 5, title: "glxgears".into() },
             CompositorMessage::AppGone { app_id: 5 },
@@ -248,6 +286,20 @@ mod tests {
             reader.next_message::<CompositorMessage>(),
             Some(CompositorMessage::Keymap { layout: "de".into(), variant: String::new() })
         );
+    }
+
+    #[test]
+    fn older_peers_stay_compatible() {
+        let mut reader = LineReader::default();
+        // An older compositor sends no features.
+        reader.push(b"{\"type\":\"Welcome\",\"version\":1}\n");
+        assert_eq!(
+            reader.next_message::<CompositorMessage>(),
+            Some(CompositorMessage::Welcome { version: 1, features: Vec::new() })
+        );
+        // Unknown roles (a newer shell) are skipped like unknown messages.
+        reader.push(b"{\"type\":\"WindowRole\",\"title\":\"x\",\"role\":\"from_the_future\"}\n");
+        assert_eq!(reader.next_message::<ShellMessage>(), None);
     }
 
     #[test]
