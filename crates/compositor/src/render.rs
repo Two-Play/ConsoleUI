@@ -30,6 +30,9 @@ use smithay::output::Output;
 use smithay::utils::{IsAlive, Logical, Physical, Point, Rectangle, Scale, Size, Transform};
 use smithay::wayland::compositor::with_states;
 
+use consoleui_core::protocol::{BlurRegion, WindowRole};
+
+use crate::blur::{self, BackdropElement, BlurCache};
 use crate::rounded::{self, RoundedSurface};
 use crate::transition::Effect;
 
@@ -44,6 +47,8 @@ smithay::backend::renderer::element::render_elements! {
     Surface=WaylandSurfaceRenderElement<GlesRenderer>,
     /// Windows during a transition
     Transformed=Transformed,
+    /// Blurred backdrop under an overlay or notification window (Story 7.13)
+    Backdrop=BackdropElement,
 }
 
 /// A window in a frame: where it is drawn (its render location) and how a transition changes it.
@@ -51,15 +56,26 @@ pub struct Drawn {
     pub window: Window,
     pub location: Point<i32, Logical>,
     pub effect: Option<Effect>,
+    /// The window's panels get a blurred backdrop
+    pub blur: Option<Blur>,
 }
 
-/// Elements of one frame, front to back; `windows` front to back as well.
+/// Blur under a shell window (Story 7.13): its regions in window coordinates and the opacity.
+pub struct Blur {
+    pub role: WindowRole,
+    pub regions: Vec<BlurRegion>,
+    pub alpha: f32,
+}
+
+/// Elements of one frame, front to back; `windows` front to back as well. `cache` keeps the
+/// blurred backdrops between frames.
 pub fn output_elements(
     renderer: &mut GlesRenderer,
     windows: &[Drawn],
     output: &Output,
     cursor: &CursorImageStatus,
     pointer: Point<f64, Logical>,
+    cache: &mut BlurCache,
 ) -> Vec<OutputElement> {
     let scale = Scale::from(output.current_scale().fractional_scale());
     let mut elements: Vec<OutputElement> = Vec::new();
@@ -83,33 +99,67 @@ pub fn output_elements(
         );
     }
     let output_size = output.current_mode().map(|mode| mode.size).unwrap_or_default();
-    for drawn in windows {
-        let location = drawn.location.to_physical_precise_round(scale);
-        let Some(effect) = drawn.effect else {
-            let window_elements: Vec<WaylandSurfaceRenderElement<GlesRenderer>> =
-                drawn.window.render_elements(renderer, location, scale, 1.0);
-            elements.extend(window_elements.into_iter().map(OutputElement::Surface));
-            continue;
-        };
+    let mut blurred = Vec::new();
+    for (index, drawn) in windows.iter().enumerate() {
+        elements.extend(window_elements(renderer, drawn, scale, output_size));
+        let Some(window_blur) = &drawn.blur else { continue };
+        let regions: Vec<(Rectangle<i32, Physical>, f64)> = window_blur
+            .regions
+            .iter()
+            .map(|region| {
+                let rect = Rectangle::<i32, Logical>::new(
+                    drawn.location + Point::from((region.rect.x, region.rect.y)),
+                    (region.rect.width, region.rect.height).into(),
+                );
+                (rect.to_physical_precise_round(scale), region.radius as f64 * scale.x)
+            })
+            .collect();
+        let below: Vec<OutputElement> = windows[index + 1..]
+            .iter()
+            .flat_map(|drawn| window_elements(renderer, drawn, scale, output_size))
+            .collect();
+        let backdrop =
+            blur::backdrop(renderer, cache, window_blur.role, &regions, window_blur.alpha, below, output_size, scale);
+        elements.extend(backdrop.into_iter().map(OutputElement::Backdrop));
+        blurred.push(window_blur.role);
+    }
+    cache.retain(&blurred);
+    elements
+}
+
+/// The elements of one window, transformed by its transition.
+fn window_elements(
+    renderer: &mut GlesRenderer,
+    drawn: &Drawn,
+    scale: Scale<f64>,
+    output_size: Size<i32, Physical>,
+) -> Vec<OutputElement> {
+    let location = drawn.location.to_physical_precise_round(scale);
+    let Some(effect) = drawn.effect else {
         let window_elements: Vec<WaylandSurfaceRenderElement<GlesRenderer>> =
-            drawn.window.render_elements(renderer, location, scale, effect.alpha);
-        let offset = Point::<f64, Logical>::from(effect.offset).to_physical(scale).to_i32_round();
-        let clip = match effect.clip {
-            Some(area) => {
-                Rectangle::<f64, Logical>::new((area.x, area.y).into(), (area.w, area.h).into()).to_physical(scale)
-            }
-            None => Rectangle::from_size(output_size).to_f64(),
-        };
-        let radius = effect.radius * scale.x;
-        let program = if radius >= 0.5 { rounded::program(renderer) } else { None };
-        elements.extend(window_elements.into_iter().filter_map(|element| {
+            drawn.window.render_elements(renderer, location, scale, 1.0);
+        return window_elements.into_iter().map(OutputElement::Surface).collect();
+    };
+    let window_elements: Vec<WaylandSurfaceRenderElement<GlesRenderer>> =
+        drawn.window.render_elements(renderer, location, scale, effect.alpha);
+    let offset = Point::<f64, Logical>::from(effect.offset).to_physical(scale).to_i32_round();
+    let clip = match effect.clip {
+        Some(area) => {
+            Rectangle::<f64, Logical>::new((area.x, area.y).into(), (area.w, area.h).into()).to_physical(scale)
+        }
+        None => Rectangle::from_size(output_size).to_f64(),
+    };
+    let radius = effect.radius * scale.x;
+    let program = if radius >= 0.5 { rounded::program(renderer) } else { None };
+    window_elements
+        .into_iter()
+        .filter_map(|element| {
             let element = RoundedSurface::new(element, program.clone(), clip, radius);
             let element = RescaleRenderElement::from_element(element, Point::default(), effect.scale);
             let element = RelocateRenderElement::from_element(element, offset, Relocate::Relative);
             CropRenderElement::from_element(element, scale, clip.to_i32_round()).map(OutputElement::Transformed)
-        }));
-    }
-    elements
+        })
+        .collect()
 }
 
 /// Which output each surface was last shown on (drives frame throttling and feedback).

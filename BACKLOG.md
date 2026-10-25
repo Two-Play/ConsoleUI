@@ -150,6 +150,7 @@ are updated after the spike.
 | 7.10 | Nested gamescope per entry (resolution, FSR/NIS/integer, FPS limit, HDR, fullscreen) from the context menu — **done (Sprint 8)**, not for Steam games | 5 |
 | 7.11 | Multiple monitors/hotplug (choose the output, switch to the remaining one on unplug) | 5 |
 | 7.12 | Screenshot via button combination (compositor reads back the frame into a PNG, toast with the path) | 3 |
+| 7.13 | **Done.** Real backdrop blur behind the quick menu and toasts above a game (dual Kawase pass in the compositor, panels announced over the control socket) | 3 |
 
 About 98 SP in total, 7.1–7.6 (≈ 54 SP) as the first goal: a session that runs as well without
 gamescope as it does today. Deliberately **not** in the compositor: own upscaling, HDR and color
@@ -714,6 +715,40 @@ Two agents in parallel; both had to test with real key events (QMP `send-key`), 
 - **Observed:** under llvmpipe in the dev container the shell sometimes renders no frame for
   ~0.5 s right after a launch (CPU starved by glxgears); the frame-based handover waits for it, the
   300 ms fallback then brings the app anyway.
+
+### Backdrop blur in the compositor (done: 7.13)
+
+Branch `agent/compositor-blur`, on top of the UI feedback round (6.10).
+
+- **Protocol:** `ShellMessage::Blur { role, regions, fade_ms }` (feature `backdrop_blur` in
+  `Welcome`): the panels of the overlay or notification window as rectangles in window coordinates
+  with a corner radius; an empty list removes them. The shell sends the resting rectangle of the open
+  quick menu bar and of the shown toast (`out` properties of `OverlayWindow`/`NotificationWindow`)
+  from `Shell::sync_blur`, called on open/close and from the 50 ms compositor poll (toasts are hidden
+  by timers); only changes go out. The compositor fades the blur in and out within `fade_ms` (the
+  panel's own fade), so it does not have to follow the slide animation frame by frame.
+- **Compositor:** `backdrop.rs` (Smithay-free, tested) keeps regions and fades per role and computes
+  the captured area (bounding box + 64 px, clipped to the output). `blur.rs` renders the windows below
+  the overlay into an offscreen texture at half resolution (only the captured area), runs 3
+  downsampling and 3 upsampling dual Kawase passes (custom texture shaders via Smithay's
+  `GlesRenderer`) and draws the result under the window with the rounded-clip shader of
+  `rounded.rs` (`rounded::clip_uniforms` is now shared). Nothing is rendered again while the
+  elements below (id, commit, geometry, alpha) and the area stay the same, so a static scene costs
+  one cached texture draw. If the shaders do not compile, the windows are drawn without blur.
+- **Cost:** for the 1080p quick menu bar (1920×330) the capture is 960×229 pixels plus passes over
+  at most 1/4 of that each, well below one full-screen composition pass; a toast is ~250×70. No
+  extra copies of the game's buffer, no readback.
+- **Shell:** with the feature the glass tint of panels in these two windows drops from 95 % to
+  50 % (`Glass.backdrop`); the quick menu's dimming now ends at the bar, so the blurred game under the
+  bar is not darkened twice.
+- **Tested:** nested compositor in the dev container (llvmpipe) with glxgears and with a second shell
+  instance as a colorful stand-in game; with the blur passes disabled the captured backdrop lines
+  up pixel-exactly with the game (orientation and offsets checked), with them the game's text under
+  the bar and toast is smeared. 141 core + 25 compositor + 8 shell tests, clippy, fmt.
+- **Not tested:** on the NVIDIA host (GPU cost not measured), on DRM in the VM, with a real game.
+- **Observed (pre-existing, also on 6.10):** the winit backend logs `EGL_BAD_SURFACE` from
+  `eglQuerySurface` (buffer age) after frames without damage and after screenshots, because the
+  surface is no longer current; harmless, but noisy.
 
 ## Risiken / offene Fragen
 

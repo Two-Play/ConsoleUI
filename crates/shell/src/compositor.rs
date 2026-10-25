@@ -11,7 +11,9 @@
 use std::io::{self, Read, Write};
 use std::os::unix::net::UnixStream;
 
-use consoleui_core::protocol::{self, CompositorMessage, LineReader, ShellMessage, Target, Transition, WindowRole};
+use consoleui_core::protocol::{
+    self, BlurRegion, CompositorMessage, LineReader, ShellMessage, Target, Transition, WindowRole,
+};
 
 /// Title of `OverlayWindow` (`ui/overlay.slint`); the compositor recognizes the window by it.
 pub const OVERLAY_TITLE: &str = "ConsoleUI Overlay";
@@ -31,6 +33,8 @@ pub struct Compositor {
     features: Vec<String>,
     /// Keymap the compositor reports for the seat keyboard, e.g. `de (nodeadkeys)`
     keymap: Option<String>,
+    /// Blur regions last sent per window role (Story 7.13)
+    blur: Vec<(WindowRole, Vec<BlurRegion>)>,
 }
 
 impl Compositor {
@@ -57,6 +61,7 @@ impl Compositor {
             overlay: false,
             features: Vec::new(),
             keymap: None,
+            blur: Vec::new(),
         };
         compositor.send(&ShellMessage::Hello { version: protocol::VERSION, pid: std::process::id() });
         // An older compositor skips these; the windows are then never shown (see `overlays`).
@@ -90,6 +95,22 @@ impl Compositor {
             self.overlay = open;
             self.send(&ShellMessage::Overlay { open });
         }
+    }
+
+    /// The compositor blurs what is below the panels of the overlay and notification windows
+    /// (Story 7.13).
+    pub fn blur(&self) -> bool {
+        self.features.iter().any(|f| f == protocol::FEATURE_BLUR)
+    }
+
+    /// Announces the blurred panels of the window with `role`, if they changed.
+    pub fn set_blur(&mut self, role: WindowRole, regions: Vec<BlurRegion>, fade_ms: u32) {
+        match self.blur.iter_mut().find(|(r, _)| *r == role) {
+            Some((_, sent)) if *sent == regions => return,
+            Some((_, sent)) => *sent = regions.clone(),
+            None => self.blur.push((role, regions.clone())),
+        }
+        self.send(&ShellMessage::Blur { role, regions, fade_ms });
     }
 
     pub fn output_size(&self) -> Option<(u32, u32)> {

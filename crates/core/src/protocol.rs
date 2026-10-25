@@ -32,6 +32,10 @@ pub const FEATURE_GUIDE_KEY: &str = "guide_key";
 /// [`ShellMessage::Focus`] carries a [`Transition`].
 pub const FEATURE_TRANSITIONS: &str = "transitions";
 
+/// Feature (Story 7.13): the compositor blurs what is below the regions announced with
+/// [`ShellMessage::Blur`].
+pub const FEATURE_BLUR: &str = "backdrop_blur";
+
 /// A rectangle in output pixels (logical, origin top left).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Rect {
@@ -62,6 +66,16 @@ pub enum WindowRole {
     Overlay,
     /// Toasts: always on top, never focused, no pointer input.
     Notification,
+}
+
+/// A panel of an overlay or notification window that gets a blurred backdrop (Story 7.13): a
+/// rectangle in the window's logical pixels with rounded corners of `radius`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BlurRegion {
+    #[serde(flatten)]
+    pub rect: Rect,
+    #[serde(default)]
+    pub radius: i32,
 }
 
 /// What should be in front.
@@ -113,6 +127,15 @@ pub enum ShellMessage {
     /// Gives the shell's toplevel with this title a role (Story 7.6). Only windows of the shell
     /// process are matched; the title may also be set after the window is mapped.
     WindowRole { title: String, role: WindowRole },
+    /// The panels of the shell window with this role that get a blurred backdrop (Story 7.13,
+    /// with [`FEATURE_BLUR`]); an empty list removes it. The compositor fades the blur in or out
+    /// within `fade_ms`, so it follows a panel that fades in or out.
+    Blur {
+        role: WindowRole,
+        regions: Vec<BlurRegion>,
+        #[serde(default)]
+        fade_ms: u32,
+    },
     /// Save the composed output as PNG (development, basis for Story 7.12).
     Screenshot { path: String },
     /// Layout of the physical keyboard (settings row "Keyboard layout"): an xkb layout name such
@@ -237,6 +260,14 @@ mod tests {
             encode(&ShellMessage::KeyboardLayout { layout: Some("ch".into()) }),
             "{\"type\":\"KeyboardLayout\",\"layout\":\"ch\"}\n"
         );
+        assert_eq!(
+            encode(&ShellMessage::Blur {
+                role: WindowRole::Overlay,
+                regions: vec![BlurRegion { rect: Rect { x: 0, y: 750, width: 1920, height: 330 }, radius: 0 }],
+                fade_ms: 300,
+            }),
+            "{\"type\":\"Blur\",\"role\":\"overlay\",\"regions\":[{\"x\":0,\"y\":750,\"width\":1920,\"height\":330,\"radius\":0}],\"fade_ms\":300}\n"
+        );
     }
 
     #[test]
@@ -259,6 +290,12 @@ mod tests {
             ShellMessage::WindowRole { title: "ConsoleUI Overlay".into(), role: WindowRole::Overlay },
             ShellMessage::WindowRole { title: "ConsoleUI notification".into(), role: WindowRole::Notification },
             ShellMessage::Screenshot { path: "/tmp/a.png".into() },
+            ShellMessage::Blur {
+                role: WindowRole::Notification,
+                regions: vec![BlurRegion { rect: Rect { x: 1, y: 2, width: 3, height: 4 }, radius: 5 }],
+                fade_ms: 200,
+            },
+            ShellMessage::Blur { role: WindowRole::Overlay, regions: Vec::new(), fade_ms: 0 },
             ShellMessage::KeyboardLayout { layout: Some("de".into()) },
             ShellMessage::KeyboardLayout { layout: None },
         ];

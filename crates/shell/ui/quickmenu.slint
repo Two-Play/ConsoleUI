@@ -16,17 +16,20 @@ export component QuickMenu inherits Rectangle {
     property <QuickItem> current: root.items[root.focused];
     property <length> card: 170px * root.s;
     property <length> gap: 18px * root.s;
-    property <length> panel-height: 330px * root.s;
+    // Height of the bar when open (the overlay window reports it to the compositor for the blur)
+    out property <length> panel-height: 330px * root.s;
 
+    // Darkens the game above the bar only, so a blurred backdrop under the bar stays clear.
     Rectangle {
+        y: 0;
         width: 100%;
-        height: 100%;
+        height: panel.y;
         background: Theme.base;
         opacity: root.open ? 0.55 : 0;
         animate opacity { duration: Theme.page-duration; }
     }
 
-    GlassPanel {
+    panel := GlassPanel {
         y: root.open ? root.height - root.panel-height : root.height;
         width: 100%;
         height: root.panel-height;

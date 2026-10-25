@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use consoleui_core::keymap::{self, Keymap};
 use consoleui_core::ownership;
-use consoleui_core::protocol::{self, CompositorMessage, ShellMessage, Target};
+use consoleui_core::protocol::{self, CompositorMessage, ShellMessage, Target, WindowRole};
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::renderer::ImportDma;
 use smithay::backend::renderer::utils::{on_commit_buffer_handler, with_renderer_surface_state};
@@ -62,12 +62,14 @@ use smithay::wayland::xwayland_shell::XWaylandShellState;
 use smithay::xwayland::X11Wm;
 use tracing::{debug, info, warn};
 
+use crate::backdrop::Backdrops;
 use crate::backend::Backend;
+use crate::blur::BlurCache;
 use crate::child::ShellProcess;
 use crate::control::{ClientId as ControlClient, Control};
 use crate::focus::FocusTarget;
 use crate::policy::{Layer, Policy, Role, WindowId};
-use crate::render::Drawn;
+use crate::render::{Blur, Drawn};
 use crate::transition::Transitions;
 
 #[derive(Debug, Default)]
@@ -144,6 +146,9 @@ pub struct State {
     pub front: Target,
     /// Animated front changes (Story 7.7)
     pub transitions: Transitions,
+    /// Blurred backdrops under the overlay and notification windows (Story 7.13)
+    pub backdrops: Backdrops,
+    pub blur_cache: BlurCache,
     pub control: Control,
     pub shell: Option<ShellProcess>,
     pub screenshots: Vec<ScreenshotRequest>,
@@ -259,6 +264,8 @@ impl State {
             policy: Policy::default(),
             front: Target::Shell,
             transitions: Transitions::default(),
+            backdrops: Backdrops::default(),
+            blur_cache: BlurCache::default(),
             control,
             shell: None,
             screenshots: Vec::new(),
@@ -423,7 +430,16 @@ impl State {
             }
             let effect = if animating && normal { self.transitions.effect(role, now, output) } else { None };
             let location = self.space.element_location(window).unwrap_or_default() - window.geometry().loc;
-            bottom_up.push((role, normal, Drawn { window: window.clone(), location, effect }));
+            let blur = self.policy.layer(id).and_then(|layer| match layer {
+                Layer::Normal => None,
+                Layer::Overlay => Some(WindowRole::Overlay),
+                Layer::Notification => Some(WindowRole::Notification),
+            });
+            let blur = blur.and_then(|role| {
+                let (regions, alpha) = self.backdrops.get(role).visible(now)?;
+                Some(Blur { role, regions: regions.to_vec(), alpha })
+            });
+            bottom_up.push((role, normal, Drawn { window: window.clone(), location, effect, blur }));
         }
         // During a return the app being left shrinks above the shell (below the shell's overlays).
         if let Some(app_id) = self.transitions.raised().filter(|_| animating) {
@@ -502,9 +518,14 @@ impl State {
                 if version != protocol::VERSION {
                     warn!("shell speaks protocol {version}, compositor {}", protocol::VERSION);
                 }
-                let features = [protocol::FEATURE_OVERLAYS, protocol::FEATURE_GUIDE_KEY, protocol::FEATURE_TRANSITIONS]
-                    .map(str::to_owned)
-                    .to_vec();
+                let features = [
+                    protocol::FEATURE_OVERLAYS,
+                    protocol::FEATURE_GUIDE_KEY,
+                    protocol::FEATURE_TRANSITIONS,
+                    protocol::FEATURE_BLUR,
+                ]
+                .map(str::to_owned)
+                .to_vec();
                 self.control.send_to(client, &CompositorMessage::Welcome { version: protocol::VERSION, features });
                 self.policy.set_shell_pid(pid, &ownership::read_process)
             }
@@ -524,6 +545,12 @@ impl State {
             ShellMessage::WindowRole { title, role } => {
                 info!("shell window {title:?} has the role {role:?}");
                 self.policy.set_window_role(&title, role)
+            }
+            ShellMessage::Blur { role, regions, fade_ms } => {
+                debug!("blur under the {role:?} window: {regions:?}");
+                let fade = Duration::from_millis(fade_ms.min(2000) as u64);
+                self.backdrops.get_mut(role).set(regions, fade, self.clock.now().into());
+                Vec::new()
             }
             ShellMessage::Screenshot { path } => {
                 self.screenshots.push(ScreenshotRequest { path: path.into(), reply: Some(client) });

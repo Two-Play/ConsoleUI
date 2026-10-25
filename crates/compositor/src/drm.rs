@@ -495,7 +495,14 @@ impl State {
             return;
         }
         let output = surface.output.clone();
-        let elements = render::output_elements(&mut gpu.renderer, &windows, &output, &self.cursor_status, pointer);
+        let elements = render::output_elements(
+            &mut gpu.renderer,
+            &windows,
+            &output,
+            &self.cursor_status,
+            pointer,
+            &mut self.blur_cache,
+        );
         let result =
             surface.drm_output.render_frame(&mut gpu.renderer, &elements, render::CLEAR_COLOR, FrameFlags::DEFAULT);
         let mut rendered = false;

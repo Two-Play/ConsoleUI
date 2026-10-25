@@ -14,7 +14,7 @@ use consoleui_core::launch::{self, ProcessHandle};
 use consoleui_core::netpages::Page;
 use consoleui_core::osk::{KeyboardEvent, OnScreenKeyboard};
 use consoleui_core::ownership::{self, FIRST_DESKTOP_APP_ID, Owner, SHELL_APP_ID};
-use consoleui_core::protocol::{CompositorMessage, Rect, ShellMessage, Transition};
+use consoleui_core::protocol::{BlurRegion, CompositorMessage, Rect, ShellMessage, Transition, WindowRole};
 use consoleui_core::running::{MIN_HOLD, Phase, RunningApp};
 use consoleui_core::settings::{BackgroundChoice, GlyphChoice, Setting, Settings};
 use consoleui_core::sound::Sound;
@@ -36,7 +36,7 @@ use crate::music::Music;
 use crate::network::Network;
 use crate::quick::{ForegroundApp, QuickAction, QuickMenu, QuickOutcome};
 use crate::{
-    AppTile, AppWindow, ControllerStyle, GlyphButton, Hint, KeyCap, NotificationWindow, OverlayWindow, Screen,
+    AppTile, AppWindow, ControllerStyle, Glass, GlyphButton, Hint, KeyCap, NotificationWindow, OverlayWindow, Screen,
     SettingRow, Theme, tiles,
 };
 
@@ -375,6 +375,51 @@ impl Shell {
     /// The overlay and notification windows of our compositor, if it places them (Story 7.6).
     fn compositor_ui(&self) -> Option<&CompositorUi> {
         self.compositor_ui.as_ref().filter(|_| self.compositor.as_ref().is_some_and(Compositor::overlays))
+    }
+
+    /// Tells our compositor where the open quick menu and the shown toast are, so it blurs what is
+    /// below them (Story 7.13). Called whenever they open or close and from the compositor poll
+    /// (toasts are hidden by timers, a window's size arrives later).
+    fn sync_blur(&mut self) {
+        let Some(windows) = self.compositor_ui() else { return };
+        let Some(blur) = self.compositor.as_ref().map(Compositor::blur) else { return };
+        windows.overlay.global::<Glass>().set_backdrop(blur);
+        windows.notification.global::<Glass>().set_backdrop(blur);
+        if !blur {
+            return;
+        }
+        let region = |x: f32, y: f32, width: f32, height: f32, radius: f32| BlurRegion {
+            rect: Rect {
+                x: x.round() as i32,
+                y: y.round() as i32,
+                width: width.round() as i32,
+                height: height.round() as i32,
+            },
+            radius: radius.round() as i32,
+        };
+        let overlay = &windows.overlay;
+        let mut menu = Vec::new();
+        if overlay.get_open() && overlay.window().is_visible() {
+            let size = overlay.window().size().to_logical(overlay.window().scale_factor());
+            let height = overlay.get_panel_height();
+            menu.push(region(0.0, size.height - height, size.width, height, 0.0));
+        }
+        let menu_fade = overlay.get_blur_fade().clamp(0, 2000) as u32;
+        let notification = &windows.notification;
+        let mut toast = Vec::new();
+        if notification.get_shown() && notification.window().is_visible() {
+            toast.push(region(
+                notification.get_toast_x(),
+                notification.get_toast_y(),
+                notification.get_toast_width(),
+                notification.get_toast_height(),
+                notification.get_toast_radius(),
+            ));
+        }
+        let toast_fade = notification.get_blur_fade().clamp(0, 2000) as u32;
+        let Some(compositor) = &mut self.compositor else { return };
+        compositor.set_blur(WindowRole::Overlay, menu, menu_fade);
+        compositor.set_blur(WindowRole::Notification, toast, toast_fade);
     }
 
     /// The window for toasts over running apps (gamescope or our compositor).
@@ -1291,6 +1336,8 @@ impl Shell {
                 // Opened as a layer before the compositor's `Welcome` arrived
                 ui.set_quick_open(false);
             }
+            // The blur fades out with the closing menu; opening is picked up by the next poll.
+            self.sync_blur();
             return;
         }
         let Some(gamescope) = &mut self.gamescope else {
@@ -1578,6 +1625,7 @@ impl Shell {
         if keymap_changed {
             self.update_settings_rows(ui);
         }
+        self.sync_blur();
         if guide {
             self.apply(ui, Action::Guide);
         }

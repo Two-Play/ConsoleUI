@@ -3,10 +3,13 @@ import { Theme } from "theme.slint";
 // What frosted panels show through: a pre-blurred copy of the hero (from the hero workers in
 // Rust), above the accent gradient of the window background. Slint has no backdrop blur, so the
 // panels see the blurred background artwork but not the tiles in front of it. Only the main
-// window sets it; elsewhere (the overlay window above a game) the panels stay a plain dark glass.
+// window sets it. In the overlay and notification windows above a game our compositor blurs
+// what is below the panels instead (`backdrop`, Story 7.13); elsewhere they stay a plain dark glass.
 export global Glass {
     // Set by the main window; without it the panels are an almost opaque dark glass.
     in-out property <bool> active;
+    // The compositor blurs what is below the window's panels (Story 7.13)
+    in-out property <bool> backdrop;
     in-out property <image> image;
     in-out property <color> glow: transparent;
     // Size of the window the panels are in
@@ -39,7 +42,7 @@ export component GlassPanel inherits Rectangle {
     }
 
     Rectangle {
-        background: root.tint.with-alpha(Glass.active ? 0.62 : 0.95);
+        background: root.tint.with-alpha(Glass.active ? 0.62 : Glass.backdrop ? 0.5 : 0.95);
     }
 
     // Light falling on the upper edge

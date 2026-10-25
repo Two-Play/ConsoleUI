@@ -9,7 +9,7 @@ use smithay::backend::renderer::Texture;
 use smithay::backend::renderer::element::surface::{WaylandSurfaceRenderElement, WaylandSurfaceTexture};
 use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, UnderlyingStorage};
 use smithay::backend::renderer::gles::{
-    GlesError, GlesFrame, GlesRenderer, GlesTexProgram, Uniform, UniformName, UniformType,
+    GlesError, GlesFrame, GlesRenderer, GlesTexProgram, GlesTexture, Uniform, UniformName, UniformType,
 };
 use smithay::backend::renderer::utils::{CommitCounter, DamageSet, OpaqueRegions};
 use smithay::utils::user_data::UserDataMap;
@@ -118,26 +118,41 @@ impl RoundedSurface {
     /// Uniforms for drawing `src` of the texture to `dst`; `None` where the shader does not apply.
     fn uniforms(&self, src: Rectangle<f64, Buffer>, dst: Rectangle<i32, Physical>) -> Option<Vec<Uniform<'static>>> {
         let WaylandSurfaceTexture::Texture(texture) = self.inner.texture() else { return None };
-        if self.inner.transform() != Transform::Normal || src.size.w <= 0.0 || src.size.h <= 0.0 {
+        if self.inner.transform() != Transform::Normal {
             return None;
         }
-        // Texture coordinates are `(src.loc + p * src.size / dst.size) / texture` for a pixel `p`
-        // of `dst` (y negated for y-inverted textures); this is the inverse, relative to the clip.
-        let size = texture.size();
-        let (sx, sy) = (dst.size.w as f64 / src.size.w, dst.size.h as f64 / src.size.h);
-        let flip = if texture.is_y_inverted() { -1.0 } else { 1.0 };
-        let scale = ((size.w as f64 * sx) as f32, (flip * size.h as f64 * sy) as f32);
-        let offset = (
-            (dst.loc.x as f64 - self.clip.loc.x - src.loc.x * sx) as f32,
-            (dst.loc.y as f64 - self.clip.loc.y - src.loc.y * sy) as f32,
-        );
-        Some(vec![
-            Uniform::new("geo_scale", scale),
-            Uniform::new("geo_offset", offset),
-            Uniform::new("geo_size", (self.clip.size.w as f32, self.clip.size.h as f32)),
-            Uniform::new("radius", self.radius as f32),
-        ])
+        clip_uniforms(texture, src, dst, self.clip, self.radius)
     }
+}
+
+/// Uniforms of the rounded-clip shader for drawing `src` of `texture` (untransformed) to `dst`,
+/// cut to `clip` with corners of `radius`; `None` for an empty `src`.
+pub fn clip_uniforms(
+    texture: &GlesTexture,
+    src: Rectangle<f64, Buffer>,
+    dst: Rectangle<i32, Physical>,
+    clip: Rectangle<f64, Physical>,
+    radius: f64,
+) -> Option<Vec<Uniform<'static>>> {
+    if src.size.w <= 0.0 || src.size.h <= 0.0 {
+        return None;
+    }
+    // Texture coordinates are `(src.loc + p * src.size / dst.size) / texture` for a pixel `p`
+    // of `dst` (y negated for y-inverted textures); this is the inverse, relative to the clip.
+    let size = texture.size();
+    let (sx, sy) = (dst.size.w as f64 / src.size.w, dst.size.h as f64 / src.size.h);
+    let flip = if texture.is_y_inverted() { -1.0 } else { 1.0 };
+    let scale = ((size.w as f64 * sx) as f32, (flip * size.h as f64 * sy) as f32);
+    let offset = (
+        (dst.loc.x as f64 - clip.loc.x - src.loc.x * sx) as f32,
+        (dst.loc.y as f64 - clip.loc.y - src.loc.y * sy) as f32,
+    );
+    Some(vec![
+        Uniform::new("geo_scale", scale),
+        Uniform::new("geo_offset", offset),
+        Uniform::new("geo_size", (clip.size.w as f32, clip.size.h as f32)),
+        Uniform::new("radius", radius as f32),
+    ])
 }
 
 impl Element for RoundedSurface {
