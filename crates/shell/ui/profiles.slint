@@ -97,11 +97,13 @@ export component ProfilePage inherits Rectangle {
     for tile[i] in root.view.tiles: Rectangle {
         property <bool> is-focused: i == root.view.focused;
         x: (root.width - root.view.tiles.length * root.pitch) / 2 + i * root.pitch;
+        // The avatar row is centered on `row-y`; name and status below it.
         y: root.row-y - 130px * root.s;
         width: root.pitch;
         height: 380px * root.s;
 
         Avatar {
+            y: 0;
             width: 100%;
             height: 260px * root.s;
             initial: tile.initial;
@@ -112,7 +114,7 @@ export component ProfilePage inherits Rectangle {
         }
 
         Text {
-            y: 292px * root.s;
+            y: 288px * root.s;
             height: 36px * root.s;
             width: 100%;
             text: tile.name;
@@ -124,7 +126,7 @@ export component ProfilePage inherits Rectangle {
         }
 
         if tile.current: Text {
-            y: 332px * root.s;
+            y: 328px * root.s;
             height: 24px * root.s;
             width: 100%;
             text: @tr("Playing now");
