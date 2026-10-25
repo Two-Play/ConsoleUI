@@ -1,11 +1,11 @@
-//! Vereinfachte Icon-Suche nach der freedesktop Icon Theme Specification
-//! (ohne `index.theme`-Auswertung; Theme, dann `hicolor`, dann `pixmaps`).
+//! Simplified icon lookup following the freedesktop Icon Theme Specification
+//! (without evaluating `index.theme`; theme, then `hicolor`, then `pixmaps`).
 
 use std::path::{Path, PathBuf};
 
-/// Größte Varianten zuerst, damit die Kacheln auch auf 4K scharf bleiben.
+/// Largest variants first, so the tiles stay sharp on 4K too.
 const SIZES: &[&str] = &["scalable", "512x512", "256x256", "192x192", "128x128", "96x96", "64x64", "48x48"];
-/// Breeze legt Icons als `apps/<größe>/name.svg` ab.
+/// Breeze stores icons as `apps/<size>/name.svg`.
 const BREEZE_SIZES: &[&str] = &["64", "48", "32"];
 const EXTENSIONS: &[&str] = &["svg", "png"];
 

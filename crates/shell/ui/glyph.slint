@@ -1,7 +1,7 @@
 import { Theme } from "theme.slint";
 import { ControllerStyle, GlyphButton, Hint } from "types.slint";
 
-// Tastensymbol im Stil des verbundenen Controllers (PlayStation, Xbox) oder als Tastaturtaste.
+// Button symbol in the style of the connected controller (PlayStation, Xbox) or as a keyboard key.
 export component ButtonGlyph inherits Rectangle {
     in property <GlyphButton> button;
     in property <ControllerStyle> style;
@@ -23,7 +23,7 @@ export component ButtonGlyph inherits Rectangle {
             : root.button == GlyphButton.menu ? "Tab"
             : root.button == GlyphButton.l1 ? "Q"
             : root.button == GlyphButton.r1 ? "E"
-            : "Strg+Q")
+            : @tr("Ctrl+Q"))
         : root.button == GlyphButton.confirm ? (root.ps ? "✕" : "A")
         : root.button == GlyphButton.back ? (root.ps ? "○" : "B")
         : root.button == GlyphButton.north ? (root.ps ? "△" : "Y")
@@ -32,7 +32,7 @@ export component ButtonGlyph inherits Rectangle {
         : root.button == GlyphButton.l1 ? (root.ps ? "L1" : "LB")
         : root.button == GlyphButton.r1 ? (root.ps ? "R1" : "RB")
         : "";
-    // Farben wie auf den Controllern
+    // Colors as on the controllers
     property <color> tint:
         !root.face ? Theme.text
         : root.button == GlyphButton.confirm ? (root.ps ? #8fb4ff : #6fdc6f)

@@ -1,5 +1,5 @@
-//! Spike 4.6: halbtransparentes Vollbild-Fenster mit STEAM_OVERLAY (vor dem Mappen gesetzt).
-//! Aufruf innerhalb von gamescope: `overlay_spike <sekunden> [steam_game_appid]`
+//! Spike 4.6: semi-transparent fullscreen window with STEAM_OVERLAY (set before mapping).
+//! Run inside gamescope: `overlay_spike <seconds> [steam_game_appid]`
 
 use std::error::Error;
 use std::time::Duration;
@@ -21,11 +21,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         .filter(|d| d.depth == 32)
         .flat_map(|d| d.visuals.iter().map(move |v| (d.depth, v.visual_id)))
         .next()
-        .ok_or("kein 32-Bit-Visual")?;
+        .ok_or("no 32-bit visual")?;
     let colormap = conn.generate_id()?;
     conn.create_colormap(ColormapAlloc::NONE, colormap, screen.root, visual)?;
     let window = conn.generate_id()?;
-    // Vorberechnetes Alpha: halbtransparentes Dunkelblau
+    // Premultiplied alpha: semi-transparent dark blue
     let argb = 0x99_0a_10_28u32;
     conn.create_window(
         depth,
@@ -50,8 +50,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     conn.map_window(window)?;
     conn.flush()?;
-    println!("Overlay-Fenster {window} gemappt");
-    // Echte Pixel zeichnen, damit XWayland einen Buffer an gamescope schickt
+    println!("Overlay window {window} mapped");
+    // Draw real pixels so XWayland sends a buffer to gamescope
     let gc = conn.generate_id()?;
     conn.create_gc(gc, window, &CreateGCAux::new().foreground(argb))?;
     for _ in 0..(secs * 10) {

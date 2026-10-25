@@ -1,4 +1,4 @@
-//! Gamepad-Eingaben über gilrs, übersetzt in dieselben `Action`s wie die Tastatur.
+//! Gamepad input via gilrs, translated into the same `Action`s as the keyboard.
 
 use std::time::Instant;
 
@@ -8,11 +8,11 @@ use gilrs::{Axis, Button, Event, EventType, Gamepad, Gilrs, MappingSource, Power
 
 pub struct ControllerStatus {
     pub style: GlyphStyle,
-    /// Akkustand in Prozent, falls der Controller ihn meldet
+    /// Battery level in percent, if the controller reports it
     pub battery: Option<u8>,
 }
 
-/// Verbindung eines Controllers, für Hinweise
+/// Connection of a controller, for toasts
 pub enum Connection {
     Connected(String),
     Disconnected(String),
@@ -23,7 +23,7 @@ pub struct Gamepads {
     connections: Vec<Connection>,
     repeat: DirectionRepeat,
     left_stick: Stick,
-    /// Manche Treiber melden das Steuerkreuz als Achsen statt als Tasten.
+    /// Some drivers report the D-pad as axes instead of buttons.
     dpad_axes: Stick,
 }
 
@@ -38,13 +38,13 @@ impl Gamepads {
                 dpad_axes: Stick::default(),
             }),
             Err(err) => {
-                eprintln!("Gamepads nicht verfügbar: {err}");
+                eprintln!("Gamepads not available: {err}");
                 None
             }
         }
     }
 
-    /// Verarbeitet alle anstehenden Events und fällige Wiederholungen.
+    /// Processes all pending events and due repeats.
     pub fn poll(&mut self, now: Instant) -> Vec<Action> {
         let mut actions = Vec::new();
         while let Some(Event { id, event, .. }) = self.gilrs.next_event() {
@@ -89,17 +89,17 @@ impl Gamepads {
         actions
     }
 
-    /// Verbindungsereignisse seit dem letzten Aufruf
+    /// Connection events since the last call
     pub fn take_connections(&mut self) -> Vec<Connection> {
         std::mem::take(&mut self.connections)
     }
 
-    /// Gerätenamen aller verbundenen Controller, wie der Kernel sie meldet (für den exklusiven Zugriff).
+    /// Device names of all connected controllers as the kernel reports them (for exclusive access).
     pub fn names(&self) -> Vec<String> {
         self.gilrs.gamepads().map(|(_, g)| g).filter(is_supported).map(|g| g.os_name().to_string()).collect()
     }
 
-    /// Nach exklusivem Zugriff: gilrs hat das Loslassen nicht gesehen, also nichts mehr als gehalten werten.
+    /// After exclusive access: gilrs did not see the release, so treat nothing as held anymore.
     pub fn reset(&mut self) {
         self.repeat = DirectionRepeat::default();
         self.left_stick = Stick::default();
@@ -107,7 +107,7 @@ impl Gamepads {
         while self.gilrs.next_event().is_some() {}
     }
 
-    /// Erster verbundener Controller, für die Top-Bar und die Tastensymbole.
+    /// First connected controller, for the top bar and the button glyphs.
     pub fn status(&self) -> Option<ControllerStatus> {
         self.gilrs.gamepads().map(|(_, gamepad)| gamepad).find(is_supported).map(|gamepad| ControllerStatus {
             style: glyph_style(gamepad.name()),
@@ -129,8 +129,8 @@ fn apply_change(repeat: &mut DirectionRepeat, change: StickChange, now: Instant,
     }
 }
 
-/// Nur Geräte mit bekanntem Mapping; so meldet sich z. B. die Joystick-Schnittstelle mancher
-/// Tastaturen nicht als Controller.
+/// Only devices with a known mapping; this way e.g. the joystick interface of some keyboards
+/// does not show up as a controller.
 fn is_supported(gamepad: &Gamepad) -> bool {
     gamepad.is_connected() && mapping_known(gamepad)
 }
@@ -139,8 +139,8 @@ fn mapping_known(gamepad: &Gamepad) -> bool {
     gamepad.mapping_source() != MappingSource::None
 }
 
-/// Kreuz/A bestätigt, Kreis/B geht zurück, Dreieck/Y sucht, Quadrat/X filtert, L1/R1 wechseln
-/// die Tabs, Options/Start öffnet das Menü, PS/Guide die Steuerzentrale.
+/// Cross/A confirms, Circle/B goes back, Triangle/Y searches, Square/X filters, L1/R1 switch
+/// tabs, Options/Start opens the menu, PS/Guide the control center.
 fn button_action(button: Button) -> Option<Action> {
     Some(match button {
         Button::DPadUp => Action::Up,

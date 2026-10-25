@@ -1,9 +1,10 @@
-//! Simuliertes WLAN- und Bluetooth-Backend (`--fake-network`), damit sich die Seiten ohne echte
-//! Hardware und ohne Änderungen am System bedienen und testen lassen.
+//! Simulated Wi-Fi and Bluetooth backend (`--fake-network`), so the pages can be used and tested
+//! without real hardware and without changing the system.
 
 use std::time::Duration;
 
 use crate::bluetooth::{Adapter, BluetoothState, BtDevice, DeviceKind, visible_devices};
+use crate::i18n::{tr, trf};
 use crate::network::{Backend, Request};
 use crate::wifi::{WifiNetwork, WifiState, sort_networks};
 
@@ -14,7 +15,7 @@ pub struct FakeBackend {
     powered: bool,
     discovering: bool,
     devices: Vec<BtDevice>,
-    /// Simulierte Dauer von Verbinden und Koppeln
+    /// Simulated duration of connecting and pairing
     delay: Duration,
 }
 
@@ -35,7 +36,7 @@ fn device(address: &str, name: &str, kind: DeviceKind, paired: bool, connected: 
     }
 }
 
-/// Diese Geräte tauchen erst bei der Suche auf.
+/// These devices only show up during a search.
 fn discoverable() -> Vec<BtDevice> {
     vec![
         device("98:B6:E9:12:34:56", "Xbox Wireless Controller", DeviceKind::Gamepad, false, false, Some(-52)),
@@ -73,7 +74,7 @@ impl FakeBackend {
     }
 
     fn device_mut(&mut self, address: &str) -> Result<&mut BtDevice, String> {
-        self.devices.iter_mut().find(|d| d.address == address).ok_or_else(|| "Gerät nicht gefunden".to_string())
+        self.devices.iter_mut().find(|d| d.address == address).ok_or_else(|| tr("Device not found").to_string())
     }
 }
 
@@ -86,7 +87,7 @@ impl Backend for FakeBackend {
 
     fn bluetooth(&mut self) -> Result<BluetoothState, String> {
         let adapter = Adapter {
-            name: "hci0 (simuliert)".into(),
+            name: trf("{} (simulated)", &[&"hci0"]),
             address: "00:1A:7D:DA:71:13".into(),
             powered: self.powered,
             discovering: self.discovering,
@@ -109,7 +110,7 @@ impl Backend for FakeBackend {
                 if self.scans == 1 {
                     self.networks.push(network("Gast-WLAN", 35, false, false, false));
                 }
-                // Signalstärken schwanken etwas
+                // Signal strengths vary a bit
                 for (i, n) in self.networks.iter_mut().enumerate() {
                     let delta = ((self.scans as usize + i) % 5) as i16 * 3 - 6;
                     n.strength = (n.strength as i16 + delta).clamp(5, 99) as u8;
@@ -117,11 +118,11 @@ impl Backend for FakeBackend {
             }
             Request::WifiConnect { ssid, password } => {
                 self.wait();
-                let network = self.networks.iter().find(|n| &n.ssid == ssid).ok_or("Netz nicht gefunden")?;
+                let network = self.networks.iter().find(|n| &n.ssid == ssid).ok_or(tr("Network not found"))?;
                 if network.secured && !network.known {
                     match password {
-                        None => return Err("Passwort erforderlich".into()),
-                        Some(p) if p.chars().count() < 8 => return Err("Falsches Passwort".into()),
+                        None => return Err(tr("Password required").into()),
+                        Some(p) if p.chars().count() < 8 => return Err(tr("Wrong password").into()),
                         Some(_) => {}
                     }
                 }
@@ -144,7 +145,7 @@ impl Backend for FakeBackend {
             }
             Request::BtDiscovery(on) => {
                 if !self.powered {
-                    return Err("Bluetooth ist ausgeschaltet".into());
+                    return Err(tr("Bluetooth is off").into());
                 }
                 self.discovering = *on;
                 if *on {
@@ -160,9 +161,9 @@ impl Backend for FakeBackend {
             Request::BtPair { address, .. } => {
                 self.wait();
                 let device = self.device_mut(address)?;
-                // Ein Gerät scheitert immer, damit sich der Fehlerfall zeigen lässt.
+                // One device always fails, so the error case can be shown.
                 if device.name.starts_with("8BitDo") {
-                    return Err("Authentifizierung fehlgeschlagen".into());
+                    return Err(tr("Authentication failed").into());
                 }
                 device.paired = true;
                 device.trusted = true;
@@ -194,7 +195,7 @@ mod tests {
             password: password.map(str::to_string),
         };
         assert!(fake.execute(&connect(None)).is_err());
-        assert_eq!(fake.execute(&connect(Some("kurz"))), Err("Falsches Passwort".into()));
+        assert_eq!(fake.execute(&connect(Some("kurz"))), Err("Wrong password".into()));
         assert!(fake.execute(&connect(Some("lang genug"))).is_ok());
         let state = fake.wifi().unwrap();
         assert_eq!(state.connected().unwrap().ssid, "FRITZ!Box 7590 XY");
@@ -207,7 +208,7 @@ mod tests {
         let mut fake = FakeBackend::new(Duration::ZERO);
         assert_eq!(fake.bluetooth().unwrap().devices.len(), 2);
         fake.execute(&Request::BtDiscovery(true)).unwrap();
-        // Das unbenannte Gerät bleibt ausgeblendet
+        // The unnamed device stays hidden
         assert_eq!(fake.bluetooth().unwrap().devices.len(), 5);
         let xbox = Request::BtPair { address: "98:B6:E9:12:34:56".into(), name: "Xbox".into() };
         fake.execute(&xbox).unwrap();
@@ -220,6 +221,6 @@ mod tests {
         assert_eq!(fake.bluetooth().unwrap().devices.len(), 3);
         fake.execute(&Request::BtRemove { address: "38:18:4C:44:55:66".into(), name: String::new() }).unwrap();
         fake.execute(&Request::BtPower(false)).unwrap();
-        assert_eq!(fake.bluetooth().unwrap().summary(), "Aus");
+        assert_eq!(fake.bluetooth().unwrap().summary(), "Off");
     }
 }

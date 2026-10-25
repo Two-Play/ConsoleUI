@@ -1,4 +1,4 @@
-/// Eingabeunabhängige UI-Aktion. Tastatur und (später) Gamepad werden beide hierauf abgebildet.
+/// Input-agnostic UI action. Keyboard and (later) gamepad are both mapped to it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
     Up,
@@ -8,18 +8,18 @@ pub enum Action {
     Confirm,
     Back,
     Menu,
-    /// Dreieck/Y: Suche öffnen (in der Suche: Leerzeichen)
+    /// Triangle/Y: open the search (in the search: space)
     Search,
-    /// Quadrat/X: Filter wechseln (in der Suche: Zeichen löschen)
+    /// Square/X: switch filter (in the search: delete a character)
     Secondary,
-    /// L1/LB und R1/RB: zwischen den Tabs wechseln
+    /// L1/LB and R1/RB: switch between the tabs
     PrevTab,
     NextTab,
-    /// PS-/Guide-Taste: Quick-Menü, auch während ein Spiel läuft
+    /// PS/Guide button: quick menu, also while a game is running
     Guide,
 }
 
-/// Fokus innerhalb einer horizontalen Kachelreihe. Läuft am Rand nicht im Kreis (wie bei der PS5).
+/// Focus within a horizontal tile row. Does not wrap around at the edge (like on the PS5).
 #[derive(Debug, Clone)]
 pub struct Carousel {
     len: usize,
@@ -43,12 +43,12 @@ impl Carousel {
         self.focused
     }
 
-    /// Setzt den Fokus direkt; Werte außerhalb werden auf den letzten Eintrag begrenzt.
+    /// Sets the focus directly; values out of range are clamped to the last entry.
     pub fn focus(&mut self, index: usize) {
         self.focused = index.min(self.len.saturating_sub(1));
     }
 
-    /// Wendet eine Aktion an und gibt zurück, ob sich der Fokus geändert hat.
+    /// Applies an action and returns whether the focus changed.
     pub fn apply(&mut self, action: Action) -> bool {
         let target = match action {
             Action::Left => self.focused.saturating_sub(1),

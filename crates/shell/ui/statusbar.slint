@@ -15,7 +15,7 @@ component StatusIcon inherits Rectangle {
     }
 }
 
-// Akku als gezeichnetes Symbol, damit der Füllstand stufenlos passt.
+// Battery as a drawn symbol, so the fill level fits continuously.
 component BatteryIcon inherits Rectangle {
     in property <int> percent;
     in property <bool> charging;
@@ -50,7 +50,7 @@ component BatteryIcon inherits Rectangle {
     }
 }
 
-// Rechte Seite der Top-Bar: Controller, Netzwerk, Akku, Uhr.
+// Right side of the top bar: controller, network, battery, clock.
 export component StatusBar inherits HorizontalLayout {
     in property <float> s;
     in property <string> clock;

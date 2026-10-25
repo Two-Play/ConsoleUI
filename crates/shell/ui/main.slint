@@ -26,13 +26,13 @@ export component AppWindow inherits Window {
     forward-focus: keys;
 
     in property <Screen> screen: Screen.home;
-    // Hinweis oben rechts
+    // Notice at the top right
     in property <bool> toast-shown;
     in property <string> toast-symbol;
     in property <string> toast-title;
     in property <string> toast-text;
 
-    // Boot-Animation, bis die Bibliothek geladen ist
+    // Boot animation until the library is loaded
     in property <bool> booting: true;
 
     in property <[AppTile]> home-tiles;
@@ -47,7 +47,7 @@ export component AppWindow inherits Window {
     in property <[SettingRow]> settings-rows;
     in property <int> settings-focused;
     in property <string> settings-footer;
-    // Unterseite WLAN/Bluetooth der Einstellungen (Stories 5.3/5.4)
+    // Wi-Fi/Bluetooth sub-page of the settings (Stories 5.3/5.4)
     in property <NetView> net-view;
 
     in property <string> search-query;
@@ -57,28 +57,28 @@ export component AppWindow inherits Window {
     in property <[AppTile]> results;
     in property <int> result-focused;
 
-    // Kurzer „Drück“-Effekt auf der fokussierten Kachel; setzt sich selbst zurück.
+    // Short "press" effect on the focused tile; resets itself.
     in-out property <bool> pulse: false;
     in property <string> clock: "--:--";
     in property <bool> show-fps: false;
     in property <string> fps-text;
 
-    // Hintergrundbild: zwei Ebenen, Rust lädt das neue Bild in die verdeckte und schaltet dann um.
+    // Background image: two layers, Rust loads the new image into the hidden one and then switches.
     in property <image> hero-a;
     in property <image> hero-b;
     in property <bool> hero-front-a: true;
-    // Horizontale Fokusposition -1 … 1 für die Parallaxe des Hintergrunds
+    // Horizontal focus position -1 … 1 for the parallax of the background
     in property <float> hero-parallax;
 
-    // Startbildschirm: Die fokussierte Kachel zoomt auf Vollbild. Rust schließt ihn wieder, wenn die
-    // App beendet ist (oder bei „Zurück“).
+    // Launch screen: the focused tile zooms to fullscreen. Rust closes it again when the app has
+    // exited (or on "Back").
     in property <bool> launching: false;
     in property <string> launch-title;
     in property <string> launch-status;
     in property <image> launch-image;
     in property <color> launch-accent;
 
-    // Quick-Menü als Ebene im Hauptfenster (ohne gamescope; dort ist es ein eigenes Overlay-Fenster)
+    // Quick menu as a layer of the main window (without gamescope; there it is its own overlay window)
     in property <bool> quick-open;
     in property <string> quick-title;
     in property <[QuickItem]> quick-items;
@@ -97,12 +97,12 @@ export component AppWindow inherits Window {
     in property <int> game-options-focused;
     in property <string> game-options-footer;
 
-    // Rückfrage, z. B. vor dem Beenden einer laufenden App
+    // Confirmation, e.g. before quitting a running app
     in property <bool> confirm-open;
     in property <string> confirm-title;
     in property <string> confirm-text;
 
-    // Top-Bar-Status
+    // Top bar status
     in property <NetworkState> network: NetworkState.offline;
     in property <int> battery-percent: -1;
     in property <bool> battery-charging;
@@ -111,16 +111,16 @@ export component AppWindow inherits Window {
     in property <ControllerStyle> controller-style: ControllerStyle.keyboard;
     in property <[Hint]> hints;
 
-    // Nur mit Fokus nimmt die Shell Gamepad-Eingaben an; sonst gehören sie dem Spiel im Vordergrund.
+    // The shell takes gamepad input only while focused; otherwise it belongs to the game in front.
     out property <bool> window-active: keys.has-focus;
 
     callback action(NavAction);
-    // Tastatureingabe in der Suche; gibt zurück, ob das Zeichen angenommen wurde.
+    // Keyboard input in the search; returns whether the character was taken.
     callback typed(string) -> bool;
     callback erase();
     callback quit();
 
-    // Alle Maße skalieren mit der Fenstergröße (Referenz: 1920×1080).
+    // All sizes scale with the window size (reference: 1920×1080).
     property <float> s: max(0.4, min(root.width / 1920px, root.height / 1080px));
     property <length> margin: 110px * s;
 
@@ -186,8 +186,8 @@ export component AppWindow inherits Window {
                 root.action(NavAction.guide);
                 return accept;
             }
-            // In der Suche (und der WLAN-Passwort-Eingabe) tippt die Tastatur; WASD und die
-            // Buchstabenkürzel gelten dort nicht.
+            // In the search (and the Wi-Fi password entry) the keyboard types; WASD and the
+            // letter shortcuts do not apply there.
             if ((root.screen == Screen.search || (root.screen == Screen.settings && root.net-view.password-open))
                 && !root.launching && !root.confirm-open) {
                 if (event.text == Key.Backspace) {
@@ -243,7 +243,7 @@ export component AppWindow inherits Window {
             reject
         }
 
-        // Hintergrund: Verlauf und Lichtschein in der Akzentfarbe der fokussierten App
+        // Background: gradient and glow in the accent color of the focused app
         Rectangle {
             width: 100%;
             height: 100%;
@@ -258,7 +258,7 @@ export component AppWindow inherits Window {
             background: @radial-gradient(circle, root.glow.with-alpha(0.45) 0%, transparent 65%);
         }
 
-        // Hero-Artwork mit Überblendung und Parallaxe
+        // Hero artwork with crossfade and parallax
         HeroLayer {
             width: 100%;
             height: 100%;
@@ -275,8 +275,8 @@ export component AppWindow inherits Window {
             parallax: root.hero-parallax;
         }
 
-        // Abdunkeln von links und unten, damit Text auf jedem Artwork lesbar bleibt; in Bibliothek
-        // und Suche stärker, weil dort mehr Text steht.
+        // Darken from the left and the bottom so text stays readable on any artwork; stronger in the
+        // library and the search, which have more text.
         Rectangle {
             width: 100%;
             height: 100%;
@@ -314,7 +314,7 @@ export component AppWindow inherits Window {
             }
 
             Text {
-                text: "Home";
+                text: @tr("Home");
                 color: root.screen == Screen.home ? Theme.text : Theme.text-dim;
                 font-size: 26px * s;
                 font-weight: root.screen == Screen.home ? 700 : 600;
@@ -322,7 +322,7 @@ export component AppWindow inherits Window {
             }
 
             Text {
-                text: "Bibliothek";
+                text: @tr("Library");
                 color: root.screen == Screen.library ? Theme.text : Theme.text-dim;
                 font-size: 26px * s;
                 font-weight: root.screen == Screen.library ? 700 : 600;
@@ -330,7 +330,7 @@ export component AppWindow inherits Window {
             }
 
             Text {
-                text: "Einstellungen";
+                text: @tr("Settings");
                 color: root.screen == Screen.settings ? Theme.text : Theme.text-dim;
                 font-size: 26px * s;
                 font-weight: root.screen == Screen.settings ? 700 : 600;
@@ -358,7 +358,7 @@ export component AppWindow inherits Window {
             controller-battery: root.controller-battery;
         }
 
-        // Seiten mit kurzem Überblenden und leichtem Seitwärtsgleiten
+        // Pages with a short crossfade and a slight sideways glide
         home := HomePage {
             width: root.width;
             height: root.height;
@@ -444,7 +444,7 @@ export component AppWindow inherits Window {
             s: root.s;
         }
 
-        // Below the hint bar so that its hints for the menu stay readable
+        // Below the hint bar, so its hints for the menu stay readable
         ContextMenu {
             width: 100%;
             height: 100%;
@@ -477,7 +477,7 @@ export component AppWindow inherits Window {
             animate opacity { duration: Theme.page-duration; }
         }
 
-        // Startbildschirm; liegt geschlossen unsichtbar genau über der fokussierten Kachel.
+        // Launch screen; when closed it lies invisibly right over the focused tile.
         Rectangle {
             property <length> origin-x: root.screen == Screen.home ? home.focus-x : root.screen == Screen.library ? library.focus-x : search.focus-x;
             property <length> origin-y: root.screen == Screen.home ? home.focus-y : root.screen == Screen.library ? library.focus-y : search.focus-y;
@@ -525,7 +525,7 @@ export component AppWindow inherits Window {
 
                 HintBar {
                     padding-top: 10px * s;
-                    hints: [{ button: GlyphButton.back, label: "Zur Übersicht" }];
+                    hints: [{ button: GlyphButton.back, label: @tr("Go to Home") }];
                     style: root.controller-style;
                     s: root.s;
                 }
@@ -591,7 +591,7 @@ export component AppWindow inherits Window {
 
                     HintBar {
                         padding-top: 18px * s;
-                        hints: [{ button: GlyphButton.confirm, label: "Beenden" }, { button: GlyphButton.back, label: "Abbrechen" }];
+                        hints: [{ button: GlyphButton.confirm, label: @tr("Quit") }, { button: GlyphButton.back, label: @tr("Cancel") }];
                         style: root.controller-style;
                         s: root.s;
                     }

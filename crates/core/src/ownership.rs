@@ -1,25 +1,25 @@
-//! Zu welcher gestarteten App gehört ein Prozess (und damit dessen Fenster)? gamescope zeigt im
-//! Steam-Modus nur Fenster mit `STEAM_GAME`-Atom; die Shell muss deshalb jedes Fenster zuordnen.
+//! Which launched app does a process (and thus its window) belong to? In Steam mode gamescope
+//! only shows windows with a `STEAM_GAME` atom, so the shell has to assign every window.
 
 use std::fs;
 
-/// gamescope-App-ID der Shell selbst. Liegt weit über allen Steam-App-IDs.
+/// gamescope app ID of the shell itself. Far above all Steam app IDs.
 pub const SHELL_APP_ID: u32 = 0x7fff_0000;
-/// Erste App-ID für gestartete Desktop-Apps (fortlaufend vergeben)
+/// First app ID for launched desktop apps (assigned sequentially)
 pub const FIRST_DESKTOP_APP_ID: u32 = SHELL_APP_ID + 1;
 
-/// Woran sich die Prozesse einer gestarteten App erkennen lassen.
+/// How the processes of a launched app are recognized.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Owner {
-    /// Steam setzt `SteamAppId` in der Umgebung jedes Spielprozesses.
+    /// Steam sets `SteamAppId` in the environment of every game process.
     Steam(u32),
-    /// Desktop-App in einer systemd-Scope-Unit, z. B. `consoleui-app-123.scope`
+    /// Desktop app in a systemd scope unit, e.g. `consoleui-app-123.scope`
     Scope(String),
-    /// Desktop-App ohne Scope: der gestartete Prozess und seine Nachkommen
+    /// Desktop app without a scope: the launched process and its descendants
     Process(u32),
 }
 
-/// Was wir über einen Prozess wissen müssen.
+/// What we need to know about a process.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ProcessInfo {
     pub parent: Option<u32>,
@@ -38,7 +38,7 @@ pub fn read_process(pid: u32) -> Option<ProcessInfo> {
     })
 }
 
-/// Viertes Feld von `/proc/<pid>/stat`; der Prozessname in Klammern kann Leerzeichen enthalten.
+/// Fourth field of `/proc/<pid>/stat`; the process name in parentheses may contain spaces.
 fn parent_from_stat(stat: &str) -> Option<u32> {
     let after_name = &stat[stat.rfind(')')? + 1..];
     after_name.split_whitespace().nth(1)?.parse().ok().filter(|&p| p > 1)
@@ -52,10 +52,10 @@ fn steam_app_id(environ: &[u8]) -> Option<u32> {
         .filter(|&id| id != 0)
 }
 
-/// Sucht entlang der Elternprozesse die App, zu der `pid` gehört; `apps` sind (App-ID, Erkennung).
+/// Walks up the parent processes to find the app `pid` belongs to; `apps` are (app ID, matcher).
 pub fn owner_of(pid: u32, apps: &[(u32, Owner)], lookup: impl Fn(u32) -> Option<ProcessInfo>) -> Option<u32> {
     let mut current = Some(pid);
-    // Begrenzt, falls /proc sich während der Suche ändert
+    // Bounded, in case /proc changes during the search
     for _ in 0..64 {
         let pid = current?;
         let info = lookup(pid)?;

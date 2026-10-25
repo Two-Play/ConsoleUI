@@ -8,6 +8,7 @@ pub mod fakenet;
 pub mod game_options;
 mod grid;
 mod history;
+pub mod i18n;
 mod icons;
 pub mod image_format;
 pub mod input;
@@ -38,9 +39,10 @@ pub use library::{
 };
 pub use nav::{Action, Carousel};
 
-/// Alle installierten Steam-Spiele und konsolentauglichen Desktop-Apps (unsortiert).
+/// All installed Steam games and console-friendly desktop apps (unsorted). Localized desktop
+/// names follow the current [`i18n::language`].
 pub fn discover_library() -> Vec<AppEntry> {
     let mut entries = steam::find_root().map(|root| steam::discover(&root)).unwrap_or_default();
-    entries.extend(desktop::discover(&xdg::data_dirs(), &xdg::languages()));
+    entries.extend(desktop::discover(&xdg::data_dirs(), &i18n::desktop_languages(i18n::language(), xdg::languages())));
     entries
 }

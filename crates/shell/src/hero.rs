@@ -1,10 +1,10 @@
-//! Hero-Bilder (großes Artwork im Hintergrund) abseits des UI-Threads laden (Story 6.5).
+//! Loads hero images (large background artwork) off the UI thread (Story 6.5).
 //!
-//! Steam-Heroes sind JPEGs mit bis zu 3840 px Breite; sie im UI-Thread zu dekodieren kostete beim
-//! Scrollen sichtbare Ruckler. Zwei Worker dekodieren und verkleinern sie in `SharedPixelBuffer`s,
-//! der UI-Thread holt die Ergebnisse ab, solange etwas aussteht, und blendet das Bild ein, sobald es
-//! fertig ist. Bis dahin bleibt das bisherige Bild stehen (kein Umweg über einen leeren
-//! Hintergrund). Nachbarn der fokussierten Kachel werden vorab geladen; der Cache ist begrenzt.
+//! Steam heroes are JPEGs up to 3840 px wide; decoding them on the UI thread caused visible
+//! stutter while scrolling. Two workers decode and downscale them into `SharedPixelBuffer`s, the
+//! UI thread collects the results while something is pending and fades the image in once it is
+//! ready. Until then the previous image stays (no detour via an empty background). Neighbours
+//! of the focused tile are prefetched; the cache is limited.
 
 use std::cell::RefCell;
 use std::collections::{HashSet, VecDeque};
@@ -17,12 +17,12 @@ use slint::{ComponentHandle, Image, Rgba8Pixel, SharedPixelBuffer};
 
 use crate::AppWindow;
 
-/// Breiter wird kein Hero dekodiert (der Hintergrund ist ohnehin abgedunkelt).
+/// No hero is decoded wider than this (the background is darkened anyway).
 const MAX_SIZE: (u32, u32) = (1920, 1080);
-/// So viele Heroes bleiben dekodiert (je ca. 5 MB bei 1920×620).
+/// This many heroes stay decoded (about 5 MB each at 1920×620).
 const CACHE_SIZE: usize = 12;
 const WORKERS: usize = 2;
-/// Abholintervall, solange Aufträge offen sind; danach läuft kein Timer.
+/// Poll interval while jobs are open; afterwards no timer runs.
 const POLL: Duration = Duration::from_millis(15);
 
 struct Job {
@@ -48,12 +48,12 @@ struct State {
     ui: slint::Weak<AppWindow>,
     shared: Arc<Shared>,
     results: mpsc::Receiver<Done>,
-    /// Zuletzt benutzte am Ende
+    /// Most recently used at the end
     cache: VecDeque<(String, Image)>,
     failed: HashSet<String>,
-    /// Eintrag, dessen Hero zu sehen sein soll
+    /// Entry whose hero should be visible
     wanted: Option<String>,
-    /// Eintrag, dessen Hero gerade vorne liegt
+    /// Entry whose hero is currently in front
     shown: Option<String>,
     polling: bool,
 }
@@ -84,13 +84,13 @@ impl Heroes {
         Self { state: Rc::new(RefCell::new(state)) }
     }
 
-    /// Erzwingt beim nächsten [`Heroes::show`] eine neue Anzeige (z. B. nach neuer Bibliothek).
+    /// Forces a new display on the next [`Heroes::show`] (e.g. after a new library).
     pub fn invalidate(&self) {
         self.state.borrow_mut().wanted = None;
     }
 
-    /// Zeigt den Hero von `focus` (`(id, Pfad)`; `None` = kein Eintrag oder kein Hero) und lädt
-    /// die Heroes in `prefetch` vorab, in dieser Reihenfolge.
+    /// Shows the hero of `focus` (`(id, path)`; `None` = no entry or no hero) and prefetches
+    /// the heroes in `prefetch`, in this order.
     pub fn show(&self, id: Option<&str>, path: Option<&Path>, prefetch: Vec<(String, PathBuf)>) {
         let mut state = self.state.borrow_mut();
         if state.wanted.as_deref() == id && id.is_some() {
@@ -121,7 +121,7 @@ impl Heroes {
         start_polling(&self.state);
     }
 
-    /// Schon dekodierter Hero (für den Startbildschirm), ohne auf die Worker zu warten.
+    /// Already decoded hero (for the launch screen), without waiting for the workers.
     pub fn cached(&self, id: &str) -> Option<Image> {
         self.state.borrow().cache.iter().find(|(c, _)| c == id).map(|(_, image)| image.clone())
     }
@@ -144,7 +144,7 @@ impl State {
         }
     }
 
-    /// Ersetzt die Warteschlange: Aufträge für längst verlassene Kacheln verfallen.
+    /// Replaces the queue: jobs for tiles left long ago are dropped.
     fn enqueue(&self, jobs: Vec<Job>) {
         let mut queue = self.shared.queue.lock().unwrap_or_else(|e| e.into_inner());
         let in_flight = std::mem::take(&mut queue.in_flight);
@@ -160,7 +160,7 @@ impl State {
         !queue.jobs.is_empty() || !queue.in_flight.is_empty()
     }
 
-    /// Legt das Bild in die gerade unsichtbare Ebene und blendet um.
+    /// Puts the image into the currently invisible layer and crossfades.
     fn display(&mut self, id: &str, image: Image) {
         if self.shown.as_deref() == Some(id) {
             return;
@@ -169,9 +169,9 @@ impl State {
         self.flip(image);
     }
 
-    /// Blendet zum leeren Hintergrund (nur Akzentverlauf) über.
+    /// Fades over to the empty background (accent gradient only).
     fn display_none(&mut self) {
-        // `shown == None` heißt: vorne liegt schon kein Bild.
+        // `shown == None` means: there is already no image in front.
         if self.shown.take().is_some() {
             self.flip(Image::default());
         }
@@ -188,9 +188,9 @@ impl State {
         ui.set_hero_front_a(front_a);
     }
 
-    /// Holt fertige Bilder ab; `true`, solange noch Aufträge offen sind.
+    /// Collects finished images; `true` while jobs are still open.
     fn poll(&mut self) -> bool {
-        // Erst prüfen, dann abholen: ein Worker meldet sein Ergebnis, bevor er den Auftrag austrägt.
+        // Check first, then collect: a worker reports its result before it removes the job.
         let busy = self.busy();
         while let Ok((id, pixels)) = self.results.try_recv() {
             match pixels {
@@ -257,7 +257,7 @@ fn worker(shared: &Shared, results: &mpsc::Sender<Done>) {
 }
 
 fn decode(path: &Path) -> Option<SharedPixelBuffer<Rgba8Pixel>> {
-    let image = image::open(path).map_err(|err| eprintln!("Hero {} nicht lesbar: {err}", path.display())).ok()?;
+    let image = image::open(path).map_err(|err| eprintln!("Cannot read hero {}: {err}", path.display())).ok()?;
     let (w, h) = MAX_SIZE;
     let image = if image.width() > w || image.height() > h { image.thumbnail(w, h) } else { image };
     let rgba = image.into_rgba8();

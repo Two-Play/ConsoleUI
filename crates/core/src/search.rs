@@ -1,9 +1,9 @@
-//! Suche über die App-Titel, unempfindlich gegen Groß-/Kleinschreibung und Umlaute.
+//! Search over the app titles, insensitive to case and umlauts.
 
 use crate::collection::Collection;
 use crate::library::AppEntry;
 
-/// Kleinbuchstaben, Akzente und Umlaute auf die Grundbuchstaben zurückgeführt („Échoes“ → „echoes“).
+/// Lowercase, with accents and umlauts reduced to the base letters ("Échoes" → "echoes").
 pub fn normalize(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for c in text.chars().flat_map(char::to_lowercase) {
@@ -22,7 +22,7 @@ pub fn normalize(text: &str) -> String {
     out
 }
 
-/// Kleinerer Wert = besserer Treffer; `None` = kein Treffer. Jedes Suchwort muss vorkommen.
+/// Smaller value = better match; `None` = no match. Every search word must occur.
 fn score(query_words: &[String], title: &str) -> Option<u32> {
     let title = normalize(title);
     let words: Vec<&str> = title.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect();
@@ -40,9 +40,9 @@ fn score(query_words: &[String], title: &str) -> Option<u32> {
     })
 }
 
-/// Indizes der passenden Einträge, beste Treffer zuerst; bei gleicher Güte bleibt die Reihenfolge
-/// von `entries` (also „zuletzt genutzt“) erhalten. Eine leere Suche liefert alle Einträge.
-/// Ausgeblendete Einträge findet die Suche nie.
+/// Indices of the matching entries, best matches first; with equal quality the order of
+/// `entries` (i.e. "recently used") is kept. An empty search returns all entries.
+/// The search never finds hidden entries.
 pub fn search(entries: &[AppEntry], query: &str, collection: &Collection) -> Vec<usize> {
     let words: Vec<String> = normalize(query).split_whitespace().map(str::to_string).collect();
     let mut hits: Vec<(u32, usize)> = entries

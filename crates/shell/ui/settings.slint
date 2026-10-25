@@ -1,7 +1,7 @@
 import { SettingRow } from "types.slint";
 import { Theme } from "theme.slint";
 
-// Einstellungen: Liste von Zeilen, ◀ ▶ ändert den Wert der fokussierten Zeile.
+// Settings: a list of rows; ◀ ▶ changes the value of the focused row.
 export component SettingsPage inherits Rectangle {
     in property <[SettingRow]> rows;
     in property <int> focused;
@@ -14,7 +14,7 @@ export component SettingsPage inherits Rectangle {
     Text {
         x: root.margin;
         y: 120px * root.s;
-        text: "Einstellungen";
+        text: @tr("Settings");
         color: Theme.text;
         font-size: 44px * root.s;
         font-weight: 800;

@@ -1,6 +1,6 @@
 use crate::nav::Action;
 
-/// Fokus in einem Raster mit variabler Spaltenzahl (die UI berechnet sie aus der Fensterbreite).
+/// Focus in a grid with a variable column count (the UI computes it from the window width).
 #[derive(Debug, Clone, Default)]
 pub struct Grid {
     len: usize,
@@ -20,14 +20,14 @@ impl Grid {
         self.focused = index.min(self.len.saturating_sub(1));
     }
 
-    /// Neue Anzahl Einträge (z. B. nach einem Filterwechsel); der Fokus bleibt gültig.
+    /// New number of entries (e.g. after a filter change); the focus stays valid.
     pub fn set_len(&mut self, len: usize) {
         self.len = len;
         self.focus(self.focused);
     }
 
-    /// Gibt zurück, ob sich der Fokus geändert hat. Links/Rechts laufen über das Zeilenende hinaus
-    /// in die nächste Zeile, Runter springt in einer kürzeren letzten Zeile auf deren letzten Eintrag.
+    /// Returns whether the focus changed. Left/right run past the end of the row into the next
+    /// row; down in a shorter last row jumps to its last entry.
     pub fn apply(&mut self, action: Action, columns: usize) -> bool {
         let columns = columns.max(1);
         let current = self.focused;

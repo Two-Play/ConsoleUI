@@ -1,5 +1,6 @@
 //! Context menu (Options/Tab) for the focused entry in home and library (Story 2.7).
 
+use consoleui_core::i18n::{tr, trf};
 use consoleui_core::{Action, LibrarySort};
 
 use crate::ContextItem;
@@ -62,7 +63,7 @@ impl ContextMenu {
         if library {
             actions.push(ContextAction::Sort);
         }
-        let title = entry.as_ref().map_or_else(|| "Bibliothek".to_string(), |e| e.title.clone());
+        let title = entry.as_ref().map_or_else(|| tr("Library").to_string(), |e| e.title.clone());
         Self { entry_id: entry.map(|e| e.id), title, actions, focused: 0 }
     }
 
@@ -98,13 +99,13 @@ impl ContextMenu {
             .iter()
             .map(|action| {
                 let (symbol, label) = match action {
-                    ContextAction::Pin => ("⚲", "Anheften".to_string()),
-                    ContextAction::Unpin => ("⚲", "Lösen".to_string()),
-                    ContextAction::Hide => ("◌", "Ausblenden".to_string()),
-                    ContextAction::Show => ("●", "Wieder anzeigen".to_string()),
-                    ContextAction::GameOptions => ("▣", "Gamescope options…".to_string()),
-                    ContextAction::Quit => ("■", "Beenden".to_string()),
-                    ContextAction::Sort => ("⇅", format!("Sortierung: {}", sort.label())),
+                    ContextAction::Pin => ("⚲", tr("Pin").to_string()),
+                    ContextAction::Unpin => ("⚲", tr("Unpin").to_string()),
+                    ContextAction::Hide => ("◌", tr("Hide").to_string()),
+                    ContextAction::Show => ("●", tr("Show again").to_string()),
+                    ContextAction::GameOptions => ("▣", tr("Gamescope options…").to_string()),
+                    ContextAction::Quit => ("■", tr("Quit").to_string()),
+                    ContextAction::Sort => ("⇅", trf("Sort: {}", &[&sort.label()])),
                 };
                 ContextItem { symbol: symbol.into(), label: label.into() }
             })

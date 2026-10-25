@@ -1,27 +1,29 @@
-//! WLAN-Modell (Story 5.3): Netzwerke, wie NetworkManager sie meldet, aufbereitet für die
-//! WLAN-Seite. Ohne D-Bus; die Abfrage selbst steckt in der Shell (`dbus.rs`).
+//! Wi-Fi model (Story 5.3): networks as NetworkManager reports them, prepared for the Wi-Fi page.
+//! Without D-Bus; the query itself lives in the shell (`dbus.rs`).
 
-/// Ein sichtbares WLAN (pro SSID zusammengefasst)
+use crate::i18n::tr;
+
+/// A visible Wi-Fi network (merged per SSID)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WifiNetwork {
     pub ssid: String,
-    /// Signalstärke 0–100 %
+    /// Signal strength 0–100 %
     pub strength: u8,
-    /// Braucht ein Passwort (WEP/WPA/WPA2/WPA3)
+    /// Needs a password (WEP/WPA/WPA2/WPA3)
     pub secured: bool,
     pub connected: bool,
-    /// Es gibt schon ein gespeichertes Profil (Verbinden ohne Passwort-Eingabe)
+    /// There is a saved profile already (connect without entering a password)
     pub known: bool,
 }
 
-/// Was die WLAN-Seite anzeigt
+/// What the Wi-Fi page shows
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct WifiState {
-    /// Gibt es überhaupt einen WLAN-Adapter?
+    /// Is there a Wi-Fi adapter at all?
     pub adapter: bool,
-    /// WLAN eingeschaltet (Software und Hardware)
+    /// Wi-Fi switched on (software and hardware)
     pub enabled: bool,
-    /// Sortiert, siehe [`sort_networks`]
+    /// Sorted, see [`sort_networks`]
     pub networks: Vec<WifiNetwork>,
 }
 
@@ -34,33 +36,33 @@ impl WifiState {
         self.networks.iter().find(|n| n.ssid == ssid)
     }
 
-    /// Kurzer Zustand für die Zeile „WLAN“ in den Einstellungen
+    /// Short state for the "Wi-Fi" row of the settings
     pub fn summary(&self) -> String {
         if !self.adapter {
-            "Kein Adapter".into()
+            tr("No adapter").into()
         } else if !self.enabled {
-            "Aus".into()
+            tr("Off").into()
         } else if let Some(network) = self.connected() {
             network.ssid.clone()
         } else {
-            "Nicht verbunden".into()
+            tr("Not connected").into()
         }
     }
 }
 
-/// NetworkManager-Flags eines Access Points: gesichert, sobald WPA/RSN-Flags gesetzt sind oder
-/// das Privacy-Flag (WEP) an ist.
+/// NetworkManager flags of an access point: secured as soon as WPA/RSN flags are set or the
+/// privacy flag (WEP) is on.
 pub fn is_secured(flags: u32, wpa_flags: u32, rsn_flags: u32) -> bool {
     const NM_802_11_AP_FLAGS_PRIVACY: u32 = 0x1;
     flags & NM_802_11_AP_FLAGS_PRIVACY != 0 || wpa_flags != 0 || rsn_flags != 0
 }
 
-/// SSIDs sind Bytes; ungültiges UTF-8 wird ersetzt, Steuerzeichen fallen weg.
+/// SSIDs are bytes; invalid UTF-8 is replaced, control characters are dropped.
 pub fn ssid_from_bytes(bytes: &[u8]) -> String {
     String::from_utf8_lossy(bytes).chars().filter(|c| !c.is_control()).collect()
 }
 
-/// Ein Access Point, wie ihn NetworkManager liefert (ein Netz kann mehrere haben)
+/// An access point as NetworkManager reports it (a network can have several)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AccessPoint {
     pub ssid: String,
@@ -68,8 +70,8 @@ pub struct AccessPoint {
     pub secured: bool,
 }
 
-/// Fasst Access Points zu Netzen zusammen (stärkster gewinnt), lässt versteckte Netze ohne SSID
-/// weg, markiert das verbundene und die gespeicherten Netze und sortiert.
+/// Merges access points into networks (the strongest wins), leaves out hidden networks without
+/// an SSID, marks the connected and the saved networks and sorts.
 pub fn build_networks(points: &[AccessPoint], connected: Option<&str>, known: &[String]) -> Vec<WifiNetwork> {
     let mut networks: Vec<WifiNetwork> = Vec::new();
     for point in points.iter().filter(|p| !p.ssid.trim().is_empty()) {
@@ -91,7 +93,7 @@ pub fn build_networks(points: &[AccessPoint], connected: Option<&str>, known: &[
     networks
 }
 
-/// Verbundenes Netz zuerst, dann nach Signalstärke, bei Gleichstand alphabetisch.
+/// Connected network first, then by signal strength, on a tie alphabetical.
 pub fn sort_networks(networks: &mut [WifiNetwork]) {
     networks.sort_by(|a, b| {
         b.connected
@@ -101,7 +103,7 @@ pub fn sort_networks(networks: &mut [WifiNetwork]) {
     });
 }
 
-/// Balken für die Anzeige (0–4)
+/// Bars for the display (0–4)
 pub fn signal_bars(strength: u8) -> u8 {
     match strength {
         0..=19 => 1,
@@ -154,11 +156,11 @@ mod tests {
     #[test]
     fn summary_and_bars() {
         let mut state = WifiState::default();
-        assert_eq!(state.summary(), "Kein Adapter");
+        assert_eq!(state.summary(), "No adapter");
         state.adapter = true;
-        assert_eq!(state.summary(), "Aus");
+        assert_eq!(state.summary(), "Off");
         state.enabled = true;
-        assert_eq!(state.summary(), "Nicht verbunden");
+        assert_eq!(state.summary(), "Not connected");
         state.networks = build_networks(&[ap("Zuhause", 50, true)], Some("Zuhause"), &[]);
         assert_eq!(state.summary(), "Zuhause");
         assert_eq!([signal_bars(5), signal_bars(30), signal_bars(50), signal_bars(90)], [1, 2, 3, 4]);

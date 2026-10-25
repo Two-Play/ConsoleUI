@@ -1,5 +1,5 @@
-//! UI-Klänge über einen dauerhaft laufenden `pw-cat`, der rohes PCM von stdin abspielt.
-//! Ein eigener Thread schreibt die Klänge, damit die UI nie auf die Pipe warten muss.
+//! UI sounds via a permanently running `pw-cat` that plays raw PCM from stdin.
+//! A dedicated thread writes the sounds, so the UI never has to wait for the pipe.
 
 use std::collections::HashMap;
 use std::io::Write;
@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use consoleui_core::sound::{self, SAMPLE_RATE, Sound};
 
-/// Schnelles Navigieren soll die Klänge nicht stauen; dichter folgende Fokusklänge fallen weg.
+/// Fast navigation should not pile up sounds; focus sounds following more closely are dropped.
 const MIN_MOVE_GAP: Duration = Duration::from_millis(60);
 
 pub struct Audio {
@@ -28,10 +28,10 @@ impl Audio {
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()
-            .map_err(|err| eprintln!("Klänge nicht verfügbar (pw-cat): {err}"))
+            .map_err(|err| eprintln!("Sounds not available (pw-cat): {err}"))
             .ok()?;
         let mut stdin = child.stdin.take()?;
-        // Kleine Warteschlange: Was nicht hineinpasst, wird verworfen statt verzögert.
+        // Small queue: whatever does not fit is dropped instead of delayed.
         let (sender, receiver) = mpsc::sync_channel::<Sound>(2);
         std::thread::spawn(move || {
             let mut cache: HashMap<Sound, Vec<u8>> = HashMap::new();
@@ -54,7 +54,7 @@ impl Audio {
             self.last_move = Some(now);
         }
         if let Err(TrySendError::Disconnected(_)) = self.sender.try_send(sound) {
-            eprintln!("Klänge: pw-cat ist beendet");
+            eprintln!("Sounds: pw-cat has exited");
         }
     }
 }

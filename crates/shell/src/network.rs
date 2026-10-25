@@ -1,11 +1,12 @@
-//! Unterseiten „WLAN“ und „Bluetooth“ der Einstellungen (Stories 5.3/5.4): verbindet den
-//! Seitenzustand aus `consoleui_core::netpages` mit dem Netzwerk-Thread und baut die Slint-Ansicht.
-//! D-Bus-Aufrufe laufen nur im Thread; `main.rs` fragt die Antworten per Timer ab.
+//! "Wi-Fi" and "Bluetooth" sub-pages of the settings (Stories 5.3/5.4): connects the page state
+//! from `consoleui_core::netpages` with the network thread and builds the Slint view. D-Bus calls
+//! only run on the thread; `main.rs` polls the responses with a timer.
 
 use std::sync::mpsc::{Receiver, Sender};
 use std::time::{Duration, Instant};
 
 use consoleui_core::fakenet::FakeBackend;
+use consoleui_core::i18n::tr;
 use consoleui_core::netpages::NetPages;
 use consoleui_core::network::{self, Backend, Notice, Request, Response};
 use consoleui_core::osk::OnScreenKeyboard;
@@ -14,7 +15,7 @@ use slint::{ModelRc, VecModel};
 use crate::dbus::DbusBackend;
 use crate::{GlyphButton, KeyCap, NetRow, NetView};
 
-/// So lange „dauert“ Verbinden und Koppeln in der Simulation
+/// How long connecting and pairing "take" in the simulation
 const FAKE_DELAY: Duration = Duration::from_millis(900);
 
 #[derive(Default)]
@@ -25,7 +26,7 @@ pub struct Network {
 }
 
 impl Network {
-    /// Startet den Netzwerk-Thread mit NetworkManager/BlueZ oder der Simulation (`--fake-network`).
+    /// Starts the network thread with NetworkManager/BlueZ or the simulation (`--fake-network`).
     pub fn start(&mut self, fake: bool) {
         let backend: Box<dyn Backend> =
             if fake { Box::new(FakeBackend::new(FAKE_DELAY)) } else { Box::new(DbusBackend::default()) };
@@ -41,8 +42,8 @@ impl Network {
         }
     }
 
-    /// Holt Antworten ab und stößt bei Bedarf ein Neulesen an. Gibt zurück, ob sich etwas geändert
-    /// hat, und die fälligen Hinweise.
+    /// Fetches responses and triggers a refresh when due. Returns whether something changed, and
+    /// the notices that are due.
     pub fn poll(&mut self, visible: bool) -> (bool, Vec<Notice>) {
         if self.pages.refresh_due(Instant::now(), visible) {
             self.send(vec![Request::Refresh]);
@@ -54,15 +55,15 @@ impl Network {
         (changed, notices)
     }
 
-    /// Hinweise unten (Taste, Beschriftung) für die offene Unterseite
+    /// Hints at the bottom (button, label) for the open sub-page
     pub fn hints(&self) -> Vec<(GlyphButton, &'static str)> {
         let mut hints = Vec::new();
         if self.pages.password_open() {
-            hints.push((GlyphButton::Confirm, "Eingeben"));
-            hints.push((GlyphButton::West, "Löschen"));
-            hints.push((GlyphButton::North, "Leerzeichen"));
+            hints.push((GlyphButton::Confirm, tr("Type")));
+            hints.push((GlyphButton::West, tr("Delete")));
+            hints.push((GlyphButton::North, tr("Space")));
         } else {
-            hints.push((GlyphButton::Updown, "Auswählen"));
+            hints.push((GlyphButton::Updown, tr("Select")));
             if let Some(label) = self.pages.confirm_label() {
                 hints.push((GlyphButton::Confirm, label));
             }
@@ -73,7 +74,7 @@ impl Network {
         if let Some(label) = self.pages.menu_label() {
             hints.push((GlyphButton::Menu, label));
         }
-        hints.push((GlyphButton::Back, if self.pages.password_open() { "Abbrechen" } else { "Zurück" }));
+        hints.push((GlyphButton::Back, if self.pages.password_open() { tr("Cancel") } else { tr("Back") }));
         hints
     }
 

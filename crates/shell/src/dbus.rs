@@ -1,12 +1,13 @@
-//! Echtes WLAN-/Bluetooth-Backend (Stories 5.3/5.4): NetworkManager und BlueZ über den
-//! System-Bus (zbus, blockierende API). Läuft nur im Netzwerk-Thread (`consoleui_core::network`),
-//! nie im UI-Thread. Die Aufbereitung (Zusammenfassen, Sortieren, Geräteart) steckt in
-//! `consoleui_core::wifi` bzw. `::bluetooth`.
+//! Real Wi-Fi/Bluetooth backend (Stories 5.3/5.4): NetworkManager and BlueZ over the system bus
+//! (zbus, blocking API). Runs only on the network thread (`consoleui_core::network`), never on the
+//! UI thread. The processing (merging, sorting, device kind) lives in `consoleui_core::wifi` and
+//! `::bluetooth`.
 
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use consoleui_core::bluetooth::{self, Adapter, BluetoothState, BtDevice};
+use consoleui_core::i18n::{tr, trf};
 use consoleui_core::network::{Backend, Request};
 use consoleui_core::wifi::{self, AccessPoint, WifiState};
 use serde::de::DeserializeOwned;
@@ -29,13 +30,13 @@ const BLUEZ_ADAPTER: &str = "org.bluez.Adapter1";
 const BLUEZ_DEVICE: &str = "org.bluez.Device1";
 const AGENT_PATH: &str = "/org/consoleui/agent";
 
-/// So lange wartet „Verbinden“ auf NetworkManager, bevor es aufgibt
+/// How long "Connect" waits for NetworkManager before giving up
 const ACTIVATION_TIMEOUT: Duration = Duration::from_secs(30);
 
 type Props = HashMap<String, OwnedValue>;
 type ManagedObjects = HashMap<OwnedObjectPath, HashMap<String, Props>>;
 
-/// Sicherheitsart eines WLANs, für das Profil beim ersten Verbinden
+/// Security type of a Wi-Fi network, for the profile on the first connect
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Security {
     Open,
@@ -68,11 +69,11 @@ impl Security {
 #[derive(Default)]
 pub struct DbusBackend {
     connection: Option<Connection>,
-    /// Aus dem letzten Lesen: WLAN-Gerät, Access Point und gespeichertes Profil je SSID
+    /// From the last read: Wi-Fi device, access point and saved profile per SSID
     wifi_device: Option<OwnedObjectPath>,
     access_points: HashMap<String, (OwnedObjectPath, Security)>,
     profiles: HashMap<String, OwnedObjectPath>,
-    /// Bluetooth-Adapter und Geräte je Adresse
+    /// Bluetooth adapter and devices per address
     adapter: Option<OwnedObjectPath>,
     devices: HashMap<String, OwnedObjectPath>,
     agent_registered: bool,
@@ -82,7 +83,7 @@ fn err(error: impl std::fmt::Display) -> String {
     error.to_string()
 }
 
-/// Kurze, lesbare Meldung aus einem D-Bus-Fehler (`org.bluez.Error.AuthenticationFailed` → „AuthenticationFailed“)
+/// Short, readable message from a D-Bus error (`org.bluez.Error.AuthenticationFailed` → "AuthenticationFailed")
 fn short(error: zbus::Error) -> String {
     match &error {
         zbus::Error::MethodError(name, message, _) => {
@@ -103,9 +104,9 @@ fn get<T: TryFrom<OwnedValue>>(props: &Props, key: &str) -> Option<T> {
 impl DbusBackend {
     fn bus(&mut self) -> Result<&Connection, String> {
         if self.connection.is_none() {
-            self.connection = Some(Connection::system().map_err(|e| format!("System-Bus nicht erreichbar: {e}"))?);
+            self.connection = Some(Connection::system().map_err(|e| trf("Can't reach the system bus: {}", &[&e]))?);
         }
-        Ok(self.connection.as_ref().expect("gerade gesetzt"))
+        Ok(self.connection.as_ref().expect("just set"))
     }
 
     fn call<B, R>(&mut self, dest: &str, path: &str, iface: &str, method: &str, body: &B) -> Result<R, String>
@@ -135,7 +136,7 @@ impl DbusBackend {
 
     // --- NetworkManager --------------------------------------------------------------------
 
-    /// SSIDs und Pfade der gespeicherten WLAN-Profile
+    /// SSIDs and paths of the saved Wi-Fi profiles
     fn read_profiles(&mut self) -> HashMap<String, OwnedObjectPath> {
         let paths: Vec<OwnedObjectPath> =
             self.call(NM, NM_SETTINGS_PATH, NM_SETTINGS, "ListConnections", &()).unwrap_or_default();
@@ -177,7 +178,7 @@ impl DbusBackend {
         let mut best: HashMap<String, u8> = HashMap::new();
         self.access_points.clear();
         for path in paths {
-            // Access Points verschwinden auch mal zwischen zwei Aufrufen
+            // Access points sometimes disappear between two calls
             let Ok(props) = self.get_all(NM, path.as_str(), NM_AP) else { continue };
             let ssid = wifi::ssid_from_bytes(&get::<Vec<u8>>(&props, "Ssid").unwrap_or_default());
             let (flags, wpa, rsn) = (
@@ -189,7 +190,7 @@ impl DbusBackend {
             if active.as_ref() == Some(&path) {
                 connected = Some(ssid.clone());
             }
-            // Pro SSID den stärksten Access Point zum Verbinden merken
+            // Remember the strongest access point per SSID for connecting
             if best.get(&ssid).is_none_or(|&s| strength > s) {
                 best.insert(ssid.clone(), strength);
                 self.access_points.insert(ssid.clone(), (path.clone(), Security::from_flags(flags, wpa, rsn)));
@@ -203,14 +204,14 @@ impl DbusBackend {
     }
 
     fn wifi_device(&self) -> Result<OwnedObjectPath, String> {
-        self.wifi_device.clone().ok_or_else(|| "Kein WLAN-Adapter".to_string())
+        self.wifi_device.clone().ok_or_else(|| tr("No Wi-Fi adapter").to_string())
     }
 
     fn connect_wifi(&mut self, ssid: &str, password: Option<&str>) -> Result<(), String> {
         let device = self.wifi_device()?;
         let root = ObjectPath::from_static_str_unchecked("/");
         let (active, created) = match (self.profiles.get(ssid).cloned(), password) {
-            // Gespeichertes Profil und kein neues Passwort: einfach aktivieren
+            // Saved profile and no new password: just activate it
             (Some(profile), None) => {
                 let active: OwnedObjectPath =
                     self.call(NM, NM_PATH, NM, "ActivateConnection", &(&profile, &device, &root))?;
@@ -218,7 +219,7 @@ impl DbusBackend {
             }
             (existing, _) => {
                 let (ap, security) =
-                    self.access_points.get(ssid).cloned().ok_or_else(|| "Netz nicht mehr sichtbar".to_string())?;
+                    self.access_points.get(ssid).cloned().ok_or_else(|| tr("Network no longer visible").to_string())?;
                 let mut settings: HashMap<&str, HashMap<&str, Value<'_>>> = HashMap::new();
                 settings.insert(
                     "connection",
@@ -229,17 +230,17 @@ impl DbusBackend {
                     Security::Open => None,
                     Security::WpaPsk => Some("wpa-psk"),
                     Security::Sae => Some("sae"),
-                    Security::Wep => return Err("WEP wird nicht unterstützt".into()),
-                    Security::Enterprise => return Err("WPA-Enterprise wird nicht unterstützt".into()),
+                    Security::Wep => return Err(tr("WEP is not supported").into()),
+                    Security::Enterprise => return Err(tr("WPA Enterprise is not supported").into()),
                 };
                 if let Some(key_mgmt) = key_mgmt {
-                    let psk = password.ok_or_else(|| "Passwort erforderlich".to_string())?;
+                    let psk = password.ok_or_else(|| tr("Password required").to_string())?;
                     settings.insert(
                         "802-11-wireless-security",
                         HashMap::from([("key-mgmt", Value::from(key_mgmt)), ("psk", Value::from(psk))]),
                     );
                 }
-                // Altes Profil mit falschem Passwort ersetzen
+                // Replace an old profile with a wrong password
                 if let Some(old) = existing {
                     let _ = self.call_unit(NM, old.as_str(), NM_CONNECTION, "Delete", &());
                 }
@@ -249,24 +250,24 @@ impl DbusBackend {
             }
         };
         let result = self.wait_activated(&active);
-        // Ein neu angelegtes Profil, mit dem es nicht klappt (falsches Passwort), wieder löschen
+        // Delete a newly created profile again if it does not work (wrong password)
         if let (Err(_), Some(profile)) = (&result, created) {
             let _ = self.call_unit(NM, profile.as_str(), NM_CONNECTION, "Delete", &());
         }
         result
     }
 
-    /// Wartet, bis die Verbindung steht (State 2) oder scheitert (State 4 bzw. Objekt weg).
+    /// Waits until the connection is up (state 2) or fails (state 4 or object gone).
     fn wait_activated(&mut self, active: &OwnedObjectPath) -> Result<(), String> {
         let started = Instant::now();
         while started.elapsed() < ACTIVATION_TIMEOUT {
             match self.get_all(NM, active.as_str(), NM_ACTIVE).ok().and_then(|p| get::<u32>(&p, "State")) {
                 Some(2) => return Ok(()),
-                Some(3 | 4) | None => return Err("Verbindung abgelehnt (Passwort falsch?)".into()),
+                Some(3 | 4) | None => return Err(tr("Connection refused (wrong password?)").into()),
                 _ => std::thread::sleep(Duration::from_millis(300)),
             }
         }
-        Err("Zeitüberschreitung".into())
+        Err(tr("Timed out").into())
     }
 
     // --- BlueZ -----------------------------------------------------------------------------
@@ -274,7 +275,7 @@ impl DbusBackend {
     fn read_bluetooth(&mut self) -> Result<BluetoothState, String> {
         let objects: ManagedObjects = self
             .call(BLUEZ, "/", "org.freedesktop.DBus.ObjectManager", "GetManagedObjects", &())
-            .map_err(|e| if e.contains("ServiceUnknown") { "BlueZ läuft nicht".into() } else { e })?;
+            .map_err(|e| if e.contains("ServiceUnknown") { tr("BlueZ is not running").into() } else { e })?;
         let mut adapters: Vec<(&OwnedObjectPath, &Props)> =
             objects.iter().filter_map(|(path, ifaces)| Some((path, ifaces.get(BLUEZ_ADAPTER)?))).collect();
         adapters.sort_by(|a, b| a.0.as_str().cmp(b.0.as_str()));
@@ -317,16 +318,16 @@ impl DbusBackend {
     }
 
     fn adapter(&self) -> Result<String, String> {
-        self.adapter.as_ref().map(|p| p.to_string()).ok_or_else(|| "Kein Bluetooth-Adapter".to_string())
+        self.adapter.as_ref().map(|p| p.to_string()).ok_or_else(|| tr("No Bluetooth adapter").to_string())
     }
 
     fn device(&self, address: &str) -> Result<String, String> {
-        self.devices.get(address).map(|p| p.to_string()).ok_or_else(|| "Gerät nicht mehr da".to_string())
+        self.devices.get(address).map(|p| p.to_string()).ok_or_else(|| tr("Device is gone").to_string())
     }
 
-    /// Eigener Kopplungs-Agent ohne Ein-/Ausgabe (Controller koppeln per „Just Works“). BlueZ fragt
-    /// den Agenten der Verbindung, die `Pair` aufruft; ohne ihn scheitert die Kopplung, wenn in der
-    /// Session kein anderer Agent (z. B. von KDE) läuft.
+    /// Own pairing agent without input/output (controllers pair via "Just Works"). BlueZ asks the
+    /// agent of the connection that calls `Pair`; without it pairing fails when no other agent
+    /// (e.g. KDE's) runs in the session.
     fn register_agent(&mut self) -> Result<(), String> {
         if self.agent_registered {
             return Ok(());
@@ -341,20 +342,20 @@ impl DbusBackend {
     fn pair(&mut self, address: &str) -> Result<(), String> {
         let path = self.device(address)?;
         if let Err(err) = self.register_agent() {
-            eprintln!("Bluetooth-Agent konnte nicht registriert werden: {err}");
+            eprintln!("Cannot register the Bluetooth agent: {err}");
         }
         match self.call_unit(BLUEZ, &path, BLUEZ_DEVICE, "Pair", &()) {
             Err(e) if !e.starts_with("AlreadyExists") => return Err(e),
             _ => {}
         }
-        // Vertrauen, damit sich der Controller später selbst wieder verbinden darf
+        // Trust it, so the controller may reconnect by itself later
         self.set(BLUEZ, &path, BLUEZ_DEVICE, "Trusted", Value::from(true))?;
         self.call_unit(BLUEZ, &path, BLUEZ_DEVICE, "Connect", &())
     }
 }
 
-/// `org.bluez.Agent1`: nimmt jede Anfrage an (wird nur während einer vom Nutzer gestarteten
-/// Kopplung gefragt).
+/// `org.bluez.Agent1`: accepts every request (only asked during a pairing started by the
+/// user).
 struct Agent;
 
 #[zbus::interface(name = "org.bluez.Agent1")]
@@ -362,7 +363,7 @@ impl Agent {
     fn release(&self) {}
 
     fn request_pin_code(&self, _device: OwnedObjectPath) -> String {
-        // Alte Controller ohne Secure Simple Pairing
+        // Old controllers without Secure Simple Pairing
         "0000".into()
     }
 

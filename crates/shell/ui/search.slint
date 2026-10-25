@@ -2,7 +2,7 @@ import { AppTile, KeyCap } from "types.slint";
 import { Theme } from "theme.slint";
 import { TileRow } from "tilerow.slint";
 
-// Suche: Eingabefeld, Bildschirmtastatur und darunter die Treffer als Kachelreihe.
+// Search: input field, on-screen keyboard and below it the results as a row of tiles.
 export component SearchPage inherits Rectangle {
     in property <string> query;
     in property <[KeyCap]> keys;
@@ -25,13 +25,13 @@ export component SearchPage inherits Rectangle {
     Text {
         x: root.margin;
         y: 120px * root.s;
-        text: "Suche";
+        text: @tr("Search");
         color: Theme.text;
         font-size: 44px * root.s;
         font-weight: 800;
     }
 
-    // Eingabefeld
+    // Input field
     Rectangle {
         x: root.margin + 260px * root.s;
         y: 116px * root.s;
@@ -46,7 +46,7 @@ export component SearchPage inherits Rectangle {
             x: 28px * root.s;
             height: 100%;
             width: parent.width - 56px * root.s;
-            text: root.query == "" ? "Spiele und Apps suchen" : root.query + "|";
+            text: root.query == "" ? @tr("Search games and apps") : root.query + "|";
             color: root.query == "" ? Theme.text-dim : Theme.text;
             font-size: 26px * root.s;
             vertical-alignment: center;
@@ -79,7 +79,7 @@ export component SearchPage inherits Rectangle {
     Text {
         x: root.margin;
         y: root.keyboard-y + 5 * root.unit + 28px * root.s;
-        text: root.query == "" ? "Zuletzt genutzt" : root.results.length == 0 ? "Keine Treffer" : root.results.length + " Treffer";
+        text: root.query == "" ? @tr("Recently used") : root.results.length == 0 ? @tr("No results") : @tr("{n} result" | "{n} results" % root.results.length);
         color: Theme.text-dim;
         font-size: 20px * root.s;
     }

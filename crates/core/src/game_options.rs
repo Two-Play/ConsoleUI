@@ -10,6 +10,8 @@
 //! We therefore do not touch them and show the option as unavailable for Steam entries.
 
 use std::collections::BTreeMap;
+
+use crate::i18n::tr;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -48,7 +50,7 @@ impl Resolution {
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::Native => "Native",
+            Self::Native => tr("Native"),
             Self::P720 => "720p",
             Self::P800 => "800p",
             Self::P1080 => "1080p",
@@ -77,10 +79,10 @@ impl Upscaler {
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::Off => "Off",
+            Self::Off => tr("Off"),
             Self::Fsr => "FSR",
             Self::Nis => "NIS",
-            Self::Integer => "Integer",
+            Self::Integer => tr("Integer"),
         }
     }
 
@@ -121,7 +123,7 @@ impl FpsLimit {
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::Off => "Off",
+            Self::Off => tr("Off"),
             Self::Fps30 => "30 FPS",
             Self::Fps40 => "40 FPS",
             Self::Fps60 => "60 FPS",
@@ -212,7 +214,7 @@ impl GameOptions {
     /// Short preview of the prefix for the options panel, e.g. `gamescope -w 1280 -h 720 -F fsr -f --`.
     pub fn preview(&self, output: Option<(u32, u32)>) -> String {
         if !self.nested {
-            return "Starts directly, without gamescope".into();
+            return tr("Starts directly, without gamescope").into();
         }
         let mut parts = vec![GAMESCOPE.to_string()];
         parts.extend(self.gamescope_args(output));
@@ -238,29 +240,29 @@ impl GameOption {
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::Nested => "Start in gamescope",
-            Self::Resolution => "Resolution",
-            Self::Upscaler => "Upscaler",
-            Self::FpsLimit => "FPS limit",
+            Self::Nested => tr("Start in gamescope"),
+            Self::Resolution => tr("Resolution"),
+            Self::Upscaler => tr("Upscaler"),
+            Self::FpsLimit => tr("FPS limit"),
             Self::Hdr => "HDR",
-            Self::Fullscreen => "Fullscreen",
+            Self::Fullscreen => tr("Fullscreen"),
         }
     }
 
     pub fn description(self) -> &'static str {
         match self {
-            Self::Nested => "Own nested gamescope for this entry",
-            Self::Resolution => "The game renders at this size",
-            Self::Upscaler => "Scaling to the screen size",
-            Self::FpsLimit => "Frame rate of the nested display",
-            Self::Hdr => "HDR output (needs gamescope's WSI layer)",
-            Self::Fullscreen => "gamescope window covers the screen",
+            Self::Nested => tr("Own nested gamescope for this entry"),
+            Self::Resolution => tr("The game renders at this size"),
+            Self::Upscaler => tr("Scaling to the screen size"),
+            Self::FpsLimit => tr("Frame rate of the nested display"),
+            Self::Hdr => tr("HDR output (needs gamescope's WSI layer)"),
+            Self::Fullscreen => tr("gamescope window covers the screen"),
         }
     }
 }
 
 fn on_off(value: bool) -> &'static str {
-    if value { "On" } else { "Off" }
+    if value { tr("On") } else { tr("Off") }
 }
 
 /// Next (`forward`) or previous value in a list, wrapping around.
@@ -395,8 +397,8 @@ impl GameOptionsPanel {
     pub fn rows(&self) -> Vec<(&'static str, &'static str, &'static str)> {
         if !self.available {
             return vec![(
-                "Not available for Steam games",
-                "Steam starts the game itself. Use gamescope … -- %command% in its launch options.",
+                tr("Not available for Steam games"),
+                tr("Steam starts the game itself. Use gamescope … -- %command% in its launch options."),
                 "",
             )];
         }

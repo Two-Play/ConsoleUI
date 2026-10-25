@@ -1,4 +1,4 @@
-//! Zeigt, was die Shell auf diesem System finden würde: `cargo run -p consoleui-core --example list_library`
+//! Shows what the shell would find on this system: `cargo run -p consoleui-core --example list_library`
 
 fn main() {
     let mut entries = consoleui_core::discover_library();
@@ -17,5 +17,5 @@ fn main() {
             entry.title
         );
     }
-    println!("{} Einträge", entries.len());
+    println!("{} entries", entries.len());
 }

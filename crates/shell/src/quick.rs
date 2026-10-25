@@ -1,15 +1,16 @@
-//! Inhalt und Zustand des Quick-Menüs (PS-/Guide-Taste).
+//! Content and state of the quick menu (PS/Guide button).
 
+use consoleui_core::i18n::{tr, trf};
 use consoleui_core::system::{self, PowerAction, Volume};
 
 use crate::QuickItem;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum QuickAction {
-    /// Zur laufenden App zurück (gamescope-App-ID)
+    /// Back to the running app (gamescope app ID)
     Resume(u32),
     Home,
-    /// Laufende App beenden (Eintrags-ID)
+    /// Quit the running app (entry ID)
     Quit(String),
     Volume,
     Power(PowerAction),
@@ -17,13 +18,13 @@ pub enum QuickAction {
 }
 
 impl QuickAction {
-    /// Folgenschwere Aktionen brauchen einen zweiten Druck.
+    /// Actions with serious consequences need a second press.
     fn needs_confirmation(&self) -> bool {
         matches!(self, Self::Quit(_) | Self::Power(PowerAction::Reboot | PowerAction::PowerOff) | Self::Logout)
     }
 }
 
-/// Die App, die gerade im Vordergrund läuft
+/// The app that currently runs in front
 pub struct ForegroundApp {
     pub app_id: u32,
     pub entry_id: String,
@@ -33,13 +34,13 @@ pub struct ForegroundApp {
 pub struct QuickMenu {
     actions: Vec<QuickAction>,
     focused: usize,
-    /// Fokussierte Aktion wartet auf Bestätigung
+    /// The focused action waits for confirmation
     armed: bool,
     volume: Option<Volume>,
     app_title: Option<String>,
 }
 
-/// Was nach einer Eingabe im Quick-Menü passieren soll
+/// What should happen after an input in the quick menu
 pub enum QuickOutcome {
     Stay,
     Close,
@@ -69,8 +70,8 @@ impl QuickMenu {
 
     pub fn title(&self) -> String {
         match &self.app_title {
-            Some(title) => format!("STEUERZENTRALE · {}", title.to_uppercase()),
-            None => "STEUERZENTRALE".into(),
+            Some(title) => trf("CONTROL CENTER · {}", &[&title.to_uppercase()]),
+            None => tr("CONTROL CENTER").into(),
         }
     }
 
@@ -121,17 +122,17 @@ impl QuickMenu {
             .map(|(i, action)| {
                 let armed = self.armed && i == self.focused;
                 let (symbol, label, value) = match action {
-                    QuickAction::Resume(_) => ("▶", "Fortsetzen", self.app_title.clone().unwrap_or_default()),
-                    QuickAction::Home => ("⌂", "Home", "Zur Übersicht".to_string()),
-                    QuickAction::Quit(_) => ("■", "Beenden", self.app_title.clone().unwrap_or_default()),
-                    QuickAction::Volume => ("♪", "Lautstärke", self.volume_text()),
-                    QuickAction::Power(PowerAction::Suspend) => ("☾", "Standby", String::new()),
-                    QuickAction::Power(PowerAction::Reboot) => ("↻", "Neustart", String::new()),
-                    QuickAction::Power(PowerAction::PowerOff) => ("⏻", "Ausschalten", String::new()),
-                    QuickAction::Logout => ("⇥", "Abmelden", "Shell beenden".to_string()),
+                    QuickAction::Resume(_) => ("▶", tr("Resume"), self.app_title.clone().unwrap_or_default()),
+                    QuickAction::Home => ("⌂", tr("Home"), tr("Go to Home").to_string()),
+                    QuickAction::Quit(_) => ("■", tr("Quit"), self.app_title.clone().unwrap_or_default()),
+                    QuickAction::Volume => ("♪", tr("Volume"), self.volume_text()),
+                    QuickAction::Power(PowerAction::Suspend) => ("☾", tr("Sleep"), String::new()),
+                    QuickAction::Power(PowerAction::Reboot) => ("↻", tr("Restart"), String::new()),
+                    QuickAction::Power(PowerAction::PowerOff) => ("⏻", tr("Power off"), String::new()),
+                    QuickAction::Logout => ("⇥", tr("Sign out"), tr("Quit shell").to_string()),
                 };
-                // Wartet die Aktion auf Bestätigung, rückt ihr Name in die zweite Zeile.
-                let (label, value) = if armed { ("Wirklich?", label.to_string()) } else { (label, value) };
+                // While the action waits for confirmation, its name moves to the second line.
+                let (label, value) = if armed { (tr("Really?"), label.to_string()) } else { (label, value) };
                 let level = match (action, self.volume) {
                     (QuickAction::Volume, Some(volume)) if !volume.muted => volume.percent.into(),
                     (QuickAction::Volume, Some(_)) => 0,
@@ -151,15 +152,15 @@ impl QuickMenu {
 
     fn volume_text(&self) -> String {
         match self.volume {
-            Some(Volume { muted: true, .. }) => "Stumm".into(),
+            Some(Volume { muted: true, .. }) => tr("Muted").into(),
             Some(volume) => format!("{} %", volume.percent),
-            None => "nicht verfügbar".into(),
+            None => tr("not available").into(),
         }
     }
 }
 
 fn report(result: std::io::Result<()>) {
     if let Err(err) = result {
-        eprintln!("Quick-Menü: {err}");
+        eprintln!("Quick menu: {err}");
     }
 }

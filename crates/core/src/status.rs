@@ -1,4 +1,4 @@
-//! Systemstatus für die Top-Bar (Akku, Netzwerk) direkt aus sysfs/procfs.
+//! System status for the top bar (battery, network) straight from sysfs/procfs.
 
 use std::fs;
 use std::path::Path;
@@ -13,7 +13,7 @@ pub struct Battery {
 pub enum Network {
     Offline,
     Ethernet,
-    /// Signalstärke in Prozent, falls bekannt
+    /// Signal strength in percent, if known
     Wifi(Option<u8>),
 }
 
@@ -28,7 +28,7 @@ pub fn read() -> SystemStatus {
     read_from(Path::new("/sys/class"), &wireless)
 }
 
-/// `class_dir` entspricht `/sys/class`, `proc_wireless` dem Inhalt von `/proc/net/wireless`.
+/// `class_dir` corresponds to `/sys/class`, `proc_wireless` to the content of `/proc/net/wireless`.
 pub fn read_from(class_dir: &Path, proc_wireless: &str) -> SystemStatus {
     SystemStatus { battery: battery(&class_dir.join("power_supply")), network: network(&class_dir.join("net"), proc_wireless) }
 }
@@ -44,7 +44,7 @@ fn battery(dir: &Path) -> Option<Battery> {
         if read_trimmed(&supply.join("type"))? != "Battery" {
             return None;
         }
-        // Akkus von Mäusen oder Controllern melden `scope=Device`.
+        // Batteries of mice or controllers report `scope=Device`.
         if read_trimmed(&supply.join("scope")).is_some_and(|s| s == "Device") {
             return None;
         }
@@ -59,7 +59,7 @@ fn network(dir: &Path, proc_wireless: &str) -> Network {
     let mut wired = false;
     for iface in fs::read_dir(dir).into_iter().flatten().flatten() {
         let path = iface.path();
-        // Nur echte Hardware: virtuelle Geräte (lo, Bridges, VPN, Docker) haben kein `device`.
+        // Only real hardware: virtual devices (lo, bridges, VPN, Docker) have no `device`.
         if !path.join("device").exists() || read_trimmed(&path.join("operstate")).as_deref() != Some("up") {
             continue;
         }
@@ -72,7 +72,7 @@ fn network(dir: &Path, proc_wireless: &str) -> Network {
     if wired { Network::Ethernet } else { Network::Offline }
 }
 
-/// Linkqualität aus `/proc/net/wireless` (Skala 0–70) in Prozent.
+/// Link quality from `/proc/net/wireless` (scale 0–70) in percent.
 fn wifi_signal(proc_wireless: &str, iface: &str) -> Option<u8> {
     let line = proc_wireless.lines().find(|l| l.trim_start().starts_with(&format!("{iface}:")))?;
     let quality: f32 = line.split_whitespace().nth(2)?.trim_end_matches('.').parse().ok()?;

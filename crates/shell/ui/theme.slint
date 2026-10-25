@@ -1,12 +1,12 @@
-// Zentrale Design-Tokens (Farben, Timings). Alle Komponenten lesen von hier. Akzentfarbe und
-// Dauern stellt Rust nach den Einstellungen ein (Animationen aus = alle Dauern 0).
+// Central design tokens (colors, timings). All components read from here. Rust sets the accent
+// color and durations from the settings (animations off = all durations 0).
 export global Theme {
     out property <color> base: #06070c;
     out property <color> text: #f4f6fb;
     out property <color> text-dim: #f4f6fb99;
     out property <color> surface: #ffffff1f;
     out property <color> charging: #7cffb2;
-    // Fokusrahmen, Buttons, ausgewählte Karten und Tasten
+    // Focus ring, buttons, selected cards and keys
     in-out property <color> accent: #f4f6fb;
 
     in-out property <duration> focus-duration: 220ms;

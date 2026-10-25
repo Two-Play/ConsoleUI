@@ -2,8 +2,8 @@ import { Theme } from "theme.slint";
 import { ControllerStyle, GlyphButton, Hint, QuickItem } from "types.slint";
 import { HintBar } from "glyph.slint";
 
-// Quick-Menü: Leiste am unteren Rand mit Karten, darüber eine leichte Abdunklung. Wird im
-// Overlay-Fenster (gamescope) oder als Ebene im Hauptfenster verwendet.
+// Quick menu: a bar of cards at the bottom edge with a slight darkening above. Used in the overlay
+// window (gamescope) or as a layer of the main window.
 export component QuickMenu inherits Rectangle {
     in property <bool> open;
     in property <string> title;
@@ -114,9 +114,9 @@ export component QuickMenu inherits Rectangle {
             height: 28px * root.s;
             style: root.style;
             s: root.s;
-            hints: root.current.armed ? [{ button: GlyphButton.confirm, label: "Bestätigen" }, { button: GlyphButton.back, label: "Abbrechen" }]
-                : root.current.adjustable ? [{ button: GlyphButton.dpad, label: "Auswählen" }, { button: GlyphButton.updown, label: "Lautstärke" }, { button: GlyphButton.confirm, label: "Stumm" }, { button: GlyphButton.back, label: "Schließen" }]
-                : [{ button: GlyphButton.dpad, label: "Auswählen" }, { button: GlyphButton.confirm, label: "OK" }, { button: GlyphButton.back, label: "Schließen" }];
+            hints: root.current.armed ? [{ button: GlyphButton.confirm, label: @tr("Confirm") }, { button: GlyphButton.back, label: @tr("Cancel") }]
+                : root.current.adjustable ? [{ button: GlyphButton.dpad, label: @tr("Select") }, { button: GlyphButton.updown, label: @tr("Volume") }, { button: GlyphButton.confirm, label: @tr("Mute") }, { button: GlyphButton.back, label: @tr("Close") }]
+                : [{ button: GlyphButton.dpad, label: @tr("Select") }, { button: GlyphButton.confirm, label: @tr("OK") }, { button: GlyphButton.back, label: @tr("Close") }];
         }
     }
 }

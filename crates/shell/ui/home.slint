@@ -2,7 +2,7 @@ import { AppTile } from "types.slint";
 import { Theme } from "theme.slint";
 import { TileRow } from "tilerow.slint";
 
-// Home: die zuletzt genutzten Apps und am Ende die Bibliothekskachel, darunter Infos zur Auswahl.
+// Home: the recently used apps and the library tile at the end, below them info on the selection.
 export component HomePage inherits Rectangle {
     in property <[AppTile]> tiles;
     in property <int> focused;

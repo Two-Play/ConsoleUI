@@ -1,8 +1,8 @@
 import { ControllerStyle, NavAction, QuickItem } from "types.slint";
 import { QuickMenu } from "quickmenu.slint";
 
-// Eigenes, transparentes Fenster für das Quick-Menü in gamescope. Rust setzt STEAM_OVERLAY, bevor
-// es angezeigt wird; dann legt gamescope es über das laufende Spiel.
+// Own transparent window for the quick menu in gamescope. Rust sets STEAM_OVERLAY before it is
+// shown; gamescope then puts it over the running game.
 export component OverlayWindow inherits Window {
     title: "ConsoleUI Overlay";
     no-frame: true;

@@ -4,6 +4,7 @@ use chrono::NaiveDate;
 
 use crate::collection::Collection;
 use crate::history::History;
+use crate::i18n::{tr, tr_noop, trf, trn};
 use crate::search::normalize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -12,17 +13,17 @@ pub enum AppKind {
     App,
 }
 
-/// Wie ein Eintrag gestartet wird.
+/// How an entry is launched.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Launch {
-    /// Dummy-Einträge: nur die Animation, kein Prozess.
+    /// Dummy entries: only the animation, no process.
     None,
     Steam(u32),
-    /// Programm und Argumente, bereits ohne `.desktop`-Feldcodes.
+    /// Program and arguments, already without `.desktop` field codes.
     Command(Vec<String>),
 }
 
-/// Pfade zu Bildern auf der Platte; geladen werden sie erst in der Shell.
+/// Paths to images on disk; they are only loaded in the shell.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Artwork {
     pub cover: Option<PathBuf>,
@@ -31,25 +32,25 @@ pub struct Artwork {
     pub icon: Option<PathBuf>,
 }
 
-/// Ein Eintrag der App-Übersicht (Steam-Spiel, Desktop-App oder Dummy).
+/// An entry of the app overview (Steam game, desktop app or dummy).
 #[derive(Debug, Clone, PartialEq)]
 pub struct AppEntry {
-    /// Eindeutig über alle Quellen, z. B. `steam:730` oder `desktop:firefox.desktop`.
+    /// Unique across all sources, e.g. `steam:730` or `desktop:firefox.desktop`.
     pub id: String,
     pub title: String,
     pub description: String,
     pub kind: AppKind,
-    /// Akzentfarben (RGB) für Platzhalter-Cover und Hintergrund.
+    /// Accent colors (RGB) for placeholder covers and the background.
     pub accent: [u8; 3],
     pub accent2: [u8; 3],
     pub launch: Launch,
     pub artwork: Artwork,
-    /// Letzte Nutzung als Unix-Zeit in Sekunden.
+    /// Last use as Unix time in seconds.
     pub last_used: Option<u64>,
 }
 
 impl AppEntry {
-    /// Erstes alphanumerisches Zeichen des Titels als Großbuchstabe (für Platzhalter-Cover).
+    /// First alphanumeric character of the title in upper case (for placeholder covers).
     pub fn monogram(&self) -> String {
         self.title
             .chars()
@@ -59,43 +60,45 @@ impl AppEntry {
     }
 }
 
-/// Titel, Beschreibung, Art, Akzentfarbe, zweite Akzentfarbe
+/// Title, description, kind, accent color, second accent color. App titles and all descriptions
+/// are translated when the entries are created.
 type DummyEntry = (&'static str, &'static str, AppKind, [u8; 3], [u8; 3]);
 
 const DUMMY: &[DummyEntry] = &[
-    ("Nebula Drift", "Weltraum-Rennspiel", AppKind::Game, [0x5b, 0x3c, 0xff], [0x00, 0xd4, 0xff]),
-    ("Ironwood Saga", "Action-Rollenspiel", AppKind::Game, [0x8a, 0x4b, 0x1f], [0xf2, 0xa6, 0x3b]),
-    ("Pixel Harbor", "Aufbau-Simulation", AppKind::Game, [0x0f, 0x9d, 0x8a], [0xb4, 0xf0, 0x6b]),
-    ("Frostline", "Survival", AppKind::Game, [0x1d, 0x4e, 0x89], [0xd6, 0xf0, 0xff]),
-    ("Neon Courier", "Arcade", AppKind::Game, [0xff, 0x2e, 0x88], [0xff, 0xc8, 0x3d]),
-    ("Echoes of Tarn", "Abenteuer", AppKind::Game, [0x3a, 0x1c, 0x5a], [0xc9, 0x7b, 0xff]),
-    ("Gridlock 2099", "Strategie", AppKind::Game, [0x22, 0x22, 0x22], [0x00, 0xff, 0xa3]),
-    ("Mediathek", "Filme & Serien", AppKind::App, [0xc0, 0x1c, 0x28], [0xff, 0x7a, 0x59]),
-    ("Musik", "Wiedergabe", AppKind::App, [0x10, 0x80, 0x4b], [0x7c, 0xff, 0xb2]),
-    ("Browser", "Im Web surfen", AppKind::App, [0x1a, 0x5f, 0xd6], [0x7a, 0xc4, 0xff]),
-    ("Galerie", "Screenshots & Clips", AppKind::App, [0xd9, 0x7a, 0x00], [0xff, 0xe0, 0x7a]),
-    ("Einstellungen", "System", AppKind::App, [0x44, 0x4a, 0x55], [0xa9, 0xb1, 0xbd]),
+    ("Nebula Drift", tr_noop("Space racer"), AppKind::Game, [0x5b, 0x3c, 0xff], [0x00, 0xd4, 0xff]),
+    ("Ironwood Saga", tr_noop("Action RPG"), AppKind::Game, [0x8a, 0x4b, 0x1f], [0xf2, 0xa6, 0x3b]),
+    ("Pixel Harbor", tr_noop("City builder"), AppKind::Game, [0x0f, 0x9d, 0x8a], [0xb4, 0xf0, 0x6b]),
+    ("Frostline", tr_noop("Survival"), AppKind::Game, [0x1d, 0x4e, 0x89], [0xd6, 0xf0, 0xff]),
+    ("Neon Courier", tr_noop("Arcade"), AppKind::Game, [0xff, 0x2e, 0x88], [0xff, 0xc8, 0x3d]),
+    ("Echoes of Tarn", tr_noop("Adventure"), AppKind::Game, [0x3a, 0x1c, 0x5a], [0xc9, 0x7b, 0xff]),
+    ("Gridlock 2099", tr_noop("Strategy"), AppKind::Game, [0x22, 0x22, 0x22], [0x00, 0xff, 0xa3]),
+    (tr_noop("Media"), tr_noop("Movies & shows"), AppKind::App, [0xc0, 0x1c, 0x28], [0xff, 0x7a, 0x59]),
+    (tr_noop("Music"), tr_noop("Playback"), AppKind::App, [0x10, 0x80, 0x4b], [0x7c, 0xff, 0xb2]),
+    (tr_noop("Browser"), tr_noop("Browse the web"), AppKind::App, [0x1a, 0x5f, 0xd6], [0x7a, 0xc4, 0xff]),
+    (tr_noop("Gallery"), tr_noop("Screenshots & clips"), AppKind::App, [0xd9, 0x7a, 0x00], [0xff, 0xe0, 0x7a]),
+    (tr_noop("Settings"), tr_noop("System"), AppKind::App, [0x44, 0x4a, 0x55], [0xa9, 0xb1, 0xbd]),
 ];
 
-/// Feste Akzentfarben pro Schlüssel, für Einträge ohne eigenes Artwork.
+/// Fixed accent colors per key, for entries without their own artwork.
 pub fn palette_for(key: &str) -> ([u8; 3], [u8; 3]) {
-    // FNV-1a: stabil über Programmläufe, anders als `DefaultHasher`.
+    // FNV-1a: stable across runs, unlike `DefaultHasher`.
     let hash = key.bytes().fold(0x811c_9dc5_u32, |h, b| (h ^ b as u32).wrapping_mul(0x0100_0193));
     let (_, _, _, accent, accent2) = DUMMY[hash as usize % DUMMY.len()];
     (accent, accent2)
 }
 
-/// Erzeugt `count` Dummy-Einträge. Ab dem 13. Eintrag wiederholt sich die Liste mit Nummer im Titel.
+/// Creates `count` dummy entries. From the 13th entry on the list repeats with a number in the title.
 pub fn dummy_library(count: usize) -> Vec<AppEntry> {
     (0..count)
         .map(|i| {
             let (title, description, kind, accent, accent2) = DUMMY[i % DUMMY.len()];
             let round = i / DUMMY.len();
+            let title = if kind == AppKind::App { tr(title) } else { title };
             let title = if round == 0 { title.to_string() } else { format!("{title} {}", round + 1) };
             AppEntry {
                 id: format!("dummy:{i}"),
                 title,
-                description: description.to_string(),
+                description: tr(description).to_string(),
                 kind,
                 accent,
                 accent2,
@@ -107,14 +110,14 @@ pub fn dummy_library(count: usize) -> Vec<AppEntry> {
         .collect()
 }
 
-/// Übernimmt die eigene Historie, wenn sie neuer ist als die Angabe der Quelle (z. B. Steam).
+/// Takes the own history when it is newer than what the source says (e.g. Steam).
 pub fn apply_history(entries: &mut [AppEntry], history: &History) {
     for entry in entries {
         entry.last_used = entry.last_used.max(history.get(&entry.id));
     }
 }
 
-/// Zuletzt genutzte zuerst, danach alphabetisch.
+/// Most recently used first, then alphabetical.
 pub fn sort_by_recent(entries: &mut [AppEntry]) {
     entries.sort_by(|a, b| {
         b.last_used
@@ -129,7 +132,7 @@ pub enum LibraryFilter {
     All,
     Games,
     Apps,
-    /// Nur die ausgeblendeten Einträge, um sie wieder anzuzeigen
+    /// Only the hidden entries, to show them again
     Hidden,
 }
 
@@ -145,10 +148,10 @@ impl LibraryFilter {
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::All => "Alle",
-            Self::Games => "Spiele",
-            Self::Apps => "Apps",
-            Self::Hidden => "Ausgeblendet",
+            Self::All => tr("All"),
+            Self::Games => tr("Games"),
+            Self::Apps => tr("Apps"),
+            Self::Hidden => tr("Hidden"),
         }
     }
 
@@ -180,14 +183,14 @@ impl LibrarySort {
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::Recent => "Zuletzt genutzt",
+            Self::Recent => tr("Recently used"),
             Self::Alphabetical => "A–Z",
         }
     }
 }
 
-/// Indizes in `entries` für die Bibliothek. `entries` ist bereits nach letzter Nutzung sortiert.
-/// Ausgeblendete erscheinen nur im Filter „Ausgeblendet“; Angeheftete behalten die normale Sortierung.
+/// Indices into `entries` for the library. `entries` is already sorted by last use. Hidden entries
+/// only appear in the "Hidden" filter; pinned ones keep the normal order.
 pub fn library_view(
     entries: &[AppEntry],
     filter: LibraryFilter,
@@ -201,19 +204,22 @@ pub fn library_view(
     view
 }
 
-/// Zeile unter dem Titel, z. B. „Zuletzt gespielt: gestern“.
+/// Line below the title, e.g. "Last played: yesterday".
 pub fn last_used_label(kind: AppKind, last: NaiveDate, today: NaiveDate) -> String {
-    let verb = match kind {
-        AppKind::Game => "gespielt",
-        AppKind::App => "geöffnet",
-    };
-    let when = match (today - last).num_days() {
-        ..=0 => "heute".to_string(),
-        1 => "gestern".to_string(),
-        days @ 2..=6 => format!("vor {days} Tagen"),
-        _ => format!("am {}", last.format("%d.%m.%Y")),
-    };
-    format!("Zuletzt {verb}: {when}")
+    let game = kind == AppKind::Game;
+    match (today - last).num_days() {
+        ..=0 if game => tr("Last played: today").into(),
+        ..=0 => tr("Last opened: today").into(),
+        1 if game => tr("Last played: yesterday").into(),
+        1 => tr("Last opened: yesterday").into(),
+        days @ 2..=6 if game => trn("Last played: {n} day ago", "Last played: {n} days ago", days as usize, &[]),
+        days @ 2..=6 => trn("Last opened: {n} day ago", "Last opened: {n} days ago", days as usize, &[]),
+        _ => {
+            // The date format is translated too (German: 01.10.2026).
+            let date = last.format(tr("%b %-d, %Y")).to_string();
+            if game { trf("Last played: {}", &[&date]) } else { trf("Last opened: {}", &[&date]) }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -298,9 +304,9 @@ mod tests {
     fn last_used_labels() {
         let today = NaiveDate::from_ymd_opt(2026, 10, 25).unwrap();
         let day = |d| NaiveDate::from_ymd_opt(2026, 10, d).unwrap();
-        assert_eq!(last_used_label(AppKind::Game, day(25), today), "Zuletzt gespielt: heute");
-        assert_eq!(last_used_label(AppKind::App, day(24), today), "Zuletzt geöffnet: gestern");
-        assert_eq!(last_used_label(AppKind::Game, day(20), today), "Zuletzt gespielt: vor 5 Tagen");
-        assert_eq!(last_used_label(AppKind::Game, day(1), today), "Zuletzt gespielt: am 01.10.2026");
+        assert_eq!(last_used_label(AppKind::Game, day(25), today), "Last played: today");
+        assert_eq!(last_used_label(AppKind::App, day(24), today), "Last opened: yesterday");
+        assert_eq!(last_used_label(AppKind::Game, day(20), today), "Last played: 5 days ago");
+        assert_eq!(last_used_label(AppKind::Game, day(1), today), "Last played: Oct 1, 2026");
     }
 }

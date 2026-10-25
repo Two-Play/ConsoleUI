@@ -1,7 +1,7 @@
 import { KeyCap, NetRow, NetView } from "types.slint";
 import { Theme } from "theme.slint";
 
-// WLAN-Signal als vier Balken
+// Wi-Fi signal as four bars
 component SignalBars inherits Rectangle {
     in property <int> bars;
     in property <color> tint;
@@ -19,7 +19,7 @@ component SignalBars inherits Rectangle {
     }
 }
 
-// Kleines Schloss für gesicherte Netze
+// Small lock for secured networks
 component LockIcon inherits Rectangle {
     in property <color> tint;
     in property <float> s;
@@ -45,7 +45,7 @@ component LockIcon inherits Rectangle {
     }
 }
 
-// Passwort-Eingabe mit der Bildschirmtastatur (gleicher Stil wie die Suche)
+// Password entry with the on-screen keyboard (same style as the search)
 component PasswordEntry inherits Rectangle {
     in property <NetView> view;
     in property <float> s;
@@ -58,7 +58,7 @@ component PasswordEntry inherits Rectangle {
     Text {
         x: root.margin;
         y: 120px * root.s;
-        text: "Passwort";
+        text: @tr("Password");
         color: Theme.text;
         font-size: 44px * root.s;
         font-weight: 800;
@@ -67,7 +67,7 @@ component PasswordEntry inherits Rectangle {
     Text {
         x: root.margin;
         y: 180px * root.s;
-        text: "für „" + root.view.password-ssid + "“";
+        text: @tr("for “{}”", root.view.password-ssid);
         color: Theme.text-dim;
         font-size: 22px * root.s;
     }
@@ -86,7 +86,7 @@ component PasswordEntry inherits Rectangle {
             x: 28px * root.s;
             height: 100%;
             width: parent.width - 56px * root.s;
-            text: root.view.password-text == "" ? "WLAN-Passwort eingeben" : root.view.password-text + "|";
+            text: root.view.password-text == "" ? @tr("Enter the Wi-Fi password") : root.view.password-text + "|";
             color: root.view.password-text == "" ? Theme.text-dim : Theme.text;
             font-size: 26px * root.s;
             vertical-alignment: center;
@@ -119,13 +119,13 @@ component PasswordEntry inherits Rectangle {
     Text {
         x: root.margin;
         y: root.keyboard-y + 5 * root.unit + 20px * root.s;
-        text: "⇧ schaltet auf Großbuchstaben und Sonderzeichen um. „Fertig“ verbindet.";
+        text: @tr("⇧ switches to upper case and symbols. “Done” connects.");
         color: Theme.text-dim;
         font-size: 18px * root.s;
     }
 }
 
-// Unterseite „WLAN“ bzw. „Bluetooth“: Liste mit Ein/Aus-Zeile, Netzen bzw. Geräten.
+// "Wi-Fi" or "Bluetooth" sub-page: list with an on/off row and the networks or devices.
 export component NetworkPage inherits Rectangle {
     in property <NetView> view;
     in property <float> s;
@@ -136,7 +136,7 @@ export component NetworkPage inherits Rectangle {
     property <length> list-y: 230px * root.s;
     property <length> list-height: root.height - root.list-y - 130px * root.s;
     property <length> card-width: min(980px * root.s, root.width - 2 * root.margin);
-    // Scrollt so, dass unter der fokussierten Zeile noch eine zu sehen ist
+    // Scrolls so that one more row is visible below the focused one
     property <length> scroll: max(0, min((root.view.focused + 2) * root.pitch - root.list-height,
         root.view.rows.length * root.pitch - root.list-height));
 
@@ -189,7 +189,7 @@ export component NetworkPage inherits Rectangle {
                 border-width: !self.is-focused && (row.gamepad || row.armed) ? 2px : 0;
                 border-color: row.armed ? #ff6b6b : Theme.accent.with-alpha(0.6);
 
-                // Symbol links: WLAN-Balken, Controller-Grafik oder Textsymbol
+                // Symbol on the left: Wi-Fi bars, controller graphic or text symbol
                 Rectangle {
                     x: 26px * root.s;
                     width: 44px * root.s;
@@ -257,7 +257,7 @@ export component NetworkPage inherits Rectangle {
                         badge := Text {
                             width: 100%;
                             height: 100%;
-                            text: "● Verbunden";
+                            text: "● " + @tr("Connected");
                             color: card.is-focused ? Theme.base : Theme.accent;
                             font-size: 16px * root.s;
                             font-weight: 700;
@@ -287,7 +287,7 @@ export component NetworkPage inherits Rectangle {
             }
         }
 
-        // Leerer Zustand (kein Adapter, ausgeschaltet, nichts gefunden …)
+        // Empty state (no adapter, switched off, nothing found …)
         if root.view.empty-title != "": VerticalLayout {
             x: root.margin;
             y: root.list-y + root.view.rows.length * root.pitch + (root.view.rows.length == 0 ? 10px : 30px) * root.s;
