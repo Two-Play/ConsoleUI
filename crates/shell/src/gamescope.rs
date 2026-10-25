@@ -1,6 +1,7 @@
 //! Steuerung von gamescope im Steam-Modus (`-e`) über X11-Atome, siehe docs/spike-gamescope.md:
 //! Fenster bekommen per `STEAM_GAME` eine App-ID, `GAMESCOPECTRL_BASELAYER_APPID` legt fest, wer
-//! vorne ist, und das Quick-Menü ist ein Fenster mit `STEAM_OVERLAY`.
+//! vorne ist, und das Quick-Menü ist ein Fenster mit `STEAM_OVERLAY`, Hinweise über Spielen ein
+//! schmaleres ohne `STEAM_INPUT_FOCUS` (Benachrichtigungsfenster).
 
 use std::collections::HashMap;
 use std::error::Error;
@@ -29,7 +30,7 @@ pub struct Gamescope {
     atoms: Atoms,
     /// Fenster mit bekannter App-ID (von uns oder von Steam selbst gesetzt)
     known: HashMap<Window, u32>,
-    /// Eigene Fenster, die keine App-ID bekommen (das Overlay)
+    /// Eigene Fenster, die keine App-ID bekommen (Overlay und Benachrichtigungsfenster)
     ignored: Vec<Window>,
 }
 
@@ -82,6 +83,25 @@ impl Gamescope {
             self.change_cardinal(window, self.atoms.steam_input_focus, &[1])?;
             self.change_cardinal(window, self.atoms.opacity, &[OPAQUE])
         })());
+    }
+
+    /// Fenster als Benachrichtigungsfenster vorbereiten (Hinweise über Spielen): `STEAM_OVERLAY`
+    /// ohne `STEAM_INPUT_FOCUS`. Ist es zusätzlich schmaler als das Root-Fenster, wählt gamescope
+    /// es nicht als interaktives Overlay, sondern als `notificationWindow`: immer obenauf, nie
+    /// fokussiert. Wie beim Overlay danach (neu) mappen.
+    pub fn prepare_notification(&mut self, window: Window) {
+        self.ignored.push(window);
+        report((|| {
+            self.change_cardinal(window, self.atoms.steam_overlay, &[1])?;
+            self.conn.delete_property(window, self.atoms.steam_input_focus)?;
+            self.change_cardinal(window, self.atoms.opacity, &[OPAQUE])
+        })());
+    }
+
+    /// Größe des Root-Fensters (in gamescope die Spielauflösung)
+    pub fn root_size(&self) -> Option<(u32, u32)> {
+        let geometry = self.conn.get_geometry(self.root).ok()?.reply().ok()?;
+        Some((geometry.width.into(), geometry.height.into()))
     }
 
     /// Gibt neuen, sichtbaren Fenstern eine App-ID. `resolve` ordnet die PID eines Fensters einer

@@ -59,7 +59,8 @@ End-to-end test without real input (nested gamescope, screenshots of gamescope's
 
 ```bash
 CONSOLEUI_GAMESCOPE=steam gamescope -e -W 960 -H 540 -- target/release/consoleui --dummy --windowed \
-  --dummy-launch glxgears --actions "wait:1500,confirm,wait:4000,guide"
+  --dummy-launch glxgears --actions "wait:1500,confirm,wait:4000,toast,wait:1000,guide"
+# `toast` is a development step that raises a test toast (shown over the game here)
 # inside gamescope: xprop -root -f GAMESCOPECTRL_REQUEST_SCREENSHOT 32c -set GAMESCOPECTRL_REQUEST_SCREENSHOT 2
 #   writes /tmp/gamescope.png; type 2 = full composition (type 1 omits overlays)
 ```
@@ -124,20 +125,26 @@ Cargo workspace (edition 2024, `default-members` = the shell):
   - `src/grab.rs`: while the quick menu is open, `EVIOCGRAB` on the controller's evdev nodes (matched by
     gilrs `os_name`) and read them directly so the game in front gets no input.
   - `src/gamepad.rs`: gilrs polling → `Action`s (only devices with an SDL mapping); PS/Guide → `Action::Guide`.
-  - `src/gamescope.rs`: X11 control of gamescope (tagging windows, baselayer, preparing the overlay window).
+  - `src/gamescope.rs`: X11 control of gamescope (tagging windows, baselayer, preparing the overlay and
+    notification windows).
   - `src/quick.rs`: quick menu ("Steuerzentrale") items and input handling. In gamescope it is shown in
     `OverlayWindow` (`ui/overlay.slint`, transparent, gets `STEAM_OVERLAY` and is remapped before first
     use); otherwise it is the `QuickMenu` layer inside `AppWindow`.
   - `src/context.rs`: context menu (Menu/Tab on a focused entry in home and library: pin/unpin, hide,
     show again, quit, and the library sort). Shown as the `ContextMenu` layer (`ui/contextmenu.slint`)
     in `AppWindow`; its hints come from `Shell::update_hints`.
+  - Toasts (`Shell::toast`): while an app is in front in gamescope they go to `NotificationWindow`
+    (`ui/notification.slint`): `STEAM_OVERLAY` without `STEAM_INPUT_FOCUS`, 1 px narrower than the root
+    window, so gamescope treats it as its notification window (always on top, never focused). gamescope
+    ignores its position and scales it to the output, hence the fixed near-fullscreen size with the toast
+    drawn top-right. Otherwise the toast is a layer in `AppWindow`.
   - `src/main.rs`: wiring and timers: gamepad poll (8 ms), status/clock (1 s), app watcher (500 ms), bench.
   - `ui/statusbar.slint`: the right side of the top bar; icons in `ui/icons/*.svg` are tinted with `colorize`.
   - `ui/home.slint`, `ui/library.slint`, `ui/search.slint`: one component per `Screen`, all stacked in
     `main.slint` and cross-faded. Each exposes `focus-x/-y/-size` so the launch overlay starts on the right
     tile. `library.slint` computes `columns` from the window width; Rust reads it for grid navigation.
   - `ui/theme.slint`: `Theme.accent` and all durations are `in-out` and set from Rust (`Shell::apply_settings`),
-    for the main window and the overlay window separately (globals are per component instance).
+    for the main window, the overlay and the notification window separately (globals are per component instance).
   - `ui/settings.slint`, `ui/boot.slint`, `ui/toast.slint`: settings page, boot screen, toast.
   - `ui/glyph.slint`: `ButtonGlyph` (button symbol per `ControllerStyle`) and `HintBar`; Rust fills `hints`.
   - `src/dbus.rs`: real WLAN/Bluetooth backend (zbus blocking API on the system bus, own BlueZ pairing

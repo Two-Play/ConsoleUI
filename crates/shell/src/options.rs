@@ -18,7 +18,7 @@ Für die Entwicklung:
   --snapshot <DATEI>  Nach kurzer Zeit ein PNG des Fensters speichern und beenden
   --actions <LISTE>   Eingaben simulieren, z. B. \"right,confirm,wait:3000,guide\"
                       (up, down, left, right, confirm, back, menu, search, secondary,
-                      prev-tab, next-tab, guide, wait:<ms>)
+                      prev-tab, next-tab, guide, wait:<ms>, toast = Testhinweis)
   --dummy-launch <BEFEHL>  Dummy-Einträge starten diesen Befehl (z. B. glxgears)
   --fake-network      WLAN und Bluetooth simulieren statt NetworkManager/BlueZ zu fragen";
 
@@ -36,6 +36,8 @@ pub enum StartScreen {
 pub enum ScriptStep {
     Action(Action),
     Wait(u64),
+    /// Entwicklungshilfe: zeigt einen Testhinweis (z. B. um Hinweise über Spielen zu prüfen)
+    Toast,
 }
 
 #[derive(Debug, PartialEq)]
@@ -118,6 +120,9 @@ fn parse_script(list: &str) -> Result<Vec<ScriptStep>, String> {
             if let Some(ms) = step.strip_prefix("wait:") {
                 return ms.parse().map(ScriptStep::Wait).map_err(|_| format!("Ungültige Wartezeit: {step}"));
             }
+            if step == "toast" {
+                return Ok(ScriptStep::Toast);
+            }
             let action = match step {
                 "up" => Action::Up,
                 "down" => Action::Down,
@@ -173,14 +178,16 @@ mod tests {
 
     #[test]
     fn parses_action_scripts() {
-        let options = parse(&["--actions", "right, confirm,wait:500,guide", "--dummy-launch", "glxgears"]).unwrap();
+        let options =
+            parse(&["--actions", "right, confirm,wait:500,guide,toast", "--dummy-launch", "glxgears"]).unwrap();
         assert_eq!(
             options.actions,
             [
                 ScriptStep::Action(Action::Right),
                 ScriptStep::Action(Action::Confirm),
                 ScriptStep::Wait(500),
-                ScriptStep::Action(Action::Guide)
+                ScriptStep::Action(Action::Guide),
+                ScriptStep::Toast
             ]
         );
         assert_eq!(options.dummy_launch.as_deref(), Some("glxgears"));

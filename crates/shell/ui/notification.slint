@@ -1,0 +1,42 @@
+import { Theme } from "theme.slint";
+import { Toast } from "toast.slint";
+
+// Eigenes, transparentes Fenster für Hinweise über laufenden Spielen (nur in gamescope). Rust setzt
+// STEAM_OVERLAY ohne STEAM_INPUT_FOCUS und macht das Fenster schmaler als den Bildschirm; dann ist
+// es für gamescope das Benachrichtigungsfenster: immer obenauf, aber nie mit Tastatur-/Controller-
+// Fokus. gamescope zentriert und skaliert es auf die Bildschirmhöhe, deshalb ist das Fenster fast so
+// groß wie der Bildschirm und der Hinweis steht darin oben rechts.
+export component NotificationWindow inherits Window {
+    title: "ConsoleUI Hinweis";
+    no-frame: true;
+    background: transparent;
+
+    // Feste Größe (Rust setzt sie aus der Root-Größe). gamescope bringt Fenster ohne STEAM_GAME
+    // sonst auf Bildschirmgröße; nur mit min = max in den Size-Hints bleibt es schmaler.
+    in property <length> window-width: 1px;
+    in property <length> window-height: 1px;
+    width: root.window-width;
+    height: root.window-height;
+
+    in property <bool> shown;
+    in property <string> symbol;
+    in property <string> title-text;
+    in property <string> text;
+
+    property <float> s: max(0.4, min(root.width / 1920px, root.height / 1080px));
+    property <length> margin: 64px * s;
+
+    Toast {
+        x: root.width - root.margin - self.width + (root.shown ? 0 : 60px * root.s);
+        y: root.margin;
+        animate x {
+            duration: Theme.launch-duration;
+            easing: ease-out-quart;
+        }
+        shown: root.shown;
+        symbol: root.symbol;
+        title: root.title-text;
+        text: root.text;
+        s: root.s;
+    }
+}

@@ -27,7 +27,7 @@ use crate::gamescope::{Gamescope, x11_window_id};
 use crate::loader::Library;
 use crate::network::Network;
 use crate::quick::{ForegroundApp, QuickAction, QuickMenu, QuickOutcome};
-use crate::{AppTile, AppWindow, ControllerStyle, GlyphButton, Hint, KeyCap, OverlayWindow, Screen, SettingRow, Theme, tiles};
+use crate::{AppTile, AppWindow, ControllerStyle, GlyphButton, Hint, KeyCap, NotificationWindow, OverlayWindow, Screen, SettingRow, Theme, tiles};
 
 /// So viele Einträge zeigt die Home-Reihe vor der Bibliothekskachel (Angeheftete immer alle).
 const HOME_COUNT: usize = 12;
@@ -56,17 +56,21 @@ struct Running {
     has_window: bool,
 }
 
-/// Nur in der gamescope-Session: Fenstersteuerung und das Overlay-Fenster für das Quick-Menü.
+/// Nur in der gamescope-Session: Fenstersteuerung, das Overlay-Fenster für das Quick-Menü und das
+/// Benachrichtigungsfenster für Hinweise über laufenden Apps.
 pub struct GamescopeUi {
     pub control: Gamescope,
     pub overlay: OverlayWindow,
     /// X11-ID, für die das Overlay vorbereitet ist (ändert sich, falls Slint das Fenster neu anlegt)
     overlay_window: Option<u32>,
+    notification: NotificationWindow,
+    /// Wie `overlay_window`, für das Benachrichtigungsfenster
+    notification_window: Option<u32>,
 }
 
 impl GamescopeUi {
-    pub fn new(control: Gamescope, overlay: OverlayWindow) -> Self {
-        Self { control, overlay, overlay_window: None }
+    pub fn new(control: Gamescope, overlay: OverlayWindow, notification: NotificationWindow) -> Self {
+        Self { control, overlay, overlay_window: None, notification, notification_window: None }
     }
 }
 
@@ -243,23 +247,63 @@ impl Shell {
         self.refresh(ui);
     }
 
-    /// Zeigt einen Hinweis oben rechts; ein neuer ersetzt den alten.
+    /// Zeigt einen Hinweis oben rechts; ein neuer ersetzt den alten. Ist in gamescope eine App
+    /// vorne, erscheint er im Benachrichtigungsfenster über ihr, sonst im Hauptfenster.
     pub fn toast(&mut self, ui: &AppWindow, symbol: &str, title: &str, text: &str) {
         let generation = self.toast_generation.get() + 1;
         self.toast_generation.set(generation);
-        ui.set_toast_symbol(symbol.into());
-        ui.set_toast_title(title.into());
-        ui.set_toast_text(text.into());
-        ui.set_toast_shown(true);
+        let over_app = !self.shell_in_front(ui);
+        if let Some(gamescope) = self.gamescope.as_mut().filter(|_| over_app) {
+            ui.set_toast_shown(false);
+            let notification = &gamescope.notification;
+            notification.set_symbol(symbol.into());
+            notification.set_title_text(title.into());
+            notification.set_text(text.into());
+            if notification.window().is_visible() {
+                notification.set_shown(true);
+            } else {
+                show_notification_window(gamescope);
+                // Erst nach dem Anzeigen einblenden, damit der Hinweis hereingleitet.
+                let weak = gamescope.notification.as_weak();
+                let current = self.toast_generation.clone();
+                slint::Timer::single_shot(Duration::from_millis(30), move || {
+                    if let Some(notification) = weak.upgrade()
+                        && current.get() == generation
+                    {
+                        notification.set_shown(true);
+                    }
+                });
+            }
+        } else {
+            self.hide_notification();
+            ui.set_toast_symbol(symbol.into());
+            ui.set_toast_title(title.into());
+            ui.set_toast_text(text.into());
+            ui.set_toast_shown(true);
+        }
         let weak = ui.as_weak();
+        let notification = self.gamescope.as_ref().map(|g| g.notification.as_weak());
         let current = self.toast_generation.clone();
         slint::Timer::single_shot(TOAST_DURATION, move || {
-            if let Some(ui) = weak.upgrade()
-                && current.get() == generation
-            {
+            if current.get() != generation {
+                return;
+            }
+            if let Some(ui) = weak.upgrade() {
                 ui.set_toast_shown(false);
             }
+            if let Some(notification) = notification.as_ref().and_then(|n| n.upgrade()) {
+                hide_notification_window(&notification);
+            }
         });
+    }
+
+    /// Blendet einen Hinweis im Benachrichtigungsfenster aus (falls einer zu sehen ist).
+    fn hide_notification(&self) {
+        if let Some(gamescope) = &self.gamescope
+            && gamescope.notification.get_shown()
+        {
+            hide_notification_window(&gamescope.notification);
+        }
     }
 
     /// Warnt einmal, wenn der Controller-Akku knapp wird; lädt er wieder, wird neu gewarnt.
@@ -500,6 +544,7 @@ impl Shell {
         apply_theme(ui.global::<Theme>());
         if let Some(gamescope) = &self.gamescope {
             apply_theme(gamescope.overlay.global::<Theme>());
+            apply_theme(gamescope.notification.global::<Theme>());
         }
         self.update_settings_rows(ui);
         let footer = match &self.settings_path {
@@ -1238,4 +1283,42 @@ fn show_overlay_window(gamescope: &mut GamescopeUi) {
         let _ = overlay.show();
         gamescope.overlay_window = window;
     }
+}
+
+/// Zeigt das Benachrichtigungsfenster. gamescope wählt es nur als Benachrichtigung (statt als
+/// interaktives Overlay), wenn es schmaler als das Root-Fenster ist. Es wird zentriert und auf die
+/// Ausgabe skaliert, die eigene Position zählt nicht; deshalb ist es genau ein Pixel schmaler als
+/// der Bildschirm und volle Höhe (Maßstab 1), und der Hinweis steht darin oben rechts. Die Größe
+/// ist fest (min = max in den Size-Hints), sonst zieht gamescope es auf Bildschirmgröße.
+fn show_notification_window(gamescope: &mut GamescopeUi) {
+    let notification = &gamescope.notification;
+    if let Some((width, height)) = gamescope.control.root_size() {
+        let scale = notification.window().scale_factor();
+        notification.set_window_width(width.saturating_sub(1).max(1) as f32 / scale);
+        notification.set_window_height(height as f32 / scale);
+    }
+    if let Err(err) = notification.show() {
+        eprintln!("Hinweisfenster konnte nicht angezeigt werden: {err}");
+        return;
+    }
+    let window = x11_window_id(notification.window());
+    if window.is_some() && window != gamescope.notification_window {
+        if let Some(id) = window {
+            gamescope.control.prepare_notification(id);
+        }
+        let _ = notification.hide();
+        let _ = notification.show();
+        gamescope.notification_window = window;
+    }
+}
+
+/// Blendet den Hinweis aus und versteckt das Fenster danach, sofern inzwischen kein neuer kam.
+fn hide_notification_window(notification: &NotificationWindow) {
+    notification.set_shown(false);
+    let weak = notification.as_weak();
+    slint::Timer::single_shot(Duration::from_millis(450), move || {
+        if let Some(notification) = weak.upgrade().filter(|n| !n.get_shown()) {
+            let _ = notification.hide();
+        }
+    });
 }

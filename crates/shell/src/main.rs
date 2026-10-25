@@ -74,7 +74,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     // In der gamescope-Session (Steam-Modus) steuert die Shell die Fenster selbst und zeigt das
     // Quick-Menü als eigenes Overlay-Fenster.
     let gamescope = match gamescope::Gamescope::connect() {
-        Some(control) => Some(GamescopeUi::new(control, OverlayWindow::new()?)),
+        Some(control) => {
+            Some(GamescopeUi::new(control, OverlayWindow::new()?, NotificationWindow::new()?))
+        }
         None => None,
     };
     let overlay = gamescope.as_ref().map(|g| g.overlay.as_weak());
@@ -333,6 +335,8 @@ fn run_script(ui: &AppWindow, shell: Rc<RefCell<Shell>>, steps: Vec<ScriptStep>)
         match steps.get(next) {
             Some(ScriptStep::Wait(ms)) => due = Instant::now() + Duration::from_millis(*ms),
             Some(ScriptStep::Action(action)) => shell.borrow_mut().apply(&ui, *action),
+            // Entwicklungshilfe für Tests der Hinweise (auch über laufenden Apps)
+            Some(ScriptStep::Toast) => shell.borrow_mut().toast(&ui, "◆", "Testhinweis", "Aus --actions (Entwicklung)"),
             None => return,
         }
         next += 1;

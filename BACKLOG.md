@@ -292,7 +292,7 @@ Deck o. Ä.) sollten wir später den Skia-Renderer vergleichen (Story 6.5).
   Klänge, Toasts bei echtem Ein- und Ausstecken.
 - **Grenzen:** Spiele, die den Controller über hidraw lesen (Steam Input, manche SDL-Spiele),
   sehen ihn trotz Grab. Toasts erscheinen nur, wenn die Shell sichtbar ist, nicht über einem
-  laufenden Spiel.
+  laufenden Spiel (seit Sprint 7 behoben).
 
 ### Nachtrag – Fehler „Controller reagiert nach Home nicht mehr“
 
@@ -366,6 +366,27 @@ Deck o. Ä.) sollten wir später den Skia-Renderer vergleichen (Story 6.5).
   WLAN ein/aus und `RequestScan`, Bluetooth ein/aus, Gerätesuche, Koppeln mit dem eigenen Agenten
   (DualSense, Xbox), Verbinden/Trennen/Entfernen. Der Agent ist bewusst einfach (kein PIN-Dialog,
   alte Geräte bekommen „0000“). WEP und WPA-Enterprise werden abgelehnt.
+
+### Sprint 7 – Hinweise über Spielen (5.6 Rest)
+
+- **Toasts über laufenden Apps:** Ist in gamescope eine App vorne (`Shell::shell_in_front` ist
+  falsch), erscheint der Hinweis in einem eigenen, transparenten `NotificationWindow`
+  (`ui/notification.slint`, nutzt `ui/toast.slint`). Es bekommt vor dem Mappen `STEAM_OVERLAY=1`,
+  aber kein `STEAM_INPUT_FOCUS`, und ist ein Pixel schmaler als das Root-Fenster. Damit wählt
+  gamescope es als Benachrichtigungsfenster: immer obenauf, nie fokussiert. Nach der Anzeigedauer
+  blendet der Hinweis aus und das Fenster wird versteckt. Ist die Shell vorne oder läuft sie ohne
+  gamescope, bleibt es beim Toast im Hauptfenster.
+- Entwicklungshilfe: Der `--actions`-Schritt `toast` zeigt einen Testhinweis.
+- Verschachtelt getestet (960×540, `glxgears`): Der Hinweis steht oben rechts über dem Spiel,
+  `GAMESCOPE_FOCUSED_WINDOW` und der X11-Eingabefokus bleiben beim Spiel. Auch zusammen mit der
+  offenen Steuerzentrale sind beide zu sehen, und der Fokus liegt beim Overlay. Steuerzentrale →
+  Home geht danach, und ein Hinweis auf dem Home-Screen erscheint wieder im Hauptfenster.
+- **Grenzen:** gamescope ignoriert die Position des Benachrichtigungsfensters. Es zentriert das
+  Fenster und skaliert es auf die Ausgabe, deshalb ist es fast bildschirmgroß (feste Größe über
+  min = max in den Size-Hints, sonst zieht gamescope es auf Root-Größe). Ältere gamescope-Versionen
+  unterscheiden Overlay und Benachrichtigung nur nach der Breite (> 1200 px = Overlay). Dort wäre
+  das Fenster ein Overlay ohne Eingabe, also zu sehen, aber es könnte das Quick-Menü verdecken.
+  Nicht auf echter Hardware getestet.
 
 ## Risiken / offene Fragen
 
