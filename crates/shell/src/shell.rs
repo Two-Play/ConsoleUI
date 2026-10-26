@@ -6,6 +6,7 @@ use std::cell::Cell;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::sync::mpsc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use consoleui_core::dialog::{Dialog, DialogButton, DialogOutcome};
@@ -22,7 +23,7 @@ use consoleui_core::protocol::{BlurRegion, CompositorMessage, Rect, ShellMessage
 use consoleui_core::running::{MIN_HOLD, Phase, RunningApp};
 use consoleui_core::settings::{BackgroundChoice, GlyphChoice, Setting, Settings};
 use consoleui_core::sound::Sound;
-use consoleui_core::system;
+use consoleui_core::system::{self, PowerAction};
 use consoleui_core::{
     Action, AppEntry, AppKind, Carousel, Collection, Grid, History, HomeArea, HomeOutcome, Launch, LibraryFilter,
     LibrarySort, apply_history, compare_recent, home_view, library_view, localize_entries, search, steam,
@@ -30,12 +31,12 @@ use consoleui_core::{
 use slint::{ComponentHandle, Image, Model, ModelRc, VecModel};
 
 use crate::audio::Audio;
-use crate::backdrop::Backdrop;
+use crate::backdrop::{Backdrop, Look};
 use crate::compositor::Compositor;
 use crate::context::{ContextAction, ContextMenu, ContextOutcome, EntryState};
 use crate::gamescope::{Gamescope, x11_window_id};
 use crate::hero::Heroes;
-use crate::loader::Library;
+use crate::loader::{self, Library, LoadedEntry};
 use crate::music::Music;
 use crate::network::Network;
 use crate::profiles::{self as profile_view, ProfileStart};
@@ -51,10 +52,12 @@ const HOME_COUNT: usize = 12;
 const HOME_BUTTONS: usize = 2;
 /// The tabs of the top bar, left to right
 /// What a button of the modal dialog does.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 enum DialogTag {
     /// Quit the running entry with this ID
     QuitApp(String),
+    /// A confirmed action of the quick menu
+    Quick(QuickAction),
     Close,
 }
 
@@ -181,6 +184,11 @@ pub struct Shell {
     /// in front again (the launch screen opens at the tile's old place, and the tile glides forward
     /// after the return)
     pending_front: Vec<String>,
+    /// Covers and logos are decoded ("Game artwork"); `artwork_rx` brings them when switched on
+    artwork_loaded: bool,
+    artwork_rx: Option<mpsc::Receiver<Vec<LoadedEntry>>>,
+    /// The dialog is shown in the overlay window (opened from the quick menu over an app)
+    dialog_in_overlay: bool,
     quick: Option<QuickMenu>,
     gamescope: Option<GamescopeUi>,
     /// Our own compositor (Epic 7), instead of gamescope
@@ -260,6 +268,16 @@ const FRONT_FALLBACK: Duration = Duration::from_millis(300);
 /// Initial animation durations in milliseconds (as in `theme.slint`)
 const DURATIONS: [i64; 5] = [220, 500, 120, 450, 200];
 
+impl DialogTag {
+    /// Whether this button quits the running entry `entry_id`.
+    fn quits(&self, entry_id: &str) -> bool {
+        match self {
+            DialogTag::QuitApp(id) | DialogTag::Quick(QuickAction::Quit(id)) => id == entry_id,
+            _ => false,
+        }
+    }
+}
+
 impl Shell {
     /// Starts without entries; the library arrives via [`Shell::set_library`] once it is loaded.
     pub fn new(
@@ -324,6 +342,9 @@ impl Shell {
             launch_shown: false,
             dialog: None,
             pending_front: Vec::new(),
+            artwork_loaded: start.settings.artwork,
+            artwork_rx: None,
+            dialog_in_overlay: false,
             quick: None,
             gamescope,
             compositor,
@@ -458,6 +479,7 @@ impl Shell {
         self.settings_row = 0;
         self.heroes.invalidate();
         self.apply_settings(ui);
+        self.apply_artwork(ui);
         self.apply_language(ui);
         self.send_keyboard_layout();
         if let Some(profile) = self.profiles.get(&self.profile) {
@@ -564,6 +586,16 @@ impl Shell {
             if height >= 1.0 {
                 menu.push(region(0.0, top, size.width, height, 0.0));
             }
+        }
+        // The confirmation dialog above the menu
+        if overlay.get_dialog_open() && overlay.window().is_visible() {
+            menu.push(region(
+                overlay.get_dialog_x(),
+                overlay.get_dialog_y(),
+                overlay.get_dialog_width(),
+                overlay.get_dialog_height(),
+                overlay.get_dialog_radius(),
+            ));
         }
         let notification = &windows.notification;
         let mut toast = Vec::new();
@@ -680,7 +712,7 @@ impl Shell {
             ],
             home_area: self.home_area,
             query_len: self.query.len(),
-            settings: self.settings,
+            settings: self.settings.clone(),
             network: self.network.pages.feedback(),
             profiles: self.picker.as_ref().map(ProfilePicker::feedback),
         }
@@ -713,6 +745,10 @@ impl Shell {
     }
 
     fn apply_action(&mut self, ui: &AppWindow, action: Action) {
+        if self.dialog.is_some() {
+            self.apply_dialog(ui, action);
+            return;
+        }
         if self.quick.is_some() {
             self.apply_quick(ui, action);
             return;
@@ -726,10 +762,6 @@ impl Shell {
         if self.picker.is_some() {
             self.apply_picker(ui, action);
             self.sync(ui);
-            return;
-        }
-        if self.dialog.is_some() {
-            self.apply_dialog(ui, action);
             return;
         }
         if ui.get_launching() {
@@ -838,7 +870,18 @@ impl Shell {
             }
             Action::Left | Action::Right if setting.opens_page() => {}
             Action::Left | Action::Right | Action::Confirm => {
+                if setting == Setting::MusicTrack {
+                    let names = self.music_track_names();
+                    self.settings.music_track = consoleui_core::music::cycle_track(
+                        &names,
+                        self.settings.music_track.as_deref(),
+                        action != Action::Left,
+                    );
+                }
                 self.settings.change(setting, action != Action::Left);
+                if setting == Setting::Artwork {
+                    self.apply_artwork(ui);
+                }
                 if setting == Setting::Language {
                     self.apply_language(ui);
                 }
@@ -910,7 +953,60 @@ impl Shell {
 
     /// Rows of the settings page; the keyboard layout only in our compositor.
     fn settings_list(&self) -> Vec<Setting> {
-        Setting::rows(self.compositor.is_some())
+        self.settings.rows(self.compositor.is_some())
+    }
+
+    /// Names of the files in the music folder
+    fn music_track_names(&self) -> Vec<String> {
+        let tracks = consoleui_core::music::music_dir().map(|dir| consoleui_core::music::tracks(&dir));
+        tracks.unwrap_or_default().iter().filter_map(|t| consoleui_core::music::track_name(t)).collect()
+    }
+
+    /// Makes the covers and logos match the "Game artwork" setting: off swaps them for the
+    /// generated placeholders at once, on decodes them in the background.
+    fn apply_artwork(&mut self, ui: &AppWindow) {
+        if !self.settings.artwork {
+            self.artwork_rx = None;
+            if self.artwork_loaded {
+                self.artwork_loaded = false;
+                for index in 0..self.tiles.len() {
+                    let plain = LoadedEntry { entry: self.entries[index].clone(), cover: None, logo: None };
+                    self.replace_tile_art(index, &plain);
+                }
+                self.heroes.invalidate();
+                self.refresh(ui);
+            }
+        } else if !self.artwork_loaded && self.artwork_rx.is_none() {
+            self.artwork_rx = Some(loader::spawn_artwork(self.entries.clone()));
+        }
+    }
+
+    /// Takes over covers and logos decoded after "Game artwork" was switched on.
+    fn poll_artwork(&mut self, ui: &AppWindow) {
+        let Some(done) = self.artwork_rx.as_ref().and_then(|rx| rx.try_recv().ok()) else { return };
+        self.artwork_rx = None;
+        if !self.settings.artwork {
+            return;
+        }
+        for loaded in done {
+            if let Some(index) = self.entries.iter().position(|e| e.id == loaded.entry.id) {
+                self.entries[index].accent = loaded.entry.accent;
+                self.entries[index].accent2 = loaded.entry.accent2;
+                self.replace_tile_art(index, &loaded);
+            }
+        }
+        self.artwork_loaded = true;
+        self.heroes.invalidate();
+        self.refresh(ui);
+    }
+
+    /// New tile for the entry with its cover and logo, keeping the running and pinned state.
+    fn replace_tile_art(&mut self, index: usize, loaded: &LoadedEntry) {
+        let mut tile = tiles::to_tile(loaded, index, tiles::today());
+        tile.running = self.tiles[index].running;
+        tile.pinned = self.tiles[index].pinned;
+        self.tiles[index] = tile;
+        self.relabel_tile(index);
     }
 
     /// Tells our compositor the keyboard layout from the settings (`None`: the system layout).
@@ -936,6 +1032,10 @@ impl Shell {
                     Setting::KeyboardLayout if self.settings.keyboard_layout == KeyboardLayout::Auto => match &keymap {
                         Some(keymap) => trf("Automatic: {}", &[&keymap]).into(),
                         None => self.settings.value_label(setting).into(),
+                    },
+                    Setting::MusicTrack => match &self.settings.music_track {
+                        Some(name) => name.as_str().into(),
+                        None => tr("All, shuffled").into(),
                     },
                     _ => self.settings.value_label(setting).into(),
                 },
@@ -1154,9 +1254,9 @@ impl Shell {
     /// launch screen, no boot screen.
     fn update_ambience(&mut self, ui: &AppWindow) {
         let in_front = self.foreground.is_none() && !ui.get_launching() && !ui.get_booting();
-        self.music.set(self.settings.music, in_front);
+        self.music.set(self.settings.music, self.settings.music_track.as_deref(), in_front);
         let entry = self.focused_entry();
-        let has_artwork = entry.is_some_and(|i| self.entries[i].artwork.hero.is_some());
+        let has_artwork = self.settings.artwork && entry.is_some_and(|i| self.entries[i].artwork.hero.is_some());
         let accent = match entry {
             Some(i) => self.tiles[i].accent,
             None => {
@@ -1167,7 +1267,13 @@ impl Shell {
         let shown = self.settings.background.animated(has_artwork);
         // Paused under the quick menu: the shell then only redraws the menu, and the compositor's
         // blur under it stays cached.
-        self.backdrop.update(ui, shown, in_front && self.quick.is_none(), self.settings.animations, accent);
+        self.backdrop.update(
+            ui,
+            shown,
+            in_front && self.quick.is_none(),
+            Look { animate: self.settings.animations, style: self.settings.shader, palette: self.settings.palette },
+            accent,
+        );
     }
 
     /// Fades in the hero of the focused entry (once it is decoded), prefetches the neighbours
@@ -1192,7 +1298,8 @@ impl Shell {
         // "Animated": no artwork over the animated background
         let hero = entry
             .and_then(|e| e.artwork.hero.as_deref())
-            .filter(|_| self.settings.background != BackgroundChoice::Animated);
+            .filter(|_| self.settings.background != BackgroundChoice::Animated && self.settings.artwork);
+        let prefetch = if self.settings.artwork { prefetch } else { Vec::new() };
         self.heroes.show(entry.map(|e| e.id.as_str()), hero, prefetch);
 
         let parallax = match layout {
@@ -1547,8 +1654,43 @@ impl Shell {
         match quick.apply(action) {
             QuickOutcome::Stay => self.show_quick(ui, true),
             QuickOutcome::Close => self.close_quick(ui),
+            QuickOutcome::Confirm(action) => {
+                let dialog = self.quick_dialog(&action);
+                self.show_dialog(ui, dialog);
+            }
             QuickOutcome::Run(action) => {
                 self.close_quick(ui);
+                self.run_quick(ui, action);
+            }
+        }
+    }
+
+    /// What the confirmation dialog of a quick menu action says. "Cancel" is focused first: these
+    /// actions cannot be undone.
+    fn quick_dialog(&self, action: &QuickAction) -> Dialog<DialogTag> {
+        let (title, text, label) = match action {
+            QuickAction::Quit(id) => {
+                let name = self.entries.iter().find(|e| &e.id == id).map(|e| e.title.as_str()).unwrap_or_default();
+                (trf("Quit {}?", &[&name]), tr("Unsaved progress may be lost."), tr("Quit"))
+            }
+            QuickAction::Power(PowerAction::Reboot) => {
+                (tr("Restart?").to_string(), tr("Unsaved progress in running apps may be lost."), tr("Restart"))
+            }
+            QuickAction::Power(PowerAction::PowerOff) => {
+                (tr("Power off?").to_string(), tr("Unsaved progress in running apps may be lost."), tr("Power off"))
+            }
+            _ => (tr("Sign out?").to_string(), tr("The shell closes and running apps may be lost."), tr("Sign out")),
+        };
+        let buttons = vec![
+            DialogButton { label: tr("Cancel").into(), tag: DialogTag::Close },
+            DialogButton { label: label.into(), tag: DialogTag::Quick(action.clone()) },
+        ];
+        Dialog::new(title, text, buttons, 0)
+    }
+
+    fn run_quick(&mut self, ui: &AppWindow, action: QuickAction) {
+        {
+            {
                 match action {
                     QuickAction::Resume(app_id) => self.bring_to_front(ui, app_id, None),
                     QuickAction::Home => {
@@ -1811,6 +1953,7 @@ impl Shell {
     /// have exited. If the app in front is done, the shell comes back with an animation.
     pub fn watch_running(&mut self, ui: &AppWindow) {
         self.apply_pending_front(ui);
+        self.poll_artwork(ui);
         if let Some(failed) = self.failed_launch
             && failed.elapsed() >= MIN_HOLD
         {
@@ -1847,11 +1990,7 @@ impl Shell {
                 compositor.send(&ShellMessage::Exited { app_id: *app_id });
             }
             self.set_running_flag(entry_id, false);
-            if self
-                .dialog
-                .as_ref()
-                .is_some_and(|d| d.buttons().iter().any(|b| b.tag == DialogTag::QuitApp(entry_id.clone())))
-            {
+            if self.dialog.as_ref().is_some_and(|d| d.buttons().iter().any(|b| b.tag.quits(entry_id))) {
                 self.close_dialog(ui);
             }
             if self.foreground == Some(*app_id) {
@@ -2029,9 +2168,16 @@ impl Shell {
 
     /// Opens a modal dialog; it takes all input until a button is picked or Back dismisses it.
     fn show_dialog(&mut self, ui: &AppWindow, dialog: Dialog<DialogTag>) {
+        // From the quick menu over an app the dialog goes into the overlay window: the main
+        // window is behind the app.
+        self.dialog_in_overlay = self.quick.is_some() && self.overlay_window().is_some();
         self.dialog = Some(dialog);
         self.sync_dialog(ui);
-        ui.set_dialog_open(true);
+        match self.dialog_in_overlay.then(|| self.overlay_window()).flatten() {
+            Some(overlay) => overlay.set_dialog_open(true),
+            None => ui.set_dialog_open(true),
+        }
+        self.sync_blur();
         self.update_hints(ui);
     }
 
@@ -2040,24 +2186,49 @@ impl Shell {
         self.show_dialog(ui, Dialog::alert(title, text, tr("OK"), DialogTag::Close));
     }
 
+    /// The overlay window over running apps (gamescope or our compositor), if there is one.
+    fn overlay_window(&self) -> Option<OverlayWindow> {
+        match self.compositor_ui() {
+            Some(windows) => Some(windows.overlay.clone_strong()),
+            None => self.gamescope.as_ref().map(|g| g.overlay.clone_strong()),
+        }
+    }
+
     fn sync_dialog(&self, ui: &AppWindow) {
         let Some(dialog) = &self.dialog else { return };
-        ui.set_dialog_title(dialog.title.as_str().into());
-        ui.set_dialog_text(dialog.text.as_str().into());
         let labels: Vec<slint::SharedString> = dialog.buttons().iter().map(|b| b.label.as_str().into()).collect();
-        ui.set_dialog_buttons(ModelRc::new(VecModel::from(labels)));
-        ui.set_dialog_focused(dialog.focused() as i32);
+        let (title, text, focused) = (dialog.title.as_str(), dialog.text.as_str(), dialog.focused() as i32);
+        match self.dialog_in_overlay.then(|| self.overlay_window()).flatten() {
+            Some(overlay) => {
+                overlay.set_dialog_title(title.into());
+                overlay.set_dialog_text(text.into());
+                overlay.set_dialog_buttons(ModelRc::new(VecModel::from(labels)));
+                overlay.set_dialog_focused(focused);
+            }
+            None => {
+                ui.set_dialog_title(title.into());
+                ui.set_dialog_text(text.into());
+                ui.set_dialog_buttons(ModelRc::new(VecModel::from(labels)));
+                ui.set_dialog_focused(focused);
+            }
+        }
     }
 
     fn apply_dialog(&mut self, ui: &AppWindow, action: Action) {
         let Some(dialog) = &mut self.dialog else { return };
-        match dialog.apply(action) {
+        // The Guide button closes the dialog like ○ does.
+        let outcome = if action == Action::Guide { DialogOutcome::Dismissed } else { dialog.apply(action) };
+        match outcome {
             DialogOutcome::None => self.sync_dialog(ui),
             DialogOutcome::Dismissed => self.close_dialog(ui),
             DialogOutcome::Chosen(tag) => {
                 self.close_dialog(ui);
                 match tag {
                     DialogTag::QuitApp(id) => self.quit_running(&id),
+                    DialogTag::Quick(action) => {
+                        self.close_quick(ui);
+                        self.run_quick(ui, action);
+                    }
                     DialogTag::Close => {}
                 }
             }
@@ -2068,6 +2239,10 @@ impl Shell {
     fn close_dialog(&mut self, ui: &AppWindow) {
         self.dialog = None;
         ui.set_dialog_open(false);
+        if let Some(overlay) = self.overlay_window() {
+            overlay.set_dialog_open(false);
+        }
+        self.sync_blur();
         self.update_hints(ui);
     }
 

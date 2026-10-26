@@ -192,8 +192,13 @@ impl Transitions {
         let t = self.progress(&active, now);
         match (active.kind, role) {
             (Kind::Open { app_id, from }, Role::App(id)) if id == app_id => {
+                let full = Area::full(output);
+                if from == full {
+                    // Out of the (fullscreen) launch screen: only a fade, no zoom
+                    return Some(Effect::cover(full, output, smoothstep(t), 0.0));
+                }
                 let e = ease_out_quart(t);
-                let clip = from.lerp(Area::full(output), e);
+                let clip = from.lerp(full, e);
                 Some(Effect::cover(clip, output, smoothstep(t / 0.3), 1.0 - e))
             }
             (Kind::Close { app_id: Some(app_id), to }, Role::App(id)) if id == app_id => {
@@ -241,11 +246,11 @@ impl Transitions {
 }
 
 /// Where an opening app starts: the tile, or the shell's launch screen where it is now (it grows
-/// from the tile to fullscreen within `card_ms`). From (nearly) fullscreen a short zoom from a
-/// slightly smaller rectangle remains.
+/// from the tile to fullscreen within `card_ms`). From (nearly) fullscreen the app fades in
+/// without a zoom.
 fn open_from(request: &Request, output: (f64, f64), now: Duration) -> Area {
     let full = Area::full(output);
-    let Some(tile) = request.transition.tile.map(Area::from_rect) else { return Area::inset(output, 0.06) };
+    let Some(tile) = request.transition.tile.map(Area::from_rect) else { return full };
     let card = if request.transition.card_ms == 0 {
         0.0
     } else {
@@ -253,7 +258,7 @@ fn open_from(request: &Request, output: (f64, f64), now: Duration) -> Area {
         ease_in_out_quart((elapsed / request.transition.card_ms as f64).min(1.0))
     };
     let from = tile.lerp(full, card);
-    if from.w * from.h > 0.8 * full.w * full.h { Area::inset(output, 0.06) } else { from }
+    if from.w * from.h > 0.8 * full.w * full.h { full } else { from }
 }
 
 fn lerp(a: f64, b: f64, t: f64) -> f64 {
@@ -338,11 +343,14 @@ mod tests {
         let clip = transitions.effect(Role::App(3), ms(200), OUTPUT).unwrap().clip.unwrap();
         assert!(close(clip.x, 50.0) && close(clip.w, 1110.0));
 
-        // Once it covers the screen, the app zooms in from slightly smaller than fullscreen.
+        // Once it covers the screen, the app only fades in (no zoom, no rounded corners).
         transitions.request(APP, Some(request), ms(0));
         transitions.front_changed(Target::Shell, APP, false, OUTPUT, ms(5000));
-        let clip = transitions.effect(Role::App(3), ms(5000), OUTPUT).unwrap().clip.unwrap();
-        assert_eq!(clip, Area::inset(OUTPUT, 0.06));
+        let start = transitions.effect(Role::App(3), ms(5000), OUTPUT).unwrap();
+        assert_eq!(start.clip, Some(Area::full(OUTPUT)));
+        assert!(close(start.scale, 1.0) && start.alpha == 0.0 && start.radius == 0.0);
+        let half = transitions.effect(Role::App(3), ms(5000) + OPEN / 2, OUTPUT).unwrap();
+        assert!(half.alpha > 0.4 && half.alpha < 0.6 && close(half.scale, 1.0));
     }
 
     #[test]

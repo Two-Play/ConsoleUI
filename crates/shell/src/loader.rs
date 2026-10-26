@@ -15,6 +15,8 @@ pub struct LoadOptions {
     pub dummy: bool,
     pub tiles: usize,
     pub dummy_launch: Option<String>,
+    /// Decode covers and logos (settings row "Game artwork")
+    pub artwork: bool,
 }
 
 pub struct LoadedEntry {
@@ -31,6 +33,15 @@ pub struct Library {
     pub dummy: bool,
 }
 
+/// Decodes the covers and logos of `entries` later, after "Game artwork" was switched on.
+pub fn spawn_artwork(entries: Vec<AppEntry>) -> mpsc::Receiver<Vec<LoadedEntry>> {
+    let (sender, receiver) = mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = sender.send(decode_all(entries, true));
+    });
+    receiver
+}
+
 pub fn spawn(options: LoadOptions) -> mpsc::Receiver<Library> {
     let (sender, receiver) = mpsc::channel();
     std::thread::spawn(move || {
@@ -43,7 +54,7 @@ fn load(options: &LoadOptions) -> Library {
     if !options.dummy {
         let entries = discover_library();
         if !entries.is_empty() {
-            return Library { entries: decode_all(entries), dummy: false };
+            return Library { entries: decode_all(entries, options.artwork), dummy: false };
         }
         eprintln!("No games or apps found, showing dummy entries.");
     }
@@ -54,11 +65,11 @@ fn load(options: &LoadOptions) -> Library {
             entry.launch = Launch::Command(argv.clone());
         }
     }
-    Library { entries: decode_all(entries), dummy: true }
+    Library { entries: decode_all(entries, options.artwork), dummy: true }
 }
 
 /// Decodes the images on several threads; the order is kept.
-fn decode_all(entries: Vec<AppEntry>) -> Vec<LoadedEntry> {
+fn decode_all(entries: Vec<AppEntry>, artwork: bool) -> Vec<LoadedEntry> {
     let threads = std::thread::available_parallelism().map_or(4, |n| n.get()).min(8);
     let chunk = entries.len().div_ceil(threads).max(1);
     let mut chunks: Vec<Vec<AppEntry>> = Vec::new();
@@ -68,13 +79,18 @@ fn decode_all(entries: Vec<AppEntry>) -> Vec<LoadedEntry> {
         chunks.push(std::mem::replace(&mut rest, tail));
     }
     std::thread::scope(|scope| {
-        let handles: Vec<_> =
-            chunks.into_iter().map(|chunk| scope.spawn(|| chunk.into_iter().map(decode).collect::<Vec<_>>())).collect();
+        let handles: Vec<_> = chunks
+            .into_iter()
+            .map(|chunk| scope.spawn(move || chunk.into_iter().map(|entry| decode(entry, artwork)).collect::<Vec<_>>()))
+            .collect();
         handles.into_iter().flat_map(|h| h.join().unwrap_or_default()).collect()
     })
 }
 
-fn decode(mut entry: AppEntry) -> LoadedEntry {
+fn decode(mut entry: AppEntry, artwork: bool) -> LoadedEntry {
+    if !artwork {
+        return LoadedEntry { entry, cover: None, logo: None };
+    }
     let cover = entry.artwork.cover.as_deref().and_then(|p| read(p, Some(COVER_MAX)));
     if let Some((primary, secondary)) = cover.as_ref().and_then(|px| accent::from_rgba(px.as_bytes())) {
         entry.accent = primary;

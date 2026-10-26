@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::backdrop::{Palette, Style};
 use crate::i18n::{LanguageChoice, tr};
 use crate::keymap::KeyboardLayout;
 use crate::xdg;
@@ -128,14 +129,22 @@ impl MusicChoice {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
     pub accent: Accent,
     pub animations: bool,
     pub background: BackgroundChoice,
+    /// Look of the animated background
+    pub shader: Style,
+    /// Colors of the animated background
+    pub palette: Palette,
+    /// Load covers and logos (off: generated placeholders, nothing decoded)
+    pub artwork: bool,
     pub sounds: bool,
     pub music: MusicChoice,
+    /// File name of the track to play on repeat from the music folder (`None`: all, shuffled)
+    pub music_track: Option<String>,
     pub glyphs: GlyphChoice,
     pub language: LanguageChoice,
     /// Layout of the physical keyboard in our compositor (the on-screen keyboard follows the
@@ -149,8 +158,12 @@ impl Default for Settings {
             accent: Accent::default(),
             animations: true,
             background: BackgroundChoice::default(),
+            shader: Style::default(),
+            palette: Palette::default(),
+            artwork: true,
             sounds: true,
             music: MusicChoice::default(),
+            music_track: None,
             glyphs: GlyphChoice::default(),
             language: LanguageChoice::default(),
             keyboard_layout: KeyboardLayout::default(),
@@ -165,9 +178,17 @@ pub enum Setting {
     Animations,
     /// Artwork or the animated background
     Background,
+    /// Look of the animated background
+    AnimationStyle,
+    /// Colors of the animated background
+    AnimationColors,
+    /// Load covers and logos
+    Artwork,
     Sounds,
     /// Background music on the home screen
     Music,
+    /// Which file of the music folder plays (only with "My music")
+    MusicTrack,
     Glyphs,
     /// Story 6.6
     Language,
@@ -180,24 +201,22 @@ pub enum Setting {
 }
 
 impl Setting {
-    pub const ALL: [Setting; 10] = [
+    pub const ALL: [Setting; 14] = [
         Self::Accent,
         Self::Animations,
         Self::Background,
+        Self::AnimationStyle,
+        Self::AnimationColors,
+        Self::Artwork,
         Self::Sounds,
         Self::Music,
+        Self::MusicTrack,
         Self::Glyphs,
         Self::Language,
         Self::KeyboardLayout,
         Self::Wifi,
         Self::Bluetooth,
     ];
-
-    /// The rows of the settings page; the keyboard layout only where it has an effect (in our
-    /// compositor; gamescope and the desktop use the layout of their own session).
-    pub fn rows(keyboard_layout: bool) -> Vec<Setting> {
-        Self::ALL.into_iter().filter(|&row| keyboard_layout || row != Self::KeyboardLayout).collect()
-    }
 
     /// Rows that open a sub-page instead of changing a value
     pub fn opens_page(self) -> bool {
@@ -209,8 +228,12 @@ impl Setting {
             Self::Accent => tr("Accent color"),
             Self::Animations => tr("Animations"),
             Self::Background => tr("Background"),
+            Self::AnimationStyle => tr("Animation style"),
+            Self::AnimationColors => tr("Animation colors"),
+            Self::Artwork => tr("Game artwork"),
             Self::Sounds => tr("Sounds"),
             Self::Music => tr("Background music"),
+            Self::MusicTrack => tr("Music track"),
             Self::Glyphs => tr("Button symbols"),
             Self::Language => tr("Language"),
             Self::KeyboardLayout => tr("Keyboard layout"),
@@ -224,8 +247,12 @@ impl Setting {
             Self::Accent => tr("Color of selection and buttons"),
             Self::Animations => tr("Transitions and motion"),
             Self::Background => tr("Game artwork or an animated background"),
+            Self::AnimationStyle => tr("Look of the animated background"),
+            Self::AnimationColors => tr("Colors of the animated background"),
+            Self::Artwork => tr("Load covers and logos; off saves memory"),
             Self::Sounds => tr("Sounds while navigating"),
             Self::Music => tr("Plays while the home screen is in front"),
+            Self::MusicTrack => tr("One file on repeat, or all shuffled"),
             Self::Glyphs => tr("Symbols in the button hints"),
             Self::Language => tr("Language of the interface"),
             Self::KeyboardLayout => tr("Layout of the connected keyboard"),
@@ -247,6 +274,21 @@ fn cycle<T: Copy + PartialEq>(all: &[T], current: T, forward: bool) -> T {
 }
 
 impl Settings {
+    /// The rows of the settings page: the keyboard layout only where it has an effect (in our
+    /// compositor; gamescope and the desktop use the layout of their own session), the animation
+    /// style unless the background is classic, the track only for "My music".
+    pub fn rows(&self, keyboard_layout: bool) -> Vec<Setting> {
+        Setting::ALL
+            .into_iter()
+            .filter(|&row| match row {
+                Setting::KeyboardLayout => keyboard_layout,
+                Setting::AnimationStyle | Setting::AnimationColors => self.background != BackgroundChoice::Classic,
+                Setting::MusicTrack => self.music == MusicChoice::Folder,
+                _ => true,
+            })
+            .collect()
+    }
+
     /// `$XDG_CONFIG_HOME/consoleui/settings.json`
     pub fn default_path() -> Option<PathBuf> {
         xdg::config_home().map(|dir| dir.join("consoleui/settings.json"))
@@ -278,8 +320,13 @@ impl Settings {
             Setting::Accent => self.accent.label(),
             Setting::Animations => on_off(self.animations),
             Setting::Background => self.background.label(),
+            Setting::AnimationStyle => self.shader.label(),
+            Setting::AnimationColors => self.palette.label(),
+            Setting::Artwork => on_off(self.artwork),
             Setting::Sounds => on_off(self.sounds),
             Setting::Music => self.music.label(),
+            // Names a file: the shell has the list
+            Setting::MusicTrack => "",
             Setting::Glyphs => self.glyphs.label(),
             Setting::Language => self.language.label(),
             Setting::KeyboardLayout => self.keyboard_layout.label(),
@@ -293,6 +340,9 @@ impl Settings {
             Setting::Accent => self.accent = cycle(&Accent::ALL, self.accent, forward),
             Setting::Animations => self.animations = !self.animations,
             Setting::Background => self.background = cycle(&BackgroundChoice::ALL, self.background, forward),
+            Setting::AnimationStyle => self.shader = cycle(&Style::ALL, self.shader, forward),
+            Setting::AnimationColors => self.palette = cycle(&Palette::ALL, self.palette, forward),
+            Setting::Artwork => self.artwork = !self.artwork,
             Setting::Sounds => self.sounds = !self.sounds,
             Setting::Music => self.music = cycle(&MusicChoice::ALL, self.music, forward),
             Setting::Glyphs => self.glyphs = cycle(&GlyphChoice::ALL, self.glyphs, forward),
@@ -300,7 +350,8 @@ impl Settings {
             Setting::KeyboardLayout => {
                 self.keyboard_layout = cycle(&KeyboardLayout::ALL, self.keyboard_layout, forward);
             }
-            Setting::Wifi | Setting::Bluetooth => {}
+            // The shell steps through the files of the music folder (`music::cycle_track`)
+            Setting::MusicTrack | Setting::Wifi | Setting::Bluetooth => {}
         }
     }
 }
@@ -348,16 +399,40 @@ mod tests {
 
     #[test]
     fn keyboard_layout_row_only_in_our_compositor() {
-        assert!(!Setting::rows(false).contains(&Setting::KeyboardLayout));
-        assert_eq!(Setting::rows(false).len(), Setting::ALL.len() - 1);
-        assert_eq!(Setting::rows(true), Setting::ALL.to_vec());
+        let settings = Settings::default();
+        assert!(!settings.rows(false).contains(&Setting::KeyboardLayout));
+        assert_eq!(settings.rows(false).len(), Setting::ALL.len() - 2);
+        assert!(settings.rows(true).contains(&Setting::KeyboardLayout));
+    }
+
+    #[test]
+    fn track_and_style_rows_depend_on_their_parent() {
+        let mut settings = Settings::default();
+        assert!(!settings.rows(false).contains(&Setting::MusicTrack));
+        settings.music = MusicChoice::Folder;
+        assert!(settings.rows(false).contains(&Setting::MusicTrack));
+        assert!(settings.rows(false).contains(&Setting::AnimationStyle));
+        settings.background = BackgroundChoice::Classic;
+        assert!(!settings.rows(false).contains(&Setting::AnimationStyle));
+        settings.change(Setting::AnimationStyle, true);
+        assert_eq!(settings.shader, Style::Plasma);
+        settings.change(Setting::AnimationColors, false);
+        assert_eq!(settings.palette, Palette::Neon);
+        settings.change(Setting::Artwork, true);
+        assert!(!settings.artwork);
+        assert_eq!(settings.value_label(Setting::Artwork), "Off");
     }
 
     #[test]
     fn save_load_and_partial_files() {
         let dir = std::env::temp_dir().join(format!("consoleui-settings-{}", std::process::id()));
         let path = dir.join("settings.json");
-        let settings = Settings { accent: Accent::Green, animations: false, ..Settings::default() };
+        let settings = Settings {
+            accent: Accent::Green,
+            animations: false,
+            music_track: Some("a.ogg".into()),
+            ..Settings::default()
+        };
         settings.save(&path).unwrap();
         assert_eq!(Settings::load(&path), settings);
         // Missing fields get their defaults (e.g. after an update)

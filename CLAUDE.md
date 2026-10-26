@@ -164,8 +164,8 @@ Cargo workspace (edition 2024, `default-members` = the shell):
     `RunningAppID` in `~/.steam/registry.vdf` is updated by Steam only minutes later), with a minimum hold
     time and a 2 s grace period without game processes.
   - `settings.rs` (`Settings` per profile, the rows of the settings page), `sound.rs` (synthesized UI sounds
-    as raw PCM), `music.rs` (generated ambient loop and the music folder for the background music),
-    `backdrop.rs` (per-pixel animated background, rendered small and scaled up by the shell),
+    as raw PCM), `music.rs` (generated ambient loop and the music folder and track choice for the background music),
+    `backdrop.rs` (per-pixel animated background in four `Style`s, rendered small and scaled up by the shell),
     `input::evdev` (key codes/axis normalization for the exclusive grab).
   - `wifi.rs` / `bluetooth.rs`: D-Bus-free models for NetworkManager/BlueZ (merge/sort networks, AP
     security flags, device kind from `Icon`/Class/name, visible devices). `network.rs`: `Request`,

@@ -14,10 +14,11 @@ export component TileRow inherits Rectangle {
     in property <length> tile;
     in property <length> tile-focused;
     in property <length> gap;
-    // Tiles kept visible to the left of the focused one (once there are that many)
+    // Room left of the focused tile for this many tiles; it stays reserved at the first tile, so
+    // the focused tile (and the info below it) always sits at the same place
     in property <int> lead: 0;
 
-    property <length> lead-x: min(root.lead, root.focused) * (root.tile + root.gap);
+    property <length> lead-x: root.lead * (root.tile + root.gap);
 
     // Position of the focused tile relative to the parent, for the launch screen
     out property <length> focus-x: root.x + root.lead-x;

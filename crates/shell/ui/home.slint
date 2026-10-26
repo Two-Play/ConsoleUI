@@ -186,9 +186,10 @@ export component HomePage inherits Rectangle {
 
     for layer in 2: InfoBlock {
         property <bool> shows: (layer == 0) == root.flip;
-        x: root.margin;
+        // Lines up with the focused tile, which always sits one tile to the right of the margin
+        x: root.margin + row.tile + row.gap;
         y: row.y + row.height + 56px * root.s;
-        width: root.width - 2 * root.margin;
+        width: root.width - 2 * root.margin - row.tile - row.gap;
         height: root.height - self.y;
         tile: self.shows ? root.current : root.previous;
         shown: self.shows;

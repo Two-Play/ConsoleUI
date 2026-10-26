@@ -144,6 +144,21 @@ pub fn tracks(dir: &Path) -> Vec<PathBuf> {
     tracks
 }
 
+/// File name of a track, as stored in the settings.
+pub fn track_name(path: &Path) -> Option<String> {
+    path.file_name().map(|name| name.to_string_lossy().into_owned())
+}
+
+/// The next (`forward`) or previous choice in the list "all shuffled", then every file of `names`;
+/// wraps around. A name that is gone counts as "all shuffled".
+pub fn cycle_track(names: &[String], current: Option<&str>, forward: bool) -> Option<String> {
+    // 0 is "all", file `i` is `i + 1`
+    let at = current.and_then(|name| names.iter().position(|n| n == name)).map_or(0, |i| i + 1);
+    let len = names.len() + 1;
+    let next = if forward { (at + 1) % len } else { (at + len - 1) % len };
+    next.checked_sub(1).map(|i| names[i].clone())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -159,6 +174,17 @@ mod tests {
         let max_step = samples.chunks(2).zip(samples.chunks(2).skip(1)).map(|(a, b)| step(a[0], b[0])).max().unwrap();
         let seam = step(samples[samples.len() - 2], samples[0]);
         assert!(seam <= max_step, "seam {seam}, max step {max_step}");
+    }
+
+    #[test]
+    fn cycles_through_all_and_the_files() {
+        let names = vec!["a.ogg".to_string(), "b.flac".to_string()];
+        assert_eq!(cycle_track(&names, None, true).as_deref(), Some("a.ogg"));
+        assert_eq!(cycle_track(&names, Some("a.ogg"), true).as_deref(), Some("b.flac"));
+        assert_eq!(cycle_track(&names, Some("b.flac"), true), None);
+        assert_eq!(cycle_track(&names, None, false).as_deref(), Some("b.flac"));
+        assert_eq!(cycle_track(&names, Some("gone.ogg"), true).as_deref(), Some("a.ogg"));
+        assert_eq!(cycle_track(&[], None, true), None);
     }
 
     #[test]

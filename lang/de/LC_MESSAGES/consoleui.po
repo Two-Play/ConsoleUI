@@ -50,9 +50,6 @@ msgstr "Zurück"
 msgid "Cancel"
 msgstr "Abbrechen"
 
-msgid "Confirm"
-msgstr "Bestätigen"
-
 msgid "Options"
 msgstr "Optionen"
 
@@ -314,9 +311,6 @@ msgstr "Ausschalten"
 
 msgid "Sign out"
 msgstr "Abmelden"
-
-msgid "Really?"
-msgstr "Wirklich?"
 
 # --- Notices ---
 
@@ -864,3 +858,84 @@ msgstr "Screenshot gespeichert"
 
 msgid "Screenshot failed"
 msgstr "Screenshot fehlgeschlagen"
+
+msgid "Restart?"
+msgstr "Neu starten?"
+
+msgid "Power off?"
+msgstr "Ausschalten?"
+
+msgid "Sign out?"
+msgstr "Abmelden?"
+
+msgid "Unsaved progress in running apps may be lost."
+msgstr "Nicht gespeicherter Fortschritt in laufenden Apps kann verloren gehen."
+
+msgid "The shell closes and running apps may be lost."
+msgstr "Die Shell wird beendet, laufende Apps gehen eventuell verloren."
+
+msgid "Aurora"
+msgstr "Polarlicht"
+
+msgid "Plasma"
+msgstr "Plasma"
+
+msgid "Bubbles"
+msgstr "Blasen"
+
+msgid "Waves"
+msgstr "Wellen"
+
+msgid "Animation style"
+msgstr "Animationsstil"
+
+msgid "Game artwork"
+msgstr "Spiel-Artwork"
+
+msgid "Look of the animated background"
+msgstr "Aussehen des animierten Hintergrunds"
+
+msgid "Load covers and logos; off saves memory"
+msgstr "Lädt Cover und Logos; aus spart Speicher"
+
+msgid "Music track"
+msgstr "Musikstück"
+
+msgid "One file on repeat, or all shuffled"
+msgstr "Ein Stück in Dauerschleife oder alle gemischt"
+
+msgid "All, shuffled"
+msgstr "Alle, gemischt"
+
+msgid "Grid"
+msgstr "Raster"
+
+msgid "Tunnel"
+msgstr "Tunnel"
+
+msgid "Stars"
+msgstr "Sterne"
+
+msgid "Orbs"
+msgstr "Kugeln"
+
+msgid "Entry color"
+msgstr "Farbe des Eintrags"
+
+msgid "Spectrum"
+msgstr "Spektrum"
+
+msgid "Sunset"
+msgstr "Sonnenuntergang"
+
+msgid "Ocean"
+msgstr "Ozean"
+
+msgid "Neon"
+msgstr "Neon"
+
+msgid "Animation colors"
+msgstr "Animationsfarben"
+
+msgid "Colors of the animated background"
+msgstr "Farben des animierten Hintergrunds"

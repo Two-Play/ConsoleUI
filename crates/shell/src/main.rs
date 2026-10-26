@@ -84,6 +84,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         dummy: options.dummy,
         tiles: options.tiles,
         dummy_launch: options.dummy_launch.clone(),
+        artwork: start.settings.artwork,
     });
     let boot_started = Instant::now();
 

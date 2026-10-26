@@ -1,5 +1,6 @@
 import { ControllerStyle, NavAction, QuickItem } from "types.slint";
 import { QuickMenu } from "quickmenu.slint";
+import { Dialog } from "dialog.slint";
 
 // Own transparent window for the quick menu. In gamescope, Rust sets STEAM_OVERLAY before it is
 // shown; gamescope then puts it over the running game. In our own compositor the title (announced
@@ -18,12 +19,26 @@ export component OverlayWindow inherits Window {
     in property <int> focused;
     in property <ControllerStyle> controller-style;
 
+    // A confirmation above the menu (Story 5.1: restart, power off, quit ...), the same dialog as in
+    // the main window, which is hidden behind a running app
+    in property <bool> dialog-open;
+    in property <string> dialog-title;
+    in property <string> dialog-text;
+    in property <[string]> dialog-buttons;
+    in property <int> dialog-focused;
+
     callback action(NavAction);
 
     // The bar at the bottom edge, full width, where it is in this frame: our compositor blurs
     // the game below it (Story 7.13).
     out property <length> panel-y: menu.panel-y;
     out property <length> panel-height: menu.panel-height;
+    // The dialog card, likewise
+    out property <length> dialog-x: dialog.panel-x;
+    out property <length> dialog-y: dialog.panel-y;
+    out property <length> dialog-width: dialog.panel-width;
+    out property <length> dialog-height: dialog.panel-height;
+    out property <length> dialog-radius: dialog.panel-radius;
 
     property <float> s: max(0.4, min(root.width / 1920px, root.height / 1080px));
 
@@ -46,6 +61,18 @@ export component OverlayWindow inherits Window {
             title: root.title-text;
             items: root.items;
             focused: root.focused;
+            style: root.controller-style;
+            s: root.s;
+        }
+
+        dialog := Dialog {
+            width: 100%;
+            height: 100%;
+            open: root.dialog-open;
+            title: root.dialog-title;
+            text: root.dialog-text;
+            buttons: root.dialog-buttons;
+            focused: root.dialog-focused;
             style: root.controller-style;
             s: root.s;
         }

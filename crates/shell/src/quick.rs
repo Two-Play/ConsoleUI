@@ -20,7 +20,7 @@ pub enum QuickAction {
 }
 
 impl QuickAction {
-    /// Actions with serious consequences need a second press.
+    /// Actions with serious consequences are confirmed in a dialog.
     fn needs_confirmation(&self) -> bool {
         matches!(self, Self::Quit(_) | Self::Power(PowerAction::Reboot | PowerAction::PowerOff) | Self::Logout)
     }
@@ -39,8 +39,6 @@ pub struct ForegroundApp {
 pub struct QuickMenu {
     actions: Vec<QuickAction>,
     focused: usize,
-    /// The focused action waits for confirmation
-    armed: bool,
     volume: Option<Volume>,
     app_title: Option<String>,
     app_in_front: bool,
@@ -53,6 +51,8 @@ pub enum QuickOutcome {
     Stay,
     Close,
     Run(QuickAction),
+    /// The action has serious consequences: the shell asks first (dialog)
+    Confirm(QuickAction),
 }
 
 impl QuickMenu {
@@ -74,7 +74,7 @@ impl QuickMenu {
             QuickAction::Power(PowerAction::PowerOff),
             QuickAction::Logout,
         ]);
-        Self { actions, focused: 0, armed: false, volume: system::volume(), app_title, app_in_front, profile }
+        Self { actions, focused: 0, volume: system::volume(), app_title, app_in_front, profile }
     }
 
     pub fn focused(&self) -> usize {
@@ -100,7 +100,6 @@ impl QuickMenu {
                 };
                 if let Some(next) = next {
                     self.focused = next;
-                    self.armed = false;
                 }
                 QuickOutcome::Stay
             }
@@ -114,15 +113,8 @@ impl QuickMenu {
                 self.volume = system::volume();
                 QuickOutcome::Stay
             }
-            Action::Confirm if current.needs_confirmation() && !self.armed => {
-                self.armed = true;
-                QuickOutcome::Stay
-            }
+            Action::Confirm if current.needs_confirmation() => QuickOutcome::Confirm(current),
             Action::Confirm => QuickOutcome::Run(current),
-            Action::Back | Action::Guide if self.armed => {
-                self.armed = false;
-                QuickOutcome::Stay
-            }
             Action::Back | Action::Guide => QuickOutcome::Close,
             _ => QuickOutcome::Stay,
         }
@@ -131,9 +123,7 @@ impl QuickMenu {
     pub fn items(&self) -> Vec<QuickItem> {
         self.actions
             .iter()
-            .enumerate()
-            .map(|(i, action)| {
-                let armed = self.armed && i == self.focused;
+            .map(|action| {
                 let (symbol, label, value) = match action {
                     QuickAction::Resume(_) => ("▶", tr("Resume"), self.app_title.clone().unwrap_or_default()),
                     QuickAction::Home => ("⌂", tr("Home"), tr("Go to Home").to_string()),
@@ -145,8 +135,6 @@ impl QuickMenu {
                     QuickAction::Power(PowerAction::PowerOff) => ("⏻", tr("Power off"), String::new()),
                     QuickAction::Logout => ("⇥", tr("Sign out"), tr("Quit shell").to_string()),
                 };
-                // While the action waits for confirmation, its name moves to the second line.
-                let (label, value) = if armed { (tr("Really?"), label.to_string()) } else { (label, value) };
                 let level = match (action, self.volume) {
                     (QuickAction::Volume, Some(volume)) if !volume.muted => volume.percent.into(),
                     (QuickAction::Volume, Some(_)) => 0,
@@ -156,7 +144,6 @@ impl QuickMenu {
                     symbol: symbol.into(),
                     label: label.into(),
                     value: value.into(),
-                    armed,
                     adjustable: *action == QuickAction::Volume,
                     level,
                 }

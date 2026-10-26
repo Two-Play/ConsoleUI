@@ -67,7 +67,7 @@ export component QuickMenu inherits Rectangle {
             width: root.card;
             height: root.card * 0.82;
             border-radius: 18px * root.s;
-            background: item.armed ? #ff5a5a : self.is-focused ? Theme.accent : Theme.surface;
+            background: self.is-focused ? Theme.accent : Theme.surface;
             // Only the lift animates: a fading background with the text color switched at once
             // left the card that loses the focus as a pale "ghost" for a moment.
             animate y { duration: Theme.focus-duration; easing: ease-out-quart; }
@@ -76,7 +76,7 @@ export component QuickMenu inherits Rectangle {
                 x: 18px * root.s;
                 y: 14px * root.s;
                 text: item.symbol;
-                color: card.is-focused || item.armed ? Theme.base : Theme.text;
+                color: card.is-focused ? Theme.base : Theme.text;
                 font-size: 30px * root.s;
             }
 
@@ -89,7 +89,7 @@ export component QuickMenu inherits Rectangle {
 
                 Text {
                     text: item.label;
-                    color: card.is-focused || item.armed ? Theme.base : Theme.text;
+                    color: card.is-focused ? Theme.base : Theme.text;
                     font-size: 17px * root.s;
                     font-weight: 700;
                     overflow: elide;
@@ -110,7 +110,7 @@ export component QuickMenu inherits Rectangle {
 
                 if item.value != "": Text {
                     text: item.value;
-                    color: card.is-focused || item.armed ? Theme.base.with-alpha(0.7) : Theme.text-dim;
+                    color: card.is-focused ? Theme.base.with-alpha(0.7) : Theme.text-dim;
                     font-size: 14px * root.s;
                     overflow: elide;
                 }
@@ -123,8 +123,7 @@ export component QuickMenu inherits Rectangle {
             height: 28px * root.s;
             style: root.style;
             s: root.s;
-            hints: root.current.armed ? [{ button: GlyphButton.confirm, label: @tr("Confirm") }, { button: GlyphButton.back, label: @tr("Cancel") }]
-                : root.current.adjustable ? [{ button: GlyphButton.dpad, label: @tr("Select") }, { button: GlyphButton.updown, label: @tr("Volume") }, { button: GlyphButton.confirm, label: @tr("Mute") }, { button: GlyphButton.back, label: @tr("Close") }]
+            hints: root.current.adjustable ? [{ button: GlyphButton.dpad, label: @tr("Select") }, { button: GlyphButton.updown, label: @tr("Volume") }, { button: GlyphButton.confirm, label: @tr("Mute") }, { button: GlyphButton.back, label: @tr("Close") }]
                 : [{ button: GlyphButton.dpad, label: @tr("Select") }, { button: GlyphButton.confirm, label: @tr("OK") }, { button: GlyphButton.back, label: @tr("Close") }];
         }
     }

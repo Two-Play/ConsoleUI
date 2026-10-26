@@ -26,12 +26,14 @@ const CHUNK: usize = 2400;
 
 enum Control {
     Choice(MusicChoice),
+    Track(Option<String>),
     Active(bool),
 }
 
 pub struct Music {
     sender: Sender<Control>,
     choice: MusicChoice,
+    track: Option<String>,
     active: bool,
 }
 
@@ -39,14 +41,19 @@ impl Music {
     pub fn start() -> Self {
         let (sender, receiver) = mpsc::channel();
         std::thread::spawn(move || run(receiver));
-        Self { sender, choice: MusicChoice::Off, active: false }
+        Self { sender, choice: MusicChoice::Off, track: None, active: false }
     }
 
-    /// What should play, and whether the shell is in front (only then it plays).
-    pub fn set(&mut self, choice: MusicChoice, active: bool) {
+    /// What should play (`track`: the one file of the music folder to repeat, else all shuffled),
+    /// and whether the shell is in front (only then it plays).
+    pub fn set(&mut self, choice: MusicChoice, track: Option<&str>, active: bool) {
         if choice != self.choice {
             self.choice = choice;
             let _ = self.sender.send(Control::Choice(choice));
+        }
+        if track != self.track.as_deref() {
+            self.track = track.map(str::to_owned);
+            let _ = self.sender.send(Control::Track(self.track.clone()));
         }
         if active != self.active {
             self.active = active;
@@ -57,6 +64,7 @@ impl Music {
 
 fn run(receiver: Receiver<Control>) {
     let mut choice = MusicChoice::Off;
+    let mut track: Option<String> = None;
     let mut active = false;
     let mut ambient: Option<Ambient> = None;
     let mut folder: Option<Folder> = None;
@@ -78,6 +86,11 @@ fn run(receiver: Receiver<Control>) {
         };
         match control {
             Some(Control::Choice(new)) => choice = new,
+            Some(Control::Track(new)) => {
+                track = new;
+                // The new track starts at once
+                folder = None;
+            }
             Some(Control::Active(new)) => active = new,
             None => {}
         }
@@ -105,7 +118,7 @@ fn run(receiver: Receiver<Control>) {
             }
             MusicChoice::Folder => {
                 if folder.is_none() && active {
-                    folder = Folder::new();
+                    folder = Folder::new(track.as_deref());
                     if folder.is_none() {
                         eprintln!("Music: no playable files in {:?}", music::music_dir());
                         choice = MusicChoice::Off;
@@ -181,10 +194,15 @@ struct Folder {
 }
 
 impl Folder {
-    fn new() -> Option<Self> {
+    /// `track`: only the file with this name, on repeat; else all files, shuffled.
+    fn new(track: Option<&str>) -> Option<Self> {
         let mut tracks = music::tracks(&music::music_dir()?);
         if tracks.is_empty() {
             return None;
+        }
+        if let Some(only) = track.and_then(|name| tracks.iter().find(|t| music::track_name(t).as_deref() == Some(name)))
+        {
+            return Some(Self { tracks: vec![only.clone()], next: 0, current: None, paused: false });
         }
         // Shuffled with the clock as seed (Fisher–Yates with a small LCG)
         let mut seed =

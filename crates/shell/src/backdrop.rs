@@ -7,7 +7,7 @@
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, SyncSender, TryRecvError};
 use std::time::{Duration, Instant};
 
-use consoleui_core::backdrop::{self, HEIGHT, WIDTH};
+use consoleui_core::backdrop::{self, HEIGHT, Palette, Style, WIDTH};
 use slint::{ComponentHandle, Image, Rgba8Pixel, SharedPixelBuffer, Timer, TimerMode};
 
 use crate::AppWindow;
@@ -22,9 +22,19 @@ const COLOR_GLIDE: f32 = 0.45;
 #[derive(Clone, Copy, PartialEq)]
 struct Control {
     color: [f32; 3],
+    style: Style,
+    palette: Palette,
     /// Visible and the shell in front
     run: bool,
     animate: bool,
+}
+
+/// How the background looks and whether it moves
+#[derive(Clone, Copy)]
+pub struct Look {
+    pub animate: bool,
+    pub style: Style,
+    pub palette: Palette,
 }
 
 pub struct Backdrop {
@@ -43,11 +53,12 @@ impl Backdrop {
     }
 
     /// `shown`: the background is visible; `in_front`: the shell is in front (no app, no launch
-    /// screen); `animate`: the animations setting; `accent`: the color to glide to.
-    pub fn update(&mut self, ui: &AppWindow, shown: bool, in_front: bool, animate: bool, accent: slint::Color) {
+    /// screen); `look`: style, colors and the animations setting; `accent`: the color to glide to.
+    pub fn update(&mut self, ui: &AppWindow, shown: bool, in_front: bool, look: Look, accent: slint::Color) {
+        let Look { animate, style, palette } = look;
         ui.set_backdrop_shown(shown);
         let color = [accent.red(), accent.green(), accent.blue()].map(|c| c as f32 / 255.0);
-        let control = Control { color, run: shown && in_front, animate };
+        let control = Control { color, style, palette, run: shown && in_front, animate };
         if self.control == Some(control) {
             return;
         }
@@ -73,7 +84,13 @@ impl Backdrop {
 /// change otherwise.
 fn run(controls: Receiver<Control>, frames: SyncSender<Vec<u8>>) {
     let start = Instant::now();
-    let mut control = Control { color: [0.4, 0.4, 0.9], run: false, animate: false };
+    let mut control = Control {
+        color: [0.4, 0.4, 0.9],
+        style: Style::default(),
+        palette: Palette::default(),
+        run: false,
+        animate: false,
+    };
     let mut color: Option<[f32; 3]> = None;
     let mut pending = false;
     let mut last = Instant::now();
@@ -111,7 +128,7 @@ fn run(controls: Receiver<Control>, frames: SyncSender<Vec<u8>>) {
         color = Some(current);
         let time = if control.animate { start.elapsed().as_secs_f32() } else { 12.0 };
         let mut bytes = vec![0; WIDTH * HEIGHT * 4];
-        backdrop::render(WIDTH, HEIGHT, time, current, &mut bytes);
+        backdrop::render(control.style, control.palette, WIDTH, HEIGHT, time, current, &mut bytes);
         // The UI takes the newest frame; one that is still waiting is simply replaced next time.
         let _ = frames.try_send(bytes);
         pending = false;

@@ -17,6 +17,13 @@ export component Dialog inherits Rectangle {
 
     property <length> pad: 44px * root.s;
 
+    // Where the card is in this window, for the compositor's backdrop blur (Story 7.13)
+    out property <length> panel-x: panel.x;
+    out property <length> panel-y: panel.y;
+    out property <length> panel-width: panel.width;
+    out property <length> panel-height: panel.height;
+    out property <length> panel-radius: panel.border-radius;
+
     Rectangle {
         width: 100%;
         height: 100%;
@@ -25,7 +32,10 @@ export component Dialog inherits Rectangle {
         animate opacity { duration: Theme.page-duration; }
     }
 
-    if root.open: panel := GlassPanel {
+    panel := GlassPanel {
+        opacity: root.open ? 1 : 0;
+        visible: self.opacity > 0.01;
+        animate opacity { duration: Theme.page-duration; }
         width: 680px * root.s;
         height: content.preferred-height;
         x: (parent.width - self.width) / 2;
