@@ -16,6 +16,8 @@ Options:
   --shell CMD [ARGS...]        the shell to start (same as after --; default: consoleui)
   --no-shell                   start no shell (clients can connect to the printed socket)
   --no-xwayland                do not start XWayland (no DISPLAY for the shell and its apps)
+  --no-blur                    no backdrop blur under the quick menu and toasts (also with
+                               CONSOLEUI_NO_BLUR=1 in the environment)
   --screenshot-after MS PNG    save the composed output as PNG MS milliseconds after the start
                                (development; may be given several times)
   -h, --help                   this help";
@@ -33,6 +35,8 @@ pub struct Options {
     /// `None`: start no shell
     pub shell: Option<Vec<String>>,
     pub xwayland: bool,
+    /// Blur behind the shell's overlay and notification panels (Story 7.13)
+    pub blur: bool,
     pub screenshots: Vec<(Duration, PathBuf)>,
     pub help: bool,
 }
@@ -45,6 +49,7 @@ impl Options {
             size: (1280, 720),
             shell: Some(vec!["consoleui".into()]),
             xwayland: true,
+            blur: true,
             screenshots: Vec::new(),
             help: false,
         };
@@ -59,6 +64,7 @@ impl Options {
                 }
                 "--no-shell" => options.shell = None,
                 "--no-xwayland" => options.xwayland = false,
+                "--no-blur" => options.blur = false,
                 "--screenshot-after" => {
                     let ms = args.next().ok_or("--screenshot-after needs MS and PNG")?;
                     let ms: u64 = ms.parse().map_err(|_| format!("invalid milliseconds: {ms}"))?;
@@ -122,5 +128,7 @@ mod tests {
         assert!(parse(&["--screenshot-after", "x", "a.png"]).is_err());
         assert!(parse(&["--bogus"]).is_err());
         assert_eq!(parse(&["--no-shell"]).unwrap().shell, None);
+        assert!(parse(&[]).unwrap().blur);
+        assert!(!parse(&["--no-blur"]).unwrap().blur);
     }
 }

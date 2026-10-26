@@ -62,7 +62,7 @@ fn main() {
         .init();
 
     let nested = std::env::var_os("WAYLAND_DISPLAY").is_some() || std::env::var_os("DISPLAY").is_some();
-    let options = match Options::parse(std::env::args().skip(1), nested) {
+    let mut options = match Options::parse(std::env::args().skip(1), nested) {
         Ok(options) => options,
         Err(message) => {
             eprintln!("{message}\n\n{USAGE}");
@@ -72,6 +72,10 @@ fn main() {
     if options.help {
         println!("{USAGE}");
         return;
+    }
+    // Lets the session scripts turn the blur off without passing compositor options.
+    if std::env::var_os("CONSOLEUI_NO_BLUR").is_some_and(|value| value != "0") {
+        options.blur = false;
     }
     install_signal_handlers();
     let result = match options.backend {
@@ -90,6 +94,10 @@ fn main() {
 impl State {
     /// After the backend is up: XWayland, then the shell (with `DISPLAY`), scheduled screenshots.
     pub fn start(&mut self, options: &Options) {
+        self.blur = options.blur;
+        if !self.blur {
+            info!("backdrop blur off");
+        }
         for (delay, path) in &options.screenshots {
             self.schedule_screenshot(*delay, path.clone());
         }

@@ -69,7 +69,7 @@ session/consoleui-nested --compositor --dummy      # nested session on our compo
 ```
 
 Compositor options: `--winit`/`--drm` (default: winit when `WAYLAND_DISPLAY`/`DISPLAY` is set),
-`--size WxH`, `--no-xwayland`, `--no-shell`, `--screenshot-after MS PNG` (repeatable), the shell command
+`--size WxH`, `--no-xwayland`, `--no-shell`, `--no-blur` (or `CONSOLEUI_NO_BLUR=1`), `--screenshot-after MS PNG` (repeatable), the shell command
 after `--` or `--shell`. **Never run `--drm` on the host** (it takes over the display); test it in the VM.
 
 Test VM for the DRM backend and the login session (`docs/dev-vm.md`): `dev/vm.sh create` once, then

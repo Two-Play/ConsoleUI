@@ -149,6 +149,9 @@ pub struct State {
     /// Blurred backdrops under the overlay and notification windows (Story 7.13)
     pub backdrops: Backdrops,
     pub blur_cache: BlurCache,
+    /// Backdrop blur enabled (`--no-blur`, `CONSOLEUI_NO_BLUR`); without it the shell is not told
+    /// about the feature and keeps its opaque glass
+    pub blur: bool,
     pub control: Control,
     pub shell: Option<ShellProcess>,
     pub screenshots: Vec<ScreenshotRequest>,
@@ -266,6 +269,7 @@ impl State {
             transitions: Transitions::default(),
             backdrops: Backdrops::default(),
             blur_cache: BlurCache::default(),
+            blur: true,
             control,
             shell: None,
             screenshots: Vec::new(),
@@ -518,14 +522,14 @@ impl State {
                 if version != protocol::VERSION {
                     warn!("shell speaks protocol {version}, compositor {}", protocol::VERSION);
                 }
-                let features = [
-                    protocol::FEATURE_OVERLAYS,
-                    protocol::FEATURE_GUIDE_KEY,
-                    protocol::FEATURE_TRANSITIONS,
-                    protocol::FEATURE_BLUR,
-                ]
-                .map(str::to_owned)
-                .to_vec();
+                let mut features = vec![
+                    protocol::FEATURE_OVERLAYS.to_owned(),
+                    protocol::FEATURE_GUIDE_KEY.to_owned(),
+                    protocol::FEATURE_TRANSITIONS.to_owned(),
+                ];
+                if self.blur {
+                    features.push(protocol::FEATURE_BLUR.to_owned());
+                }
                 self.control.send_to(client, &CompositorMessage::Welcome { version: protocol::VERSION, features });
                 self.policy.set_shell_pid(pid, &ownership::read_process)
             }
