@@ -398,9 +398,9 @@ export component AppWindow inherits Window {
             }
         }
 
-        // Selection on the tabs (home screen, up from the row): a pill around the tab
+        // Selection on the tabs (up from the top row of home, library and settings): a pill around the tab
         Rectangle {
-            property <bool> shown: root.screen == Screen.home && root.home-area == 2;
+            property <bool> shown: root.home-area == 2;
             property <length> tab-x: root.home-area-index == 1 ? library-tab.x : root.home-area-index == 2 ? settings-tab.x : home-tab.x;
             property <length> tab-width: root.home-area-index == 1 ? library-tab.width : root.home-area-index == 2 ? settings-tab.width : home-tab.width;
             x: tabs.x + self.tab-x - 11px * s;
@@ -485,6 +485,7 @@ export component AppWindow inherits Window {
             rows: root.settings-rows;
             focused: root.settings-focused;
             footer: root.settings-footer;
+            active: root.home-area != 2;
             s: root.s;
         }
 
@@ -515,6 +516,7 @@ export component AppWindow inherits Window {
             tiles: root.library-tiles;
             focused: root.library-focused;
             pulse: root.pulse && root.screen == Screen.library;
+            ring: root.home-area != 2;
             s: root.s;
             filter-label: root.filter-label;
             sort-label: root.sort-label;

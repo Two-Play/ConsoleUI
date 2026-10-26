@@ -29,6 +29,8 @@ export component LibraryPage inherits Rectangle {
     in property <[AppTile]> tiles;
     in property <int> focused;
     in property <bool> pulse;
+    // The focused tile shows its ring (off while the selection is on the tabs)
+    in property <bool> ring: true;
     in property <float> s;
     in property <string> filter-label;
     in property <string> sort-label;
@@ -122,6 +124,7 @@ export component LibraryPage inherits Rectangle {
                 height: self.size;
                 data: app;
                 focused: parent.is-focused;
+                ring: root.ring;
                 pressed: root.pulse && parent.is-focused;
                 animate x, y, width, height {
                     duration: Theme.focus-duration;

@@ -177,6 +177,10 @@ pub struct Shell {
     launch_shown: bool,
     /// Entry ID whose quitting is waiting for confirmation
     dialog: Option<Dialog<DialogTag>>,
+    /// Entries launched but not yet moved to the front of the lists: they move once the shell is
+    /// in front again (the launch screen opens at the tile's old place, and the tile glides forward
+    /// after the return)
+    pending_front: Vec<String>,
     quick: Option<QuickMenu>,
     gamescope: Option<GamescopeUi>,
     /// Our own compositor (Epic 7), instead of gamescope
@@ -319,6 +323,7 @@ impl Shell {
             front_due: None,
             launch_shown: false,
             dialog: None,
+            pending_front: Vec::new(),
             quick: None,
             gamescope,
             compositor,
@@ -751,6 +756,9 @@ impl Shell {
             (Screen::Library, Action::NextTab) => self.screen = Screen::Settings,
             (Screen::Settings, Action::PrevTab) => self.screen = Screen::Library,
             (Screen::Home | Screen::Library | Screen::Settings, Action::Search) => self.open_search(ui),
+            (Screen::Library | Screen::Settings, _) if matches!(self.home_area, HomeArea::Tabs(_)) => {
+                self.apply_tabs(action)
+            }
             (Screen::Home, _) => self.apply_home(ui, action),
             (Screen::Library, _) => self.apply_library(ui, action),
             (Screen::Settings, _) => self.apply_settings_page(ui, action),
@@ -783,6 +791,14 @@ impl Shell {
         }
     }
 
+    /// Selection on the tab bar of the library or settings (up from the first row): ◀ ▶ picks a
+    /// tab, ✕ opens it, down or ○ goes back to the page.
+    fn apply_tabs(&mut self, action: Action) {
+        if let HomeOutcome::OpenTab(tab) = self.home_area.apply(action, 0, HOME_TABS.len()) {
+            self.screen = HOME_TABS[tab];
+        }
+    }
+
     fn apply_library(&mut self, ui: &AppWindow, action: Action) {
         match action {
             Action::Confirm => {
@@ -799,7 +815,10 @@ impl Shell {
             // Sorting has been part of the context menu since Story 2.7.
             Action::Menu => self.open_context(ui),
             _ => {
-                self.grid.apply(action, ui.get_library_columns().max(1) as usize);
+                // Up from the first row reaches the tabs.
+                if !self.grid.apply(action, ui.get_library_columns().max(1) as usize) && action == Action::Up {
+                    self.home_area = HomeArea::Tabs(1);
+                }
             }
         }
     }
@@ -808,7 +827,8 @@ impl Shell {
         let rows = self.settings_list();
         let setting = rows[self.settings_row.min(rows.len() - 1)];
         match action {
-            Action::Up => self.settings_row = self.settings_row.saturating_sub(1),
+            Action::Up if self.settings_row == 0 => self.home_area = HomeArea::Tabs(2),
+            Action::Up => self.settings_row -= 1,
             Action::Down => self.settings_row = (self.settings_row + 1).min(rows.len() - 1),
             Action::Confirm if setting.opens_page() => {
                 let page = if setting == Setting::Wifi { Page::Wifi } else { Page::Bluetooth };
@@ -1101,7 +1121,13 @@ impl Shell {
 
     /// Pushes screen, focus, background and hints to the UI.
     fn sync(&mut self, ui: &AppWindow) {
-        if self.screen != Screen::Home {
+        // The tabs can be focused on the three tab screens; the buttons only on home.
+        let allowed = match self.screen {
+            Screen::Home => true,
+            Screen::Library | Screen::Settings => matches!(self.home_area, HomeArea::Tiles | HomeArea::Tabs(_)),
+            Screen::Search => false,
+        };
+        if !allowed {
             self.home_area = HomeArea::Tiles;
         }
         let (area, area_index) = match self.home_area {
@@ -1121,6 +1147,7 @@ impl Shell {
         self.show_hero(ui);
         self.update_hints(ui);
         self.update_ambience(ui);
+        self.apply_pending_front(ui);
     }
 
     /// Background music and the animated background run while the shell is in front: no app, no
@@ -1258,6 +1285,13 @@ impl Shell {
                 hints.push(hint(GlyphButton::Updown, tr("Select")));
                 hints.push(hint(GlyphButton::Dpad, tr("Change")));
             }
+            hints.push(hint(GlyphButton::Back, tr("Back")));
+            ui.set_hints(ModelRc::new(VecModel::from(hints)));
+            return;
+        }
+        if matches!(self.home_area, HomeArea::Tabs(_)) {
+            hints.push(hint(GlyphButton::Dpad, tr("Select")));
+            hints.push(hint(GlyphButton::Confirm, tr("Open")));
             hints.push(hint(GlyphButton::Back, tr("Back")));
             ui.set_hints(ModelRc::new(VecModel::from(hints)));
             return;
@@ -1487,10 +1521,21 @@ impl Shell {
     // --- Quick menu ------------------------------------------------------------------------
 
     fn open_quick(&mut self, ui: &AppWindow) {
-        let foreground = self.foreground.and_then(|app_id| {
-            let running = self.running.iter().find(|r| r.app_id == app_id)?;
+        // The app in front, else (on home) the app that was started last
+        let in_front = self.foreground.is_some_and(|app_id| self.running.iter().any(|r| r.app_id == app_id));
+        let running = if in_front {
+            self.running.iter().find(|r| Some(r.app_id) == self.foreground)
+        } else {
+            self.running.last()
+        };
+        let foreground = running.and_then(|running| {
             let entry = self.entries.iter().find(|e| e.id == running.entry_id)?;
-            Some(ForegroundApp { app_id, entry_id: entry.id.clone(), title: entry.title.clone() })
+            Some(ForegroundApp {
+                app_id: running.app_id,
+                entry_id: entry.id.clone(),
+                title: entry.title.clone(),
+                in_front,
+            })
         });
         let profile = self.profiles.get(&self.profile).map(|p| p.name.clone()).unwrap_or_default();
         self.quick = Some(QuickMenu::new(foreground, profile));
@@ -1670,9 +1715,7 @@ impl Shell {
                 ui.set_launching(true);
                 self.set_running_flag(&id, true);
                 self.record_launch(index);
-                self.home.focus(0);
-                self.refresh(ui);
-                self.focus_entry(&id);
+                self.pending_front.push(id.clone());
                 if self.settings.animations && (self.gamescope.is_some() || self.compositor.is_some()) {
                     // The app comes to the front once the launch screen is fully open; our
                     // compositor then zooms it in from (nearly) fullscreen.
@@ -1767,6 +1810,7 @@ impl Shell {
     /// Runs periodically: in gamescope, assigns new windows to their apps and checks which apps
     /// have exited. If the app in front is done, the shell comes back with an animation.
     pub fn watch_running(&mut self, ui: &AppWindow) {
+        self.apply_pending_front(ui);
         if let Some(failed) = self.failed_launch
             && failed.elapsed() >= MIN_HOLD
         {
@@ -2043,17 +2087,34 @@ impl Shell {
     /// the launch screen, so the re-sort is not visible.
     fn record_launch(&mut self, index: usize) {
         let now = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or_default();
-        let mut entry = self.entries.remove(index);
-        entry.last_used = Some(now);
-        self.history.record(&entry.id, now);
+        self.entries[index].last_used = Some(now);
+        self.history.record(&self.entries[index].id, now);
         if let Some(path) = &self.history_path
             && let Err(err) = self.history.save(path)
         {
             eprintln!("Cannot save the history ({}): {err}", path.display());
         }
-        let tile = self.tiles.remove(index);
-        self.entries.insert(0, entry);
-        self.tiles.insert(0, tile);
+    }
+
+    /// Moves the launched entries to the front of the lists once the shell is in front again.
+    fn apply_pending_front(&mut self, ui: &AppWindow) {
+        if self.pending_front.is_empty() || self.foreground.is_some() || ui.get_launching() || ui.get_booting() {
+            return;
+        }
+        let ids = std::mem::take(&mut self.pending_front);
+        for id in &ids {
+            if let Some(index) = self.entries.iter().position(|e| &e.id == id) {
+                let entry = self.entries.remove(index);
+                let tile = self.tiles.remove(index);
+                self.entries.insert(0, entry);
+                self.tiles.insert(0, tile);
+            }
+        }
+        self.home.focus(0);
+        self.refresh(ui);
+        if let Some(id) = ids.last() {
+            self.focus_entry(id);
+        }
     }
 }
 

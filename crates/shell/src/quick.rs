@@ -26,11 +26,14 @@ impl QuickAction {
     }
 }
 
-/// The app that currently runs in front
+/// A running app the quick menu offers actions for: the one in front, or (with the shell in front)
+/// the one that was started last
 pub struct ForegroundApp {
     pub app_id: u32,
     pub entry_id: String,
     pub title: String,
+    /// The app is in front; otherwise the shell is, and the menu offers the way back
+    pub in_front: bool,
 }
 
 pub struct QuickMenu {
@@ -40,6 +43,7 @@ pub struct QuickMenu {
     armed: bool,
     volume: Option<Volume>,
     app_title: Option<String>,
+    app_in_front: bool,
     /// Name of the active profile
     profile: String,
 }
@@ -55,8 +59,12 @@ impl QuickMenu {
     pub fn new(foreground: Option<ForegroundApp>, profile: String) -> Self {
         let mut actions = Vec::new();
         let app_title = foreground.as_ref().map(|app| app.title.clone());
+        let app_in_front = foreground.as_ref().is_some_and(|app| app.in_front);
+        // In front the menu closes back into the app with ○, so "Resume" would only repeat that:
+        // there the app offers the way home. With the shell in front (home) it is the way back.
         if let Some(app) = foreground {
-            actions.extend([QuickAction::Resume(app.app_id), QuickAction::Home, QuickAction::Quit(app.entry_id)]);
+            actions.push(if app.in_front { QuickAction::Home } else { QuickAction::Resume(app.app_id) });
+            actions.push(QuickAction::Quit(app.entry_id));
         }
         actions.extend([
             QuickAction::SwitchProfile,
@@ -66,7 +74,7 @@ impl QuickMenu {
             QuickAction::Power(PowerAction::PowerOff),
             QuickAction::Logout,
         ]);
-        Self { actions, focused: 0, armed: false, volume: system::volume(), app_title, profile }
+        Self { actions, focused: 0, armed: false, volume: system::volume(), app_title, app_in_front, profile }
     }
 
     pub fn focused(&self) -> usize {
@@ -75,8 +83,8 @@ impl QuickMenu {
 
     pub fn title(&self) -> String {
         match &self.app_title {
-            Some(title) => trf("CONTROL CENTER · {}", &[&title.to_uppercase()]),
-            None => tr("CONTROL CENTER").into(),
+            Some(title) if self.app_in_front => trf("CONTROL CENTER · {}", &[&title.to_uppercase()]),
+            _ => tr("CONTROL CENTER").into(),
         }
     }
 

@@ -53,18 +53,29 @@ component InfoBlock {
             letter-spacing: 3px * root.s;
         }
 
-        if root.tile.has-logo: Image {
+        // Logo or title in a box of one fixed height, so the lines and buttons below stay put
+        // while the focus runs over entries with and without a logo.
+        Rectangle {
             height: 130px * root.s;
-            source: root.tile.logo;
-            image-fit: contain;
-            horizontal-alignment: left;
-        }
 
-        if !root.tile.has-logo: Text {
-            text: root.tile.title;
-            color: Theme.text;
-            font-size: 64px * root.s;
-            font-weight: 800;
+            if root.tile.has-logo: Image {
+                width: 100%;
+                height: 100%;
+                source: root.tile.logo;
+                image-fit: contain;
+                horizontal-alignment: left;
+            }
+
+            if !root.tile.has-logo: Text {
+                width: 100%;
+                height: 100%;
+                text: root.tile.title;
+                color: Theme.text;
+                font-size: 64px * root.s;
+                font-weight: 800;
+                vertical-alignment: center;
+                overflow: elide;
+            }
         }
 
         Text {
