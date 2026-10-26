@@ -131,6 +131,7 @@ pub fn run(options: &Options) -> Result<i32, Box<dyn std::error::Error>> {
     let data =
         DrmData { session: session.clone(), gpu_path, device: None, keyboards: Vec::new(), render_scheduled: false };
     let mut state = State::new(display, event_loop.handle(), event_loop.get_signal(), Backend::Drm(Box::new(data)))?;
+    state.preferred_output = options.output.clone();
 
     for (device_id, path) in udev.device_list() {
         if state.drm().is_some_and(|d| d.device.is_none() && d.gpu_path == path)
@@ -347,8 +348,10 @@ impl State {
         }
         let Some(gpu) = self.drm().and_then(|d| d.device.as_mut()) else { return };
         if gpu.surface.is_none() {
-            let candidate = gpu.scanner.crtcs().next().map(|(info, crtc)| (info.clone(), crtc));
-            if let Some((connector, crtc)) = candidate {
+            let candidates: Vec<_> = gpu.scanner.crtcs().map(|(info, crtc)| (info.clone(), crtc)).collect();
+            let names: Vec<String> = candidates.iter().map(|(info, _)| connector_name(info)).collect();
+            let pick = pick_output(&names, self.preferred_output.as_deref());
+            if let Some((connector, crtc)) = pick.and_then(|index| candidates.into_iter().nth(index)) {
                 self.drm_connector_connected(connector, crtc);
             }
         }
@@ -381,7 +384,7 @@ impl State {
     fn drm_connector_connected(&mut self, connector: connector::Info, crtc: crtc::Handle) {
         let dh = self.display_handle.clone();
         let Some(gpu) = self.drm().and_then(|d| d.device.as_mut()) else { return };
-        let name = format!("{}-{}", connector.interface().as_str(), connector.interface_id());
+        let name = connector_name(&connector);
         let Some(drm_mode) = preferred_mode(&connector) else {
             warn!("connector {name} has no modes");
             return;
@@ -562,6 +565,22 @@ impl State {
     }
 }
 
+/// The connector's name as the kernel and `--output` spell it, e.g. `HDMI-A-1`.
+fn connector_name(connector: &connector::Info) -> String {
+    format!("{}-{}", connector.interface().as_str(), connector.interface_id())
+}
+
+/// Which of the connected monitors to use (Story 7.11): the one named by `--output`, else an
+/// external monitor (a console sits at a TV or monitor), else the first, which is the built-in
+/// panel of a laptop.
+fn pick_output(names: &[String], preferred: Option<&str>) -> Option<usize> {
+    let internal = |name: &String| ["eDP", "LVDS", "DSI"].iter().any(|prefix| name.starts_with(prefix));
+    preferred
+        .and_then(|wanted| names.iter().position(|name| name.eq_ignore_ascii_case(wanted)))
+        .or_else(|| names.iter().position(|name| !internal(name)))
+        .or(if names.is_empty() { None } else { Some(0) })
+}
+
 /// The connector's preferred mode, else its first one.
 fn preferred_mode(connector: &connector::Info) -> Option<DrmMode> {
     connector
@@ -570,4 +589,27 @@ fn preferred_mode(connector: &connector::Info) -> Option<DrmMode> {
         .find(|mode| mode.mode_type().contains(ModeTypeFlags::PREFERRED))
         .or_else(|| connector.modes().first())
         .copied()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::pick_output;
+
+    fn names(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn prefers_the_named_then_an_external_output() {
+        let all = names(&["eDP-1", "HDMI-A-1", "DP-2"]);
+        assert_eq!(pick_output(&all, Some("dp-2")), Some(2));
+        assert_eq!(pick_output(&all, Some("DP-9")), Some(1));
+        assert_eq!(pick_output(&all, None), Some(1));
+    }
+
+    #[test]
+    fn falls_back_to_the_internal_panel_or_nothing() {
+        assert_eq!(pick_output(&names(&["eDP-1"]), None), Some(0));
+        assert_eq!(pick_output(&[], Some("DP-1")), None);
+    }
 }

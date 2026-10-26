@@ -82,10 +82,12 @@ impl ClientData for ClientState {
     fn disconnected(&self, _client_id: ClientId, _reason: DisconnectReason) {}
 }
 
-/// A screenshot request (CLI or control socket); `reply` gets `ScreenshotDone`.
+/// A screenshot request (CLI, control socket or the Print key); `reply` gets `ScreenshotDone`,
+/// `notify` sends it to every shell (the key has no single requester).
 pub struct ScreenshotRequest {
     pub path: PathBuf,
     pub reply: Option<ControlClient>,
+    pub notify: bool,
 }
 
 #[allow(dead_code)]
@@ -152,6 +154,8 @@ pub struct State {
     /// Backdrop blur enabled (`--no-blur`, `CONSOLEUI_NO_BLUR`); without it the shell is not told
     /// about the feature and keeps its opaque glass
     pub blur: bool,
+    /// The monitor the DRM backend should use (`--output`, Story 7.11)
+    pub preferred_output: Option<String>,
     pub control: Control,
     pub shell: Option<ShellProcess>,
     pub screenshots: Vec<ScreenshotRequest>,
@@ -270,6 +274,7 @@ impl State {
             backdrops: Backdrops::default(),
             blur_cache: BlurCache::default(),
             blur: true,
+            preferred_output: None,
             control,
             shell: None,
             screenshots: Vec::new(),
@@ -557,7 +562,7 @@ impl State {
                 Vec::new()
             }
             ShellMessage::Screenshot { path } => {
-                self.screenshots.push(ScreenshotRequest { path: path.into(), reply: Some(client) });
+                self.screenshots.push(ScreenshotRequest { path: path.into(), reply: Some(client), notify: false });
                 Vec::new()
             }
             ShellMessage::KeyboardLayout { layout } => {
@@ -594,7 +599,7 @@ impl State {
     pub fn schedule_screenshot(&mut self, delay: Duration, path: PathBuf) {
         let timer = smithay::reexports::calloop::timer::Timer::from_duration(delay);
         let result = self.loop_handle.insert_source(timer, move |_, _, state| {
-            state.screenshots.push(ScreenshotRequest { path: path.clone(), reply: None });
+            state.screenshots.push(ScreenshotRequest { path: path.clone(), reply: None, notify: false });
             smithay::reexports::calloop::timer::TimeoutAction::Drop
         });
         if let Err(err) = result {
@@ -607,10 +612,28 @@ impl State {
             Ok(()) => info!("screenshot saved: {}", request.path.display()),
             Err(err) => warn!("screenshot {} failed: {err}", request.path.display()),
         }
+        let path = request.path.to_string_lossy().into_owned();
+        let message = CompositorMessage::ScreenshotDone { path, error: result.err() };
         if let Some(client) = request.reply {
-            let path = request.path.to_string_lossy().into_owned();
-            self.control.send_to(client, &CompositorMessage::ScreenshotDone { path, error: result.err() });
+            self.control.send_to(client, &message);
+        } else if request.notify {
+            self.control.broadcast(&message);
         }
+    }
+
+    /// The Print key (Story 7.12): saves the composed output as
+    /// `<Pictures>/ConsoleUI/screenshot-<date>-<time>.png`; the shells get a `ScreenshotDone`.
+    pub fn screenshot_to_pictures(&mut self) {
+        let pictures = std::env::var_os("XDG_PICTURES_DIR")
+            .map(PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join("Pictures")));
+        let Some(pictures) = pictures else {
+            warn!("no Pictures folder (HOME is not set): no screenshot");
+            return;
+        };
+        let name = chrono::Local::now().format("screenshot-%Y%m%d-%H%M%S.png").to_string();
+        let path = pictures.join("ConsoleUI").join(name);
+        self.screenshots.push(ScreenshotRequest { path, reply: None, notify: true });
     }
 }
 

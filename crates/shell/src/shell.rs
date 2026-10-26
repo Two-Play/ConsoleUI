@@ -1839,6 +1839,7 @@ impl Shell {
         let Some(compositor) = &mut self.compositor else { return };
         let mut guide = false;
         let mut keymap_changed = false;
+        let mut screenshot = None;
         for message in compositor.poll() {
             match message {
                 CompositorMessage::WindowMapped { app_id, .. } => {
@@ -1865,11 +1866,22 @@ impl Shell {
                 // The keyboard's Guide key, reserved by the compositor (Story 7.5)
                 CompositorMessage::Guide => guide = true,
                 CompositorMessage::Keymap { .. } => keymap_changed = true,
+                // The Print key (Story 7.12)
+                CompositorMessage::ScreenshotDone { path, error } => screenshot = Some((path, error)),
                 _ => {}
             }
         }
         if keymap_changed {
             self.update_settings_rows(ui);
+        }
+        if let Some((path, error)) = screenshot {
+            match error {
+                None => {
+                    let name = std::path::Path::new(&path).file_name().map(|n| n.to_string_lossy().into_owned());
+                    self.toast(ui, "▣", tr("Screenshot saved"), &name.unwrap_or(path));
+                }
+                Some(error) => self.toast(ui, "⚠", tr("Screenshot failed"), &error),
+            }
         }
         self.sync_blur();
         if guide {

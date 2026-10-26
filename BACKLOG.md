@@ -149,32 +149,16 @@ are updated after the spike.
 | 7.8 | Direct scanout for the game in front (zero-copy, low latency), falling back to composition while an overlay is open | 5 |
 | 7.9 | VRR (adaptive sync) and tearing for games, simple frame pacing (Smithay has VRR, but no tearing-control/async page flip yet) | 13 |
 | 7.10 | Nested gamescope per entry (resolution, FSR/NIS/integer, FPS limit, HDR, fullscreen) from the context menu — **done (Sprint 8)**, not for Steam games | 5 |
-| 7.11 | Multiple monitors/hotplug (choose the output, switch to the remaining one on unplug) | 5 |
-| 7.12 | Screenshot via button combination (compositor reads back the frame into a PNG, toast with the path) | 3 |
+| 7.11 | Multiple monitors/hotplug (choose the output, switch to the remaining one on unplug). **Partly done:** unplug → remaining monitor and mode changes worked before; now `--output NAME`/`CONSOLEUI_OUTPUT` and external-before-built-in choose the monitor. Open: switch live when a preferred monitor is plugged in while another is in use, several monitors at once | 5 |
+| 7.12 | **Done.** Screenshot with the Print key (compositor renders the output into `~/Pictures/ConsoleUI/screenshot-<date>-<time>.png`, toast with the file name; a gamepad combination stays open) | 3 |
 | 7.13 | **Done.** Real backdrop blur behind the quick menu and toasts above a game (dual Kawase pass in the compositor, panels announced over the control socket) | 3 |
+
+Idea (not scheduled): the compositor could own the gamepads and give games a virtual (uinput) controller that it mutes while the quick menu is open; unlike `EVIOCGRAB` this would also cover games that read controllers via hidraw.
 
 About 98 SP in total, 7.1–7.6 (≈ 54 SP) as the first goal: a session that runs as well without
 gamescope as it does today. Deliberately **not** in the compositor: own upscaling, HDR and color
 management, FPS limiter — the nested gamescope (7.10) provides those. License decided before 7.2:
 GPL-3.0-or-later, so code from niri (GPL-3.0-or-later) and anvil/smallvil (MIT) can be reused.
-
----|---|---|
-| 7.1 | Spike: Smithay-Beispiel `anvil` bauen und auf einem TTY starten; prüfen, ob die Shell (Slint, Wayland) und `gamescope` verschachtelt darin laufen | 5 |
-| 7.2 | Minimaler Compositor: DRM/KMS + libinput + libseat, die Shell als Vollbild-Client, eigene Session-Datei neben der gamescope-Session | 13 |
-| 7.3 | XWayland-Grundlagen: `X11Wm`, Vollbild-Spiele, Fenster ohne Rahmen (Override-Redirect), Zuordnung Fenster → gestartete App (wiederverwendet `consoleui_core::ownership`) | 13 |
-| 7.4 | XWayland robust für Steam und Spiele: Steam-Client, Launcher- und Splash-Fenster, Fokuswechsel, Sonderfälle aus Tests mit echten Spielen | 13 |
-| 7.5 | Fokus und Eingabe im Compositor: Guide-Taste immer zur Shell, Spiel bekommt während des Quick-Menüs keine Eingaben (ersetzt `grab.rs`), Tastaturfokus kommt sauber zurück | 8 |
-| 7.6 | Shell als Overlay über laufenden Apps (Quick-Menü und Toasts als Layer-Shell-Flächen, ersetzt `OverlayWindow`/`NotificationWindow`-Tricks) | 8 |
-| 7.7 | Animierte Übergänge zwischen Shell und App direkt im Compositor (Kachel zoomt in das echte Spielbild, Rückkehr mit Animation) | 8 |
-| 7.8 | Direct Scanout für das Spiel im Vordergrund (Zero-Copy, niedrige Latenz) und Fallback auf Komposition, sobald ein Overlay offen ist | 8 |
-| 7.9 | VRR (Adaptive Sync) und Tearing-Control für Spiele, einfaches Frame-Pacing | 8 |
-| 7.10 | Verschachteltes gamescope pro Spiel: Option im Kontextmenü/Spiel-Einstellungen (Auflösung, FSR/NIS, FPS-Limit, HDR), wird in `Collection`/Einstellungen gespeichert und beim Start als `gamescope -W … -H … -F fsr -r … --` vorangestellt | 5 |
-| 7.11 | Mehrere Monitore/Hotplug (Ausgabe wählen, beim Abstecken auf den verbleibenden wechseln) | 5 |
-| 7.12 | Screenshot per Tastenkombination (Compositor rendert in eine Datei, Toast mit Pfad) | 3 |
-
-Zusammen ≈ 97 SP, davon 7.1–7.6 (≈ 60 SP) als erstes Ziel: eine Session, die ohne gamescope
-genauso gut läuft wie heute. Bewusst **nicht** im Compositor: eigenes Upscaling, HDR und
-Farbmanagement, FPS-Limiter. Das liefert das verschachtelte gamescope (7.10).
 
 ---
 

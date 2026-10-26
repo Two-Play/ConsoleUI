@@ -30,6 +30,7 @@ enum KeyAction {
     Quit,
     VtSwitch(i32),
     Guide,
+    Screenshot,
 }
 
 fn shortcut(modifiers: &ModifiersState, keysym: Keysym, shell_connected: bool) -> Option<KeyAction> {
@@ -39,6 +40,9 @@ fn shortcut(modifiers: &ModifiersState, keysym: Keysym, shell_connected: bool) -
     let guide = matches!(keysym, Keysym::F1 | Keysym::XF86_HomePage) || (modifiers.logo && keysym == Keysym::Escape);
     if shell_connected && guide {
         return Some(KeyAction::Guide);
+    }
+    if keysym == Keysym::Print {
+        return Some(KeyAction::Screenshot);
     }
     let raw = keysym.raw();
     if (keysyms::KEY_XF86Switch_VT_1..=keysyms::KEY_XF86Switch_VT_12).contains(&raw) {
@@ -95,6 +99,7 @@ impl State {
                 info!("Guide key: to the shell");
                 self.control.broadcast(&CompositorMessage::Guide);
             }
+            Some(KeyAction::Screenshot) => self.screenshot_to_pictures(),
             None => {}
         }
         // The keyboard waits for the last key release before it goes back to the app.

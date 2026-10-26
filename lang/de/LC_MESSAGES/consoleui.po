@@ -858,3 +858,9 @@ msgstr "Hallo, {}!"
 
 msgid "Your games and settings are loaded."
 msgstr "Deine Spiele und Einstellungen sind geladen."
+
+msgid "Screenshot saved"
+msgstr "Screenshot gespeichert"
+
+msgid "Screenshot failed"
+msgstr "Screenshot fehlgeschlagen"

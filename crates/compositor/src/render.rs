@@ -235,6 +235,9 @@ pub fn save_screenshot(
     for pixel in rows.as_chunks_mut::<4>().0 {
         pixel[3] = 255;
     }
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
     let file = std::io::BufWriter::new(std::fs::File::create(path)?);
     let mut encoder = png::Encoder::new(file, width as u32, height as u32);
     encoder.set_color(png::ColorType::Rgba);
