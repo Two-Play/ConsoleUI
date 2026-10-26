@@ -5,6 +5,8 @@ import { Theme } from "theme.slint";
 export component Tile inherits Rectangle {
     in property <AppTile> data;
     in property <bool> focused;
+    // The focus ring; off while the selection is elsewhere on the screen (the tile stays large)
+    in property <bool> ring: true;
     // Confirm was pressed on this tile: a ring ripples outwards after the press.
     in property <bool> pressed;
 
@@ -133,7 +135,7 @@ export component Tile inherits Rectangle {
         border-radius: root.border-radius + root.ring-gap;
         border-color: Theme.accent;
         border-width: max(2px, root.width * 0.018);
-        opacity: root.focused ? 1 : 0;
+        opacity: root.focused && root.ring ? 1 : 0;
         animate opacity {
             duration: Theme.focus-duration;
             easing: ease-out-quart;

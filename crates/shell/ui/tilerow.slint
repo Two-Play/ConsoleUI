@@ -2,19 +2,25 @@ import { AppTile } from "types.slint";
 import { Theme } from "theme.slint";
 import { Tile } from "tile.slint";
 
-// Horizontal tile row: the focused tile stays on the left, the row slides through below it.
+// Horizontal tile row: the focused tile stays near the left, the row slides through below it.
 export component TileRow inherits Rectangle {
     in property <[AppTile]> tiles;
     in property <int> focused;
     in property <bool> pulse;
     // Without an active row (e.g. keyboard in the search) no tile is highlighted.
     in property <bool> active: true;
+    // The focused tile shows its ring (off while the selection is on the buttons or tabs)
+    in property <bool> ring: true;
     in property <length> tile;
     in property <length> tile-focused;
     in property <length> gap;
+    // Tiles kept visible to the left of the focused one (once there are that many)
+    in property <int> lead: 0;
+
+    property <length> lead-x: min(root.lead, root.focused) * (root.tile + root.gap);
 
     // Position of the focused tile relative to the parent, for the launch screen
-    out property <length> focus-x: root.x;
+    out property <length> focus-x: root.x + root.lead-x;
     out property <length> focus-y: root.y;
     out property <length> focus-size: root.tile-focused;
 
@@ -27,10 +33,11 @@ export component TileRow inherits Rectangle {
 
         data: app;
         focused: self.is-focused;
+        ring: root.ring;
         pressed: root.pulse && self.is-focused;
         width: self.size;
         height: self.size;
-        x: (i - root.focused) * (root.tile + root.gap) + (i > root.focused && root.active ? root.tile-focused - root.tile : 0px) + (self.base - self.size) / 2;
+        x: root.lead-x + (i - root.focused) * (root.tile + root.gap) + (i > root.focused && root.active ? root.tile-focused - root.tile : 0px) + (self.base - self.size) / 2;
         y: (self.base - self.size) / 2;
 
         animate x, y, width, height {

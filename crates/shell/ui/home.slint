@@ -2,11 +2,32 @@ import { AppTile } from "types.slint";
 import { Theme } from "theme.slint";
 import { TileRow } from "tilerow.slint";
 
+// Ring with a small gap around a round button that has the focus
+component FocusRing inherits Rectangle {
+    in property <bool> shown;
+    in property <float> s;
+    // Size of the button inside; the ring keeps a small gap around it
+    in property <length> target-width;
+    in property <length> target-height;
+    property <length> gap: 5px * root.s;
+    x: -self.gap;
+    y: -self.gap;
+    width: root.target-width + 2 * self.gap;
+    height: root.target-height + 2 * self.gap;
+    border-radius: self.height / 2;
+    border-width: 3px * root.s;
+    border-color: Theme.accent;
+    opacity: root.shown ? 1 : 0;
+    animate opacity { duration: Theme.focus-duration; }
+}
+
 // Kind, title (or logo), subtitle and buttons of an entry
 component InfoBlock {
     in property <AppTile> tile;
     in property <bool> shown;
     in property <float> s;
+    // The focused button (0: main action, 1: more options), -1 while the focus is elsewhere
+    in property <int> button: -1;
 
     // Only a crossfade, no movement: the old text fades out quickly, the new one fades in a little
     // later, so the two hardly overlap and nothing jumps while the focus runs along the row.
@@ -57,11 +78,18 @@ component InfoBlock {
             spacing: 20px * root.s;
             padding-top: 22px * root.s;
 
-            Rectangle {
+            main := Rectangle {
                 width: 220px * root.s;
                 height: 64px * root.s;
                 border-radius: self.height / 2;
                 background: Theme.accent;
+
+                FocusRing {
+                    shown: root.button == 0;
+                    s: root.s;
+                    target-width: main.width;
+                    target-height: main.height;
+                }
 
                 Text {
                     width: 100%;
@@ -75,17 +103,24 @@ component InfoBlock {
                 }
             }
 
-            Rectangle {
+            more := Rectangle {
                 width: 64px * root.s;
                 height: 64px * root.s;
                 border-radius: self.height / 2;
-                background: Theme.surface;
+                background: root.button == 1 ? Theme.text : Theme.surface;
+
+                FocusRing {
+                    shown: root.button == 1;
+                    s: root.s;
+                    target-width: more.width;
+                    target-height: more.height;
+                }
 
                 Text {
                     width: 100%;
                     height: 100%;
                     text: "•••";
-                    color: Theme.text;
+                    color: root.button == 1 ? Theme.base : Theme.text;
                     font-size: 20px * root.s;
                     horizontal-alignment: center;
                     vertical-alignment: center;
@@ -101,6 +136,9 @@ export component HomePage inherits Rectangle {
     in property <int> focused;
     in property <bool> pulse;
     in property <float> s;
+    // Where the selection is: 0 the tile row, 1 the buttons, 2 the tabs (drawn by the main window)
+    in property <int> area;
+    in property <int> area-index;
 
     out property <length> focus-x: row.focus-x;
     out property <length> focus-y: row.focus-y;
@@ -118,6 +156,9 @@ export component HomePage inherits Rectangle {
         tile: 150px * root.s;
         tile-focused: 230px * root.s;
         gap: 20px * root.s;
+        // One tile stays visible to the left of the focused one.
+        lead: 1;
+        ring: root.area == 0;
     }
 
     // Info on the focused entry: when the focus moves, the old text fades out and the new one in. The layer being shown follows `current` live, the other one keeps the
@@ -141,5 +182,6 @@ export component HomePage inherits Rectangle {
         tile: self.shows ? root.current : root.previous;
         shown: self.shows;
         s: root.s;
+        button: root.area == 1 && self.shows ? root.area-index : -1;
     }
 }

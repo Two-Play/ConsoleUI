@@ -43,7 +43,7 @@ pub use library::{
     AppEntry, AppKind, Artwork, Launch, LibraryFilter, LibrarySort, Names, apply_history, compare_recent,
     dummy_library, last_used_label, library_view, localize_entries, palette_for, sort_by_recent,
 };
-pub use nav::{Action, Carousel};
+pub use nav::{Action, Carousel, HomeArea, HomeOutcome};
 
 /// All installed Steam games and console-friendly desktop apps (unsorted). Localized desktop
 /// names follow the current [`i18n::language`]; [`localize_entries`] switches them later.

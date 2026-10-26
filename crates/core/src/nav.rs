@@ -61,9 +61,112 @@ impl Carousel {
     }
 }
 
+/// Where the focus is on the home screen: the tile row, the buttons below the info on the focused
+/// entry, or the tabs of the top bar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum HomeArea {
+    #[default]
+    Tiles,
+    /// The button with this index (0: the main action, 1: more options)
+    Buttons(usize),
+    /// The tab with this index (0: Home, 1: Library, 2: Settings)
+    Tabs(usize),
+}
+
+/// What a home screen action means after [`HomeArea::apply`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HomeOutcome {
+    /// Not about the buttons or tabs: the tile row (or the screen) handles it as before.
+    Pass,
+    /// The focus moved between the areas or within one.
+    Moved,
+    /// Nothing happens (e.g. down on the buttons).
+    Ignored,
+    /// Confirm on a button
+    Press(usize),
+    /// Confirm on a tab
+    OpenTab(usize),
+}
+
+impl HomeArea {
+    /// Moves between the row (up: the tabs, down: the buttons) and within the buttons and tabs.
+    /// `buttons` and `tabs` are how many there are.
+    pub fn apply(&mut self, action: Action, buttons: usize, tabs: usize) -> HomeOutcome {
+        let (area, outcome) = match (*self, action) {
+            (HomeArea::Tiles, Action::Up) if tabs > 0 => (HomeArea::Tabs(0), HomeOutcome::Moved),
+            (HomeArea::Tiles, Action::Down) if buttons > 0 => (HomeArea::Buttons(0), HomeOutcome::Moved),
+            (HomeArea::Tiles, _) => return HomeOutcome::Pass,
+            (HomeArea::Buttons(_), Action::Up | Action::Back) | (HomeArea::Tabs(_), Action::Down | Action::Back) => {
+                (HomeArea::Tiles, HomeOutcome::Moved)
+            }
+            (HomeArea::Buttons(i), Action::Confirm) => (HomeArea::Tiles, HomeOutcome::Press(i)),
+            (HomeArea::Tabs(i), Action::Confirm) => (HomeArea::Tiles, HomeOutcome::OpenTab(i)),
+            (HomeArea::Buttons(i), Action::Left | Action::Right) => {
+                (HomeArea::Buttons(step(i, action, buttons)), HomeOutcome::Moved)
+            }
+            (HomeArea::Tabs(i), Action::Left | Action::Right) => {
+                (HomeArea::Tabs(step(i, action, tabs)), HomeOutcome::Moved)
+            }
+            (HomeArea::Buttons(_), Action::Down) | (HomeArea::Tabs(_), Action::Up) => return HomeOutcome::Ignored,
+            _ => return HomeOutcome::Pass,
+        };
+        let outcome = if outcome == HomeOutcome::Moved && area == *self { HomeOutcome::Ignored } else { outcome };
+        *self = area;
+        outcome
+    }
+}
+
+/// One step left or right within `0..len`, stopping at the ends.
+fn step(index: usize, action: Action, len: usize) -> usize {
+    match action {
+        Action::Left => index.saturating_sub(1),
+        _ => (index + 1).min(len.saturating_sub(1)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn home_focus_moves_between_row_buttons_and_tabs() {
+        let mut area = HomeArea::default();
+        assert_eq!(area.apply(Action::Right, 2, 3), HomeOutcome::Pass);
+        assert_eq!(area.apply(Action::Down, 2, 3), HomeOutcome::Moved);
+        assert_eq!(area, HomeArea::Buttons(0));
+        assert_eq!(area.apply(Action::Right, 2, 3), HomeOutcome::Moved);
+        assert_eq!(area.apply(Action::Right, 2, 3), HomeOutcome::Ignored);
+        assert_eq!(area, HomeArea::Buttons(1));
+        assert_eq!(area.apply(Action::Down, 2, 3), HomeOutcome::Ignored);
+        assert_eq!(area.apply(Action::Up, 2, 3), HomeOutcome::Moved);
+        assert_eq!(area, HomeArea::Tiles);
+        assert_eq!(area.apply(Action::Up, 2, 3), HomeOutcome::Moved);
+        assert_eq!(area, HomeArea::Tabs(0));
+        assert_eq!(area.apply(Action::Left, 2, 3), HomeOutcome::Ignored);
+        area.apply(Action::Right, 2, 3);
+        area.apply(Action::Right, 2, 3);
+        assert_eq!(area.apply(Action::Right, 2, 3), HomeOutcome::Ignored);
+        assert_eq!(area, HomeArea::Tabs(2));
+        assert_eq!(area.apply(Action::Back, 2, 3), HomeOutcome::Moved);
+        assert_eq!(area, HomeArea::Tiles);
+    }
+
+    #[test]
+    fn home_confirm_presses_the_focused_button_or_tab() {
+        let mut area = HomeArea::Buttons(1);
+        assert_eq!(area.apply(Action::Confirm, 2, 3), HomeOutcome::Press(1));
+        assert_eq!(area, HomeArea::Tiles);
+        let mut area = HomeArea::Tabs(2);
+        assert_eq!(area.apply(Action::Confirm, 2, 3), HomeOutcome::OpenTab(2));
+        assert_eq!(area, HomeArea::Tiles);
+        // Other buttons (menu, tabs, guide) keep working from anywhere.
+        let mut area = HomeArea::Tabs(1);
+        assert_eq!(area.apply(Action::Menu, 2, 3), HomeOutcome::Pass);
+        assert_eq!(area.apply(Action::NextTab, 2, 3), HomeOutcome::Pass);
+        // Without buttons the focus stays in the row.
+        let mut area = HomeArea::Tiles;
+        assert_eq!(area.apply(Action::Down, 0, 3), HomeOutcome::Pass);
+    }
 
     #[test]
     fn starts_at_first_tile() {

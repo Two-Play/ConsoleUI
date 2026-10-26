@@ -23,8 +23,8 @@ use consoleui_core::settings::{BackgroundChoice, GlyphChoice, Setting, Settings}
 use consoleui_core::sound::Sound;
 use consoleui_core::system;
 use consoleui_core::{
-    Action, AppEntry, AppKind, Carousel, Collection, Grid, History, Launch, LibraryFilter, LibrarySort, apply_history,
-    compare_recent, home_view, library_view, localize_entries, search, steam,
+    Action, AppEntry, AppKind, Carousel, Collection, Grid, History, HomeArea, HomeOutcome, Launch, LibraryFilter,
+    LibrarySort, apply_history, compare_recent, home_view, library_view, localize_entries, search, steam,
 };
 use slint::{ComponentHandle, Image, Model, ModelRc, VecModel};
 
@@ -46,6 +46,10 @@ use crate::{
 
 /// Number of entries the home row shows before the library tile (pinned ones always all).
 const HOME_COUNT: usize = 12;
+/// Buttons below the info on the home screen: the main action and "more options"
+const HOME_BUTTONS: usize = 2;
+/// The tabs of the top bar, left to right
+const HOME_TABS: [Screen; 3] = [Screen::Home, Screen::Library, Screen::Settings];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SearchArea {
@@ -114,6 +118,8 @@ pub struct Shell {
 
     screen: Screen,
     home: Carousel,
+    /// On the home screen: the tile row, the buttons below it or the tabs of the top bar
+    home_area: HomeArea,
     /// Indices into `entries` for the home row (pinned first, without hidden ones)
     home_entries: Vec<usize>,
     grid: Grid,
@@ -209,8 +215,6 @@ pub struct Shell {
 
 /// How long a toast stays visible
 const TOAST_DURATION: Duration = Duration::from_millis(3500);
-/// The compositor's blur fades in this fast once a quick menu bar or toast rests (Story 7.13).
-const BLUR_FADE_IN_MS: u32 = 150;
 /// Below this battery level the shell warns once
 const LOW_BATTERY: u8 = 15;
 
@@ -225,6 +229,7 @@ struct Feedback {
     game_options: Option<(usize, GameOptions)>,
     launching: bool,
     focus: [usize; 8],
+    home_area: HomeArea,
     query_len: usize,
     settings: Settings,
     network: [usize; 5],
@@ -276,6 +281,7 @@ impl Shell {
             results_model,
             screen: Screen::Home,
             home: Carousel::new(0),
+            home_area: HomeArea::Tiles,
             home_entries: Vec::new(),
             grid: Grid::new(0),
             library: Vec::new(),
@@ -513,14 +519,11 @@ impl Shell {
         self.compositor_ui.as_ref().filter(|_| self.compositor.as_ref().is_some_and(Compositor::overlays))
     }
 
-    /// Tells our compositor where the quick menu bar and the toast rest, so it blurs what is below
-    /// them (Story 7.13). Called after every frame of their windows and from the compositor poll;
-    /// only changes are sent.
-    ///
-    /// Only a resting panel is blurred: a region sent for a frame can reach the compositor before
-    /// that frame's buffer (the shell's swap waits for vsync), so a blur following a sliding panel
-    /// runs a frame ahead and flickers at the edge. The blur fades in once the panel has arrived
-    /// and goes at once when it starts to leave.
+    /// Tells our compositor where the quick menu bar and the toast are, so it blurs what is below
+    /// them (Story 7.13). Called after every frame of their windows, so the blur moves with the
+    /// sliding panel, and from the compositor poll; only changes are sent. The region of a frame
+    /// can reach the compositor one frame before its buffer; on the console session that is not
+    /// visible, nested in KWin it showed as a flickering edge (then `CONSOLEUI_NO_BLUR=1`).
     pub fn sync_blur(&mut self) {
         let Some(windows) = self.compositor_ui() else { return };
         let Some(blur) = self.compositor.as_ref().map(Compositor::blur) else { return };
@@ -540,33 +543,28 @@ impl Shell {
         };
         let overlay = &windows.overlay;
         let mut menu = Vec::new();
-        if overlay.get_open() && overlay.window().is_visible() {
+        if overlay.window().is_visible() {
             let size = overlay.window().size().to_logical(overlay.window().scale_factor());
-            let height = overlay.get_panel_height();
-            let rest = size.height - height;
-            if (overlay.get_panel_y() - rest).abs() < 0.5 {
-                menu.push(region(0.0, rest, size.width, height, 0.0));
+            let top = overlay.get_panel_y();
+            let height = overlay.get_panel_height().min(size.height - top);
+            if height >= 1.0 {
+                menu.push(region(0.0, top, size.width, height, 0.0));
             }
         }
         let notification = &windows.notification;
         let mut toast = Vec::new();
-        if notification.get_shown()
-            && notification.window().is_visible()
-            && (notification.get_toast_x() - notification.get_toast_rest_x()).abs() < 0.5
-        {
+        if notification.get_shown() && notification.window().is_visible() {
             toast.push(region(
-                notification.get_toast_rest_x(),
+                notification.get_toast_x(),
                 notification.get_toast_y(),
                 notification.get_toast_width(),
                 notification.get_toast_height(),
                 notification.get_toast_radius(),
             ));
         }
-        let fade = |regions: &Vec<BlurRegion>| if regions.is_empty() { 0 } else { BLUR_FADE_IN_MS };
-        let (menu_fade, toast_fade) = (fade(&menu), fade(&toast));
         let Some(compositor) = &mut self.compositor else { return };
-        compositor.set_blur(WindowRole::Overlay, menu, menu_fade);
-        compositor.set_blur(WindowRole::Notification, toast, toast_fade);
+        compositor.set_blur(WindowRole::Overlay, menu, 0);
+        compositor.set_blur(WindowRole::Notification, toast, 0);
     }
 
     /// The overlay and notification windows whose frames move the compositor's blur (Story 7.13).
@@ -666,6 +664,7 @@ impl Shell {
                 usize::from(self.search_area == SearchArea::Results),
                 self.context.as_ref().map_or(0, ContextMenu::focused),
             ],
+            home_area: self.home_area,
             query_len: self.query.len(),
             settings: self.settings,
             network: self.network.pages.feedback(),
@@ -759,6 +758,17 @@ impl Shell {
     }
 
     fn apply_home(&mut self, ui: &AppWindow, action: Action) {
+        // Up from the row reaches the tabs, down the buttons below the info.
+        let action = match self.home_area.apply(action, HOME_BUTTONS, HOME_TABS.len()) {
+            HomeOutcome::Pass => action,
+            HomeOutcome::Press(0) => Action::Confirm,
+            HomeOutcome::Press(_) => Action::Menu,
+            HomeOutcome::OpenTab(tab) => {
+                self.screen = HOME_TABS[tab];
+                return;
+            }
+            HomeOutcome::Moved | HomeOutcome::Ignored => return,
+        };
         match action {
             Action::Confirm => match self.home_entry() {
                 Some(index) => self.launch(ui, index),
@@ -1089,6 +1099,16 @@ impl Shell {
 
     /// Pushes screen, focus, background and hints to the UI.
     fn sync(&mut self, ui: &AppWindow) {
+        if self.screen != Screen::Home {
+            self.home_area = HomeArea::Tiles;
+        }
+        let (area, area_index) = match self.home_area {
+            HomeArea::Tiles => (0, 0),
+            HomeArea::Buttons(i) => (1, i),
+            HomeArea::Tabs(i) => (2, i),
+        };
+        ui.set_home_area(area);
+        ui.set_home_area_index(area_index as i32);
         ui.set_screen(self.screen);
         ui.set_home_focused(self.home.focused() as i32);
         ui.set_library_focused(self.grid.focused() as i32);

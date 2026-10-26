@@ -13,10 +13,12 @@ export component SettingsPage inherits Rectangle {
     property <length> row-height: 92px * root.s;
     property <length> pitch: root.row-height + 12px * root.s;
     property <length> list-top: 200px * root.s;
-    // Up to the hint bar
-    property <length> list-height: root.height - root.list-top - 120px * root.s;
-    property <length> content-height: root.rows.length * root.pitch + 60px * root.s;
-    property <length> scroll: max(0px, min((root.focused + 1.5) * root.pitch - root.list-height, root.content-height - root.list-height));
+    // Ends a little above the hint bar
+    property <length> list-height: root.height - root.list-top - 150px * root.s;
+    // The rows, the footer and some room below the last row
+    property <length> content-height: root.rows.length * root.pitch + 110px * root.s;
+    // Scrolls so that the row after the focused one is fully visible as well
+    property <length> scroll: max(0px, min((root.focused + 2) * root.pitch + 10px * root.s - root.list-height, root.content-height - root.list-height));
     animate scroll {
         duration: Theme.focus-duration;
         easing: ease-out-quart;

@@ -802,9 +802,26 @@ Branch `agent/compositor-blur`, on top of the UI feedback round (6.10).
   fades in within 150 ms, and it is removed at once when the panel starts to leave; while sliding,
   the panel is the plain glass. A blur that follows moving panels would need the region tied to
   the overlay's buffer (e.g. applied on the window's next commit), left for later.
+- **Fourth follow-up:** the user found the flicker only nested in KDE; in the console session on a
+  TTY (DRM) there were no problems. So the blur follows the sliding bar and the toast again, from
+  the first frame and without a fade. `--no-blur` / `CONSOLEUI_NO_BLUR=1` turn it off for checks.
 - **Observed (pre-existing, also on 6.10):** the winit backend logs `EGL_BAD_SURFACE` from
   `eglQuerySurface` (buffer age) after frames without damage and after screenshots, because the
   surface is no longer current; harmless, but noisy.
+
+### UI feedback round 2
+
+- **Home focus beyond the row:** up from the tile row selects the tabs of the top bar (a pill around
+  the tab, ◀ ▶ moves it, ✕ opens the page), down selects the buttons below the info ("Play"/"Open"
+  and "•••", ✕ acts like on the tile or opens the options menu); ○ or the opposite direction goes
+  back to the row. `consoleui_core::HomeArea` (tested) holds the logic; the tile keeps its size but
+  drops its ring while the selection is elsewhere.
+- **Home row:** one tile stays visible to the left of the focused one (`TileRow.lead`).
+- **Settings list:** ends further above the hint bar, scrolls so that the row after the focused one is
+  fully visible, and has room below the last row.
+- **Profile picker:** the name no longer touches the avatar ring. **Quick menu:** no invisible menu
+  after a quick reopen (generation counter for the open/close timers), the card focus animates, colors
+  switch at once (no pale "ghost" card).
 
 ## Risiken / offene Fragen
 

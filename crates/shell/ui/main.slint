@@ -39,6 +39,9 @@ export component AppWindow inherits Window {
 
     in property <[AppTile]> home-tiles;
     in property <int> home-focused;
+    // Home screen selection outside the row: 1 the buttons, 2 the tabs (`home-area-index` which)
+    in property <int> home-area;
+    in property <int> home-area-index;
 
     in property <[AppTile]> library-tiles;
     in property <int> library-focused;
@@ -349,7 +352,7 @@ export component AppWindow inherits Window {
             y: 50px * s;
             width: self.preferred-width;
             height: 36px * s;
-            spacing: 18px * s;
+            spacing: 28px * s;
 
             ButtonGlyph {
                 y: (parent.height - self.height) / 2;
@@ -390,6 +393,27 @@ export component AppWindow inherits Window {
                 s: root.s;
                 opacity: root.screen == Screen.home || root.screen == Screen.library ? 1 : 0.35;
             }
+        }
+
+        // Selection on the tabs (home screen, up from the row): a pill around the tab
+        Rectangle {
+            property <bool> shown: root.screen == Screen.home && root.home-area == 2;
+            property <length> tab-x: root.home-area-index == 1 ? library-tab.x : root.home-area-index == 2 ? settings-tab.x : home-tab.x;
+            property <length> tab-width: root.home-area-index == 1 ? library-tab.width : root.home-area-index == 2 ? settings-tab.width : home-tab.width;
+            x: tabs.x + self.tab-x - 11px * s;
+            y: tabs.y - 6px * s;
+            width: self.tab-width + 22px * s;
+            height: tabs.height + 12px * s;
+            border-radius: self.height / 2;
+            border-width: 3px * s;
+            border-color: Theme.accent;
+            background: Theme.accent.with-alpha(0.12);
+            opacity: self.shown ? 1 : 0;
+            animate x, width {
+                duration: Theme.focus-duration;
+                easing: ease-out-quart;
+            }
+            animate opacity { duration: Theme.focus-duration; }
         }
 
         // Underline of the current tab; glides to the next one
@@ -439,6 +463,8 @@ export component AppWindow inherits Window {
             }
             tiles: root.home-tiles;
             focused: root.home-focused;
+            area: root.home-area;
+            area-index: root.home-area-index;
             pulse: root.pulse && root.screen == Screen.home;
             s: root.s;
         }
