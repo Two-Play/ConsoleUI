@@ -5,6 +5,7 @@ pub mod backdrop;
 pub mod bluetooth;
 mod collection;
 pub mod desktop;
+pub mod dialog;
 pub mod fakenet;
 pub mod game_options;
 mod grid;

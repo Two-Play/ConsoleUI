@@ -274,8 +274,8 @@ msgstr "läuft"
 msgid "Couldn't start"
 msgstr "konnte nicht gestartet werden"
 
-msgid "Launch failed"
-msgstr "Start fehlgeschlagen"
+msgid "Couldn't start {}"
+msgstr "{} konnte nicht gestartet werden"
 
 msgid "Quit {}?"
 msgstr "{} beenden?"

@@ -1,0 +1,91 @@
+import { Theme } from "theme.slint";
+import { ControllerStyle, GlyphButton } from "types.slint";
+import { GlassPanel } from "glass.slint";
+import { HintBar } from "glyph.slint";
+
+// Modal alert/confirmation dialog: dimmed backdrop, a glass card with title, text and one to three
+// buttons in a row. State and input live in `consoleui_core::dialog::Dialog`; Rust fills the
+// properties. Left/Right and the button hints are handled by the shell like on every other layer.
+export component Dialog inherits Rectangle {
+    in property <bool> open;
+    in property <string> title;
+    in property <string> text;
+    in property <[string]> buttons;
+    in property <int> focused;
+    in property <ControllerStyle> style;
+    in property <float> s: 1;
+
+    property <length> pad: 44px * root.s;
+
+    Rectangle {
+        width: 100%;
+        height: 100%;
+        background: #000000b3;
+        opacity: root.open ? 1 : 0;
+        animate opacity { duration: Theme.page-duration; }
+    }
+
+    if root.open: panel := GlassPanel {
+        width: 680px * root.s;
+        height: content.preferred-height;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        border-radius: 24px * root.s;
+
+        content := VerticalLayout {
+            padding: root.pad;
+            spacing: 14px * root.s;
+
+            Text {
+                text: root.title;
+                color: Theme.text;
+                font-size: 34px * root.s;
+                font-weight: 800;
+                wrap: word-wrap;
+            }
+
+            Text {
+                text: root.text;
+                color: Theme.text-dim;
+                font-size: 22px * root.s;
+                wrap: word-wrap;
+            }
+
+            HorizontalLayout {
+                padding-top: 12px * root.s;
+                spacing: 12px * root.s;
+                alignment: end;
+
+                for label[i] in root.buttons: Rectangle {
+                    property <bool> is-focused: i == root.focused;
+                    min-width: 150px * root.s;
+                    preferred-width: button-text.preferred-width + 56px * root.s;
+                    height: 58px * root.s;
+                    border-radius: 16px * root.s;
+                    background: self.is-focused ? Theme.accent : Theme.surface.with-alpha(0.08);
+                    animate background { duration: Theme.focus-duration; easing: ease-out-quart; }
+
+                    button-text := Text {
+                        text: label;
+                        color: parent.is-focused ? Theme.base : Theme.text;
+                        font-size: 24px * root.s;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: 100%;
+                        height: 100%;
+                    }
+                }
+            }
+
+            HintBar {
+                padding-top: 6px * root.s;
+                hints: root.buttons.length > 1
+                    ? [{ button: GlyphButton.confirm, label: @tr("Select") }, { button: GlyphButton.back, label: @tr("Cancel") }]
+                    : [{ button: GlyphButton.confirm, label: @tr("OK") }];
+                style: root.style;
+                s: root.s;
+            }
+        }
+    }
+}

@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use consoleui_core::dialog::{Dialog, DialogButton, DialogOutcome};
 use consoleui_core::game_options::{GameOptions, GameOptionsPanel, GameOptionsStore, PanelOutcome};
 use consoleui_core::i18n::{self, Language, tr, trf};
 use consoleui_core::keymap::KeyboardLayout;
@@ -49,6 +50,14 @@ const HOME_COUNT: usize = 12;
 /// Buttons below the info on the home screen: the main action and "more options"
 const HOME_BUTTONS: usize = 2;
 /// The tabs of the top bar, left to right
+/// What a button of the modal dialog does.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum DialogTag {
+    /// Quit the running entry with this ID
+    QuitApp(String),
+    Close,
+}
+
 const HOME_TABS: [Screen; 3] = [Screen::Home, Screen::Library, Screen::Settings];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -167,7 +176,7 @@ pub struct Shell {
     /// A frame was rendered after `front_due`
     launch_shown: bool,
     /// Entry ID whose quitting is waiting for confirmation
-    confirm_quit: Option<String>,
+    dialog: Option<Dialog<DialogTag>>,
     quick: Option<QuickMenu>,
     gamescope: Option<GamescopeUi>,
     /// Our own compositor (Epic 7), instead of gamescope
@@ -309,7 +318,7 @@ impl Shell {
             close_launch_at: None,
             front_due: None,
             launch_shown: false,
-            confirm_quit: None,
+            dialog: None,
             quick: None,
             gamescope,
             compositor,
@@ -714,21 +723,14 @@ impl Shell {
             self.sync(ui);
             return;
         }
+        if self.dialog.is_some() {
+            self.apply_dialog(ui, action);
+            return;
+        }
         if ui.get_launching() {
             // "Back" brings up the overview; the app keeps running and stays tracked.
             if action == Action::Back {
                 self.show_shell(ui);
-            }
-            return;
-        }
-        if let Some(id) = self.confirm_quit.clone() {
-            match action {
-                Action::Confirm => {
-                    self.quit_running(&id);
-                    self.close_confirm(ui);
-                }
-                Action::Back => self.close_confirm(ui),
-                _ => {}
             }
             return;
         }
@@ -1687,8 +1689,7 @@ impl Shell {
                 ui.set_launch_busy(false);
                 ui.set_launching(true);
                 self.failed_launch = Some(now);
-                let title = entry.title.clone();
-                self.toast(ui, "⚠", tr("Launch failed"), &title);
+                self.show_alert(ui, &trf("Couldn't start {}", &[&entry.title]), &err.to_string());
             }
         }
     }
@@ -1802,8 +1803,12 @@ impl Shell {
                 compositor.send(&ShellMessage::Exited { app_id: *app_id });
             }
             self.set_running_flag(entry_id, false);
-            if self.confirm_quit.as_deref() == Some(entry_id.as_str()) {
-                self.close_confirm(ui);
+            if self
+                .dialog
+                .as_ref()
+                .is_some_and(|d| d.buttons().iter().any(|b| b.tag == DialogTag::QuitApp(entry_id.clone())))
+            {
+                self.close_dialog(ui);
             }
             if self.foreground == Some(*app_id) {
                 self.show_shell(ui);
@@ -1970,15 +1975,55 @@ impl Shell {
         if self.running_for(index).is_none() {
             return;
         }
-        self.confirm_quit = Some(self.entries[index].id.clone());
-        ui.set_confirm_title(trf("Quit {}?", &[&self.entries[index].title]).into());
-        ui.set_confirm_text(tr("Unsaved progress may be lost.").into());
-        ui.set_confirm_open(true);
+        let buttons = vec![
+            DialogButton { label: tr("Cancel").into(), tag: DialogTag::Close },
+            DialogButton { label: tr("Quit").into(), tag: DialogTag::QuitApp(self.entries[index].id.clone()) },
+        ];
+        let title = trf("Quit {}?", &[&self.entries[index].title]);
+        self.show_dialog(ui, Dialog::new(title, tr("Unsaved progress may be lost."), buttons, 1));
     }
 
-    fn close_confirm(&mut self, ui: &AppWindow) {
-        self.confirm_quit = None;
-        ui.set_confirm_open(false);
+    /// Opens a modal dialog; it takes all input until a button is picked or Back dismisses it.
+    fn show_dialog(&mut self, ui: &AppWindow, dialog: Dialog<DialogTag>) {
+        self.dialog = Some(dialog);
+        self.sync_dialog(ui);
+        ui.set_dialog_open(true);
+        self.update_hints(ui);
+    }
+
+    /// A dialog with one button, for errors the player has to notice.
+    fn show_alert(&mut self, ui: &AppWindow, title: &str, text: &str) {
+        self.show_dialog(ui, Dialog::alert(title, text, tr("OK"), DialogTag::Close));
+    }
+
+    fn sync_dialog(&self, ui: &AppWindow) {
+        let Some(dialog) = &self.dialog else { return };
+        ui.set_dialog_title(dialog.title.as_str().into());
+        ui.set_dialog_text(dialog.text.as_str().into());
+        let labels: Vec<slint::SharedString> = dialog.buttons().iter().map(|b| b.label.as_str().into()).collect();
+        ui.set_dialog_buttons(ModelRc::new(VecModel::from(labels)));
+        ui.set_dialog_focused(dialog.focused() as i32);
+    }
+
+    fn apply_dialog(&mut self, ui: &AppWindow, action: Action) {
+        let Some(dialog) = &mut self.dialog else { return };
+        match dialog.apply(action) {
+            DialogOutcome::None => self.sync_dialog(ui),
+            DialogOutcome::Dismissed => self.close_dialog(ui),
+            DialogOutcome::Chosen(tag) => {
+                self.close_dialog(ui);
+                match tag {
+                    DialogTag::QuitApp(id) => self.quit_running(&id),
+                    DialogTag::Close => {}
+                }
+            }
+        }
+    }
+
+    /// Closes the dialog; its texts stay in the properties while it fades out.
+    fn close_dialog(&mut self, ui: &AppWindow) {
+        self.dialog = None;
+        ui.set_dialog_open(false);
         self.update_hints(ui);
     }
 

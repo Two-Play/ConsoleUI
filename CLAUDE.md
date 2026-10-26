@@ -151,6 +151,8 @@ Cargo workspace (edition 2024, `default-members` = the shell):
     copies the files from before profiles into it. `profile_picker.rs` is the "Who's playing?" state
     (tile row with "Add profile", menu: rename/color/delete, name entry with the on-screen keyboard,
     delete confirmation) and returns `PickerOutcome`s; the shell saves and switches.
+  - `dialog.rs`: `Dialog<T>`, the state of the modal alert/confirmation dialog (title, text, 1–3 buttons with a tag `T`,
+    Left/Right/Confirm/Back → `DialogOutcome`); the shell shows it with `ui/dialog.slint` (`Shell::show_dialog` / `show_alert`).
   - `Action` / `Carousel` (row) / `Grid` (library) handle input-agnostic navigation; `osk.rs` is the
     on-screen keyboard; `search.rs` ranks titles (`normalize` folds case and umlauts, also used for A–Z
     sorting); `library_view` applies the library filter (incl. `Hidden`) and sort, `home_view` builds the

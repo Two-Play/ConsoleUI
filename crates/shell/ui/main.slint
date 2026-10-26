@@ -7,6 +7,7 @@ import { LibraryPage } from "library.slint";
 import { SearchPage } from "search.slint";
 import { QuickMenu } from "quickmenu.slint";
 import { ContextMenu } from "contextmenu.slint";
+import { Dialog } from "dialog.slint";
 import { GameOptionsPanel } from "gameoptions.slint";
 import { OverlayWindow } from "overlay.slint";
 import { NotificationWindow } from "notification.slint";
@@ -109,10 +110,12 @@ export component AppWindow inherits Window {
     in property <int> game-options-focused;
     in property <string> game-options-footer;
 
-    // Confirmation, e.g. before quitting a running app
-    in property <bool> confirm-open;
-    in property <string> confirm-title;
-    in property <string> confirm-text;
+    // Modal alert/confirmation dialog, e.g. before quitting a running app
+    in property <bool> dialog-open;
+    in property <string> dialog-title;
+    in property <string> dialog-text;
+    in property <[string]> dialog-buttons;
+    in property <int> dialog-focused;
 
     // Top bar status
     in property <NetworkState> network: NetworkState.offline;
@@ -224,7 +227,7 @@ export component AppWindow inherits Window {
             // In the search (and the Wi-Fi password entry) the keyboard types; WASD and the
             // letter shortcuts do not apply there.
             if ((root.screen == Screen.search || (root.screen == Screen.settings && root.net-view.password-open)
-                || root.profile-view.name-open) && !root.launching && !root.confirm-open) {
+                || root.profile-view.name-open) && !root.launching && !root.dialog-open) {
                 if (event.text == Key.Backspace) {
                     root.erase();
                     return accept;
@@ -682,44 +685,16 @@ export component AppWindow inherits Window {
             ]
         }
 
-        if root.confirm-open: Rectangle {
+        Dialog {
             width: 100%;
             height: 100%;
-            background: #000000b3;
-
-            GlassPanel {
-                width: 680px * s;
-                height: 270px * s;
-                x: (parent.width - self.width) / 2;
-                y: (parent.height - self.height) / 2;
-                border-radius: 24px * s;
-
-                VerticalLayout {
-                    padding: 44px * s;
-                    spacing: 14px * s;
-
-                    Text {
-                        text: root.confirm-title;
-                        color: Theme.text;
-                        font-size: 34px * s;
-                        font-weight: 800;
-                    }
-
-                    Text {
-                        text: root.confirm-text;
-                        color: Theme.text-dim;
-                        font-size: 22px * s;
-                        wrap: word-wrap;
-                    }
-
-                    HintBar {
-                        padding-top: 18px * s;
-                        hints: [{ button: GlyphButton.confirm, label: @tr("Quit") }, { button: GlyphButton.back, label: @tr("Cancel") }];
-                        style: root.controller-style;
-                        s: root.s;
-                    }
-                }
-            }
+            open: root.dialog-open;
+            title: root.dialog-title;
+            text: root.dialog-text;
+            buttons: root.dialog-buttons;
+            focused: root.dialog-focused;
+            style: root.controller-style;
+            s: root.s;
         }
 
         QuickMenu {
