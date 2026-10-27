@@ -1,0 +1,36 @@
+import { Theme } from "theme.slint";
+
+// A page or list without content: symbol, headline and one line of explanation. Put a `Button`
+// below it in the page when there is something to do about it.
+export component EmptyState inherits VerticalLayout {
+    in property <string> symbol;
+    in property <string> title;
+    in property <string> text;
+    in property <float> s: 1;
+
+    alignment: center;
+    spacing: 10px * root.s;
+
+    if root.symbol != "": Text {
+        text: root.symbol;
+        color: Theme.text-dim;
+        font-size: 56px * root.s;
+        horizontal-alignment: center;
+    }
+
+    Text {
+        text: root.title;
+        color: Theme.text;
+        font-size: 30px * root.s;
+        font-weight: 700;
+        horizontal-alignment: center;
+    }
+
+    if root.text != "": Text {
+        text: root.text;
+        color: Theme.text-dim;
+        font-size: 20px * root.s;
+        horizontal-alignment: center;
+        wrap: word-wrap;
+    }
+}

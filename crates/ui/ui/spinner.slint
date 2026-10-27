@@ -1,0 +1,20 @@
+import { Theme } from "theme.slint";
+
+// Busy indicator: an arc that turns. Only runs while `running`, so a hidden spinner costs no redraws.
+export component Spinner inherits Rectangle {
+    in property <bool> running: true;
+    in property <length> size: 40px;
+    in property <float> s: 1;
+
+    width: root.size;
+    height: root.size;
+
+    Image {
+        width: 100%;
+        height: 100%;
+        source: @image-url("icons/spinner.svg");
+        colorize: Theme.accent;
+        transform-rotation: root.running ? animation-tick() / 1s * 360deg : 0deg;
+        visible: root.running;
+    }
+}

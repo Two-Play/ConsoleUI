@@ -1,0 +1,61 @@
+// Types shared by all components of the design system and by Rust (the shell and apps map their
+// input to them).
+
+// Input-agnostic actions; Rust maps them to `consoleui_core::Action`.
+export enum NavAction { up, down, left, right, confirm, back, menu, search, secondary, prev-tab, next-tab, guide }
+
+// Which button a hint shows; the glyph depends on the ControllerStyle.
+export enum GlyphButton { dpad, updown, confirm, back, north, west, menu, guide, l1, r1, quit }
+
+export enum NetworkState { offline, ethernet, wifi }
+
+export enum ControllerStyle { keyboard, playstation, xbox }
+
+export struct Hint {
+    button: GlyphButton,
+    label: string,
+}
+
+export struct AppTile {
+    title: string,
+    subtitle: string,
+    kind: string,
+    action-label: string,
+    monogram: string,
+    // Only for placeholder covers without an icon
+    show-monogram: bool,
+    // Real cover or generated gradient
+    cover: image,
+    icon: image,
+    has-icon: bool,
+    logo: image,
+    has-logo: bool,
+    accent: color,
+    running: bool,
+    // Pinned in the context menu: comes first in home and carries a pin
+    pinned: bool,
+}
+
+// Menu item (context menu, profile menu, ...)
+export struct ContextItem {
+    label: string,
+    // Symbol as text (monochrome)
+    symbol: string,
+}
+
+// On-screen keyboard key; position and width in key widths
+export struct KeyCap {
+    label: string,
+    row: int,
+    x: float,
+    width: float,
+}
+
+// Row of a settings list
+export struct SettingRow {
+    label: string,
+    description: string,
+    value: string,
+    // Opens a sub-page (Wi-Fi, Bluetooth) instead of changing the value
+    opens-page: bool,
+}

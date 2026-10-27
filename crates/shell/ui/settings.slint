@@ -1,31 +1,19 @@
 import { SettingRow } from "types.slint";
-import { Theme } from "theme.slint";
+import { SettingList } from "@consoleui/settinglist.slint";
+import { Theme } from "@consoleui/theme.slint";
 
-// Settings: a list of rows; ◀ ▶ changes the value of the focused row. The list scrolls when it
-// does not fit above the hint bar, so the focused row stays visible.
+// Settings page: heading plus the list of rows; see `SettingList`. The list ends a little above the hint bar.
 export component SettingsPage inherits Rectangle {
     in property <[SettingRow]> rows;
     in property <int> focused;
     in property <string> footer;
     // The focused row is highlighted (off while the selection is on the tabs)
     in property <bool> active: true;
+
+    callback row-clicked(int);
     in property <float> s;
 
     property <length> margin: 110px * root.s;
-    property <length> row-height: 92px * root.s;
-    property <length> pitch: root.row-height + 12px * root.s;
-    property <length> list-top: 200px * root.s;
-    // Ends a little above the hint bar
-    property <length> list-height: root.height - root.list-top - 150px * root.s;
-    // The rows, the footer and some room below the last row
-    property <length> content-height: root.rows.length * root.pitch + 110px * root.s;
-    // Scrolls so that the row after the focused one is fully visible and the one after that
-    // shows its top edge, which tells that the list goes on
-    property <length> scroll: max(0px, min((root.focused + 2) * root.pitch + 10px * root.s + 0.5 * root.pitch - root.list-height, root.content-height - root.list-height));
-    animate scroll {
-        duration: Theme.focus-duration;
-        easing: ease-out-quart;
-    }
 
     Text {
         x: root.margin;
@@ -36,59 +24,16 @@ export component SettingsPage inherits Rectangle {
         font-weight: 800;
     }
 
-    list := Rectangle {
-        y: root.list-top;
-        height: root.list-height;
-        clip: true;
-
-        for row[i] in root.rows: card := Rectangle {
-            property <bool> is-focused: root.active && i == root.focused;
-            x: root.margin;
-            y: 10px * root.s + i * root.pitch - root.scroll;
-            width: min(980px * root.s, root.width - 2 * root.margin);
-            height: root.row-height;
-            border-radius: 18px * root.s;
-            background: self.is-focused ? Theme.accent : Theme.surface;
-            animate background { duration: Theme.focus-duration; }
-
-            VerticalLayout {
-                x: 30px * root.s;
-                y: (parent.height - self.height) / 2;
-                height: self.preferred-height;
-                spacing: 4px * root.s;
-
-                Text {
-                    text: row.label;
-                    color: card.is-focused ? Theme.base : Theme.text;
-                    font-size: 24px * root.s;
-                    font-weight: 700;
-                }
-
-                Text {
-                    text: row.description;
-                    color: card.is-focused ? Theme.base.with-alpha(0.7) : Theme.text-dim;
-                    font-size: 17px * root.s;
-                }
-            }
-
-            Text {
-                x: parent.width - self.width - 30px * root.s;
-                height: 100%;
-                text: row.opens-page ? row.value + "   ›"
-                    : (card.is-focused ? "◀  " : "") + row.value + (card.is-focused ? "  ▶" : "");
-                color: card.is-focused ? Theme.base : Theme.text;
-                font-size: 22px * root.s;
-                font-weight: 600;
-                vertical-alignment: center;
-            }
-        }
-
-        Text {
-            x: root.margin;
-            y: 10px * root.s + root.rows.length * root.pitch + 24px * root.s - root.scroll;
-            text: root.footer;
-            color: Theme.text-dim;
-            font-size: 16px * root.s;
-        }
+    SettingList {
+        x: root.margin;
+        y: 200px * root.s;
+        width: root.width - 2 * root.margin;
+        height: root.height - 200px * root.s - 150px * root.s;
+        rows: root.rows;
+        focused: root.focused;
+        footer: root.footer;
+        active: root.active;
+        s: root.s;
+        row-clicked(i) => { root.row-clicked(i); }
     }
 }

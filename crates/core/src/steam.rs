@@ -132,10 +132,54 @@ fn library_paths(root: &Path) -> Vec<PathBuf> {
     paths
 }
 
+/// Download state of every Steam game in the libraries: name and whether it is complete and idle
+/// (`StateFlags` exactly "fully installed", not updating).
+pub fn download_states(root: &Path) -> HashMap<u32, (String, bool)> {
+    let mut states = HashMap::new();
+    for library in library_paths(root) {
+        let Ok(dir) = fs::read_dir(library.join("steamapps")) else { continue };
+        for file in dir.flatten() {
+            let name = file.file_name();
+            let Some(name) = name.to_str() else { continue };
+            if !(name.starts_with("appmanifest_") && name.ends_with(".acf")) {
+                continue;
+            }
+            let Some(manifest) = fs::read_to_string(file.path()).ok().and_then(|c| parse_manifest(&c)) else {
+                continue;
+            };
+            if !is_tool(&manifest.name) {
+                states.insert(manifest.app_id, (manifest.name, manifest.flags == STATE_FULLY_INSTALLED));
+            }
+        }
+    }
+    states
+}
+
+/// What changed between two [`download_states`]: names that started downloading (new and not
+/// complete) and names that are complete now (new, or not complete before).
+pub fn download_changes(
+    before: &HashMap<u32, (String, bool)>,
+    after: &HashMap<u32, (String, bool)>,
+) -> (Vec<String>, Vec<String>) {
+    let (mut started, mut finished) = (Vec::new(), Vec::new());
+    for (id, (name, ready)) in after {
+        match before.get(id) {
+            None if *ready => finished.push(name.clone()),
+            None => started.push(name.clone()),
+            Some((_, false)) if *ready => finished.push(name.clone()),
+            _ => {}
+        }
+    }
+    started.sort();
+    finished.sort();
+    (started, finished)
+}
+
 #[derive(Debug, PartialEq)]
 struct Manifest {
     app_id: u32,
     name: String,
+    flags: u32,
     installed: bool,
     last_played: Option<u64>,
 }
@@ -148,6 +192,7 @@ fn parse_manifest(content: &str) -> Option<Manifest> {
     Some(Manifest {
         app_id: field("appid")?.parse().ok()?,
         name: field("name")?.trim().to_string(),
+        flags,
         installed: flags & STATE_FULLY_INSTALLED != 0,
         last_played: field("LastPlayed").and_then(|s| s.parse().ok()).filter(|&t| t > 0),
     })
@@ -208,8 +253,36 @@ mod tests {
         );
         assert_eq!(
             manifest,
-            Some(Manifest { app_id: 2695940, name: "PANICORE".into(), installed: true, last_played: Some(1790020703) })
+            Some(Manifest {
+                app_id: 2695940,
+                name: "PANICORE".into(),
+                flags: 4,
+                installed: true,
+                last_played: Some(1790020703)
+            })
         );
+    }
+
+    #[test]
+    fn download_changes_find_new_and_finished_games() {
+        let state = |list: &[(u32, &str, bool)]| -> HashMap<u32, (String, bool)> {
+            list.iter().map(|&(id, name, ready)| (id, (name.to_string(), ready))).collect()
+        };
+        let before = state(&[(1, "Old", true), (2, "Updating", false), (3, "Same", false)]);
+        let after = state(&[
+            (1, "Old", true),
+            (2, "Updating", true),
+            (3, "Same", false),
+            (4, "Fresh", false),
+            (5, "Quick", true),
+        ]);
+        assert_eq!(
+            download_changes(&before, &after),
+            (vec!["Fresh".to_string()], vec!["Quick".into(), "Updating".into()])
+        );
+        // A game that starts updating is not announced
+        let busy = state(&[(1, "Old", false)]);
+        assert_eq!(download_changes(&state(&[(1, "Old", true)]), &busy), (vec![], vec![]));
     }
 
     #[test]

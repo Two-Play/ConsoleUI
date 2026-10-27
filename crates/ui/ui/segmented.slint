@@ -1,0 +1,41 @@
+import { Theme } from "theme.slint";
+
+// Filter or mode switch: a row of pills, the current one filled. `focused` draws the accent ring
+// around the current pill while the selection is on this control.
+export component SegmentedControl inherits HorizontalLayout {
+    in property <[string]> items;
+    in property <int> current;
+    in property <bool> focused;
+    in property <float> s: 1;
+
+    callback clicked(int);
+
+    spacing: 10px * root.s;
+    alignment: start;
+
+    for item[i] in root.items: Rectangle {
+        property <bool> is-current: i == root.current;
+        height: 44px * root.s;
+        width: label.preferred-width + 40px * root.s;
+        border-radius: self.height / 2;
+        background: self.is-current ? Theme.accent : Theme.surface;
+        border-width: root.focused && self.is-current ? 3px * root.s : 0px;
+        border-color: Theme.text;
+        animate background { duration: Theme.focus-duration; }
+
+        label := Text {
+            width: 100%;
+            height: 100%;
+            text: item;
+            color: parent.is-current ? Theme.base : Theme.text;
+            font-size: 20px * root.s;
+            font-weight: 600;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+
+        TouchArea {
+            clicked => { root.clicked(i); }
+        }
+    }
+}

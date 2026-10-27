@@ -1,6 +1,7 @@
 import { AppTile, KeyCap } from "types.slint";
-import { Theme } from "theme.slint";
-import { TileRow } from "tilerow.slint";
+import { Theme } from "@consoleui/theme.slint";
+import { TileRow } from "@consoleui/tilerow.slint";
+import { OnScreenKeyboard, TextField } from "@consoleui/keyboard.slint";
 
 // Search: input field, on-screen keyboard and below it the results as a row of tiles.
 export component SearchPage inherits Rectangle {
@@ -32,49 +33,24 @@ export component SearchPage inherits Rectangle {
         font-weight: 800;
     }
 
-    // Input field
-    Rectangle {
+    TextField {
         x: root.margin + 260px * root.s;
         y: 116px * root.s;
         width: 11 * root.unit - root.key-gap;
-        height: 64px * root.s;
-        border-radius: self.height / 2;
-        background: Theme.surface;
-        border-width: 2px;
-        border-color: root.keyboard-active ? Theme.accent : transparent;
-
-        Text {
-            x: 28px * root.s;
-            height: 100%;
-            width: parent.width - 56px * root.s;
-            text: root.query == "" ? @tr("Search games and apps") : root.query + "|";
-            color: root.query == "" ? Theme.text-dim : Theme.text;
-            font-size: 26px * root.s;
-            vertical-alignment: center;
-            overflow: elide;
-        }
+        text: root.query;
+        placeholder: @tr("Search games and apps");
+        active: root.keyboard-active;
+        s: root.s;
     }
 
-    for key[i] in root.keys: Rectangle {
-        property <bool> is-focused: root.keyboard-active && i == root.key-focused;
-        x: root.margin + 260px * root.s + key.x * root.unit;
-        y: root.keyboard-y + key.row * root.unit;
-        width: key.width * root.unit - root.key-gap;
-        height: root.unit - root.key-gap;
-        border-radius: 10px * root.s;
-        background: self.is-focused ? Theme.accent : Theme.surface;
-        animate background { duration: 90ms; }
-
-        Text {
-            width: 100%;
-            height: 100%;
-            text: key.label;
-            color: parent.is-focused ? Theme.base : Theme.text;
-            font-size: (key.label.character-count > 1 ? 18px : 24px) * root.s;
-            font-weight: 600;
-            horizontal-alignment: center;
-            vertical-alignment: center;
-        }
+    OnScreenKeyboard {
+        x: root.margin + 260px * root.s;
+        y: root.keyboard-y;
+        keys: root.keys;
+        focused: root.key-focused;
+        active: root.keyboard-active;
+        unit: root.unit;
+        s: root.s;
     }
 
     Text {

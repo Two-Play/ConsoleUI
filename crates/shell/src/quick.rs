@@ -81,6 +81,13 @@ impl QuickMenu {
         self.focused
     }
 
+    /// Focuses card `index` (a click), if there is one.
+    pub fn focus(&mut self, index: usize) {
+        if index < self.actions.len() {
+            self.focused = index;
+        }
+    }
+
     pub fn title(&self) -> String {
         match &self.app_title {
             Some(title) if self.app_in_front => trf("CONTROL CENTER · {}", &[&title.to_uppercase()]),

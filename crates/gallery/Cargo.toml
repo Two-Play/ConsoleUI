@@ -1,0 +1,17 @@
+[package]
+name = "consoleui-gallery"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Showcase of the ConsoleUI design system; also the smallest example of an app built on it"
+
+[dependencies]
+consoleui-ui.workspace = true
+consoleui-app.workspace = true
+consoleui-core.workspace = true
+slint = { version = "1.18.1" }
+png = "0.18.1"
+
+[build-dependencies]
+consoleui-ui = { workspace = true, features = ["build"] }
+slint-build = "1.18.1"

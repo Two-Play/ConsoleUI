@@ -21,6 +21,7 @@ pub mod music;
 mod nav;
 pub mod netpages;
 pub mod network;
+pub mod notification;
 pub mod osk;
 pub mod ownership;
 pub mod profile_picker;

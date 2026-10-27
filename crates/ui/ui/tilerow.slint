@@ -25,6 +25,9 @@ export component TileRow inherits Rectangle {
     out property <length> focus-y: root.y;
     out property <length> focus-size: root.tile-focused;
 
+    // A tile was clicked
+    callback clicked(int);
+
     height: root.tile-focused;
 
     for app[i] in root.tiles: Tile {
@@ -45,5 +48,13 @@ export component TileRow inherits Rectangle {
             duration: Theme.focus-duration;
             easing: ease-out-quart;
         }
+    }
+
+    for app[i] in root.tiles: TouchArea {
+        property <bool> is-focused: root.active && i == root.focused;
+        x: root.lead-x + (i - root.focused) * (root.tile + root.gap) + (i > root.focused && root.active ? root.tile-focused - root.tile : 0px);
+        width: self.is-focused ? root.tile-focused : root.tile;
+        height: self.width;
+        clicked => { root.clicked(i); }
     }
 }

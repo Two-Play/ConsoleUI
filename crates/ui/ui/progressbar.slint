@@ -1,0 +1,20 @@
+import { Theme } from "theme.slint";
+
+// Thin progress bar (downloads, installs, volume). `value` is 0 to 1.
+export component ProgressBar inherits Rectangle {
+    in property <float> value;
+    in property <color> fill: Theme.text;
+    in property <float> s: 1;
+
+    height: 6px * root.s;
+    border-radius: self.height / 2;
+    background: #ffffff26;
+
+    Rectangle {
+        width: parent.width * clamp(root.value, 0, 1);
+        height: 100%;
+        border-radius: parent.border-radius;
+        background: root.fill;
+        animate width { duration: Theme.focus-duration; easing: ease-out-quart; }
+    }
+}

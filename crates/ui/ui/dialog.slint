@@ -2,6 +2,7 @@ import { Theme } from "theme.slint";
 import { ControllerStyle, GlyphButton } from "types.slint";
 import { GlassPanel } from "glass.slint";
 import { HintBar } from "glyph.slint";
+import { Button } from "button.slint";
 
 // Modal alert/confirmation dialog: dimmed backdrop, a glass card with title, text and one to three
 // buttons in a row. State and input live in `consoleui_core::dialog::Dialog`; Rust fills the
@@ -14,6 +15,8 @@ export component Dialog inherits Rectangle {
     in property <int> focused;
     in property <ControllerStyle> style;
     in property <float> s: 1;
+
+    callback button-clicked(int);
 
     property <length> pad: 44px * root.s;
 
@@ -66,25 +69,11 @@ export component Dialog inherits Rectangle {
                 spacing: 12px * root.s;
                 alignment: end;
 
-                for label[i] in root.buttons: Rectangle {
-                    property <bool> is-focused: i == root.focused;
-                    min-width: 150px * root.s;
-                    preferred-width: button-text.preferred-width + 56px * root.s;
-                    height: 58px * root.s;
-                    border-radius: 16px * root.s;
-                    background: self.is-focused ? Theme.accent : Theme.surface.with-alpha(0.08);
-                    animate background { duration: Theme.focus-duration; easing: ease-out-quart; }
-
-                    button-text := Text {
-                        text: label;
-                        color: parent.is-focused ? Theme.base : Theme.text;
-                        font-size: 24px * root.s;
-                        font-weight: 700;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                        width: 100%;
-                        height: 100%;
-                    }
+                for label[i] in root.buttons: Button {
+                    text: label;
+                    focused: i == root.focused;
+                    s: root.s;
+                    clicked => { root.button-clicked(i); }
                 }
             }
 

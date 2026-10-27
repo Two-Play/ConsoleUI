@@ -1,0 +1,68 @@
+import { Theme } from "theme.slint";
+import { KeyCap } from "types.slint";
+
+// The text being typed: a pill that shows the placeholder while it is empty and a caret after
+// the text. `active` draws the accent border (the keyboard is where the input goes).
+export component TextField inherits Rectangle {
+    in property <string> text;
+    in property <string> placeholder;
+    in property <bool> active: true;
+    in property <float> s: 1;
+
+    height: 64px * root.s;
+    border-radius: self.height / 2;
+    background: Theme.surface;
+    border-width: 2px;
+    border-color: root.active ? Theme.accent : transparent;
+
+    Text {
+        x: 28px * root.s;
+        height: 100%;
+        width: parent.width - 56px * root.s;
+        text: root.text == "" ? root.placeholder : root.text + "|";
+        color: root.text == "" ? Theme.text-dim : Theme.text;
+        font-size: 26px * root.s;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+}
+
+// On-screen keyboard. The key layout (`KeyCap`: row, x and width in key units) and the focus come
+// from `consoleui_core::osk`; the component only draws it. 11 units wide and 5 rows high.
+export component OnScreenKeyboard inherits Rectangle {
+    in property <[KeyCap]> keys;
+    in property <int> focused;
+    // No key is highlighted while the selection is elsewhere (e.g. on the results)
+    in property <bool> active: true;
+    in property <length> unit: 62px;
+    in property <float> s: 1;
+
+    property <length> gap: 8px * root.s;
+
+    preferred-width: 11 * root.unit - root.gap;
+    preferred-height: 5 * root.unit - root.gap;
+    min-width: self.preferred-width;
+    min-height: self.preferred-height;
+
+    for key[i] in root.keys: Rectangle {
+        property <bool> is-focused: root.active && i == root.focused;
+        x: key.x * root.unit;
+        y: key.row * root.unit;
+        width: key.width * root.unit - root.gap;
+        height: root.unit - root.gap;
+        border-radius: 10px * root.s;
+        background: self.is-focused ? Theme.accent : Theme.surface;
+        animate background { duration: 90ms; }
+
+        Text {
+            width: 100%;
+            height: 100%;
+            text: key.label;
+            color: parent.is-focused ? Theme.base : Theme.text;
+            font-size: (key.label.character-count > 1 ? 18px : 24px) * root.s;
+            font-weight: 600;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+}

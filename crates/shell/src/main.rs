@@ -9,19 +9,19 @@ use consoleui_core::input::{self, GlyphStyle, InputDevice};
 use consoleui_core::status::{self, Network};
 use slint::{RenderingState, Rgba8Pixel, SharedPixelBuffer, Timer, TimerMode};
 
-mod audio;
 mod backdrop;
 mod compositor;
 mod context;
 mod cover;
 mod dbus;
-mod gamepad;
+mod downloads;
 mod gamescope;
 mod grab;
 mod hero;
 mod loader;
 mod music;
 mod network;
+mod notifications;
 mod options;
 mod perf;
 mod profiles;
@@ -29,12 +29,12 @@ mod quick;
 mod shell;
 mod tiles;
 
-use gamepad::{Connection, Gamepads};
+use consoleui_app::gamepad::{Connection, Gamepads};
 use loader::LoadOptions;
 use options::{Options, ScriptStep, StartScreen, USAGE};
 use perf::FrameStats;
 use profiles::ProfileStart;
-use shell::{CompositorUi, GamescopeUi, Shell};
+use shell::{Click, CompositorUi, GamescopeUi, Shell};
 
 slint::include_modules!();
 
@@ -113,7 +113,49 @@ fn main() -> Result<(), Box<dyn Error>> {
         let last_input = last_input.clone();
         move |ui: &AppWindow| input_used(ui, gamepads.as_deref(), &shell.borrow(), &last_input, InputDevice::Keyboard)
     };
+    // Pointer clicks (a mouse, or a touch screen)
+    let clicks = {
+        let ui = ui.as_weak();
+        let shell = shell.clone();
+        move |click: Click| {
+            if let Some(ui) = ui.upgrade() {
+                shell.borrow_mut().click(&ui, click);
+            }
+        }
+    };
+    ui.on_tab_clicked({
+        let clicks = clicks.clone();
+        move |i| clicks(Click::Tab(i.max(0) as usize))
+    });
+    ui.on_tile_clicked({
+        let clicks = clicks.clone();
+        move |i| clicks(Click::HomeTile(i.max(0) as usize))
+    });
+    ui.on_library_clicked({
+        let clicks = clicks.clone();
+        move |i| clicks(Click::LibraryTile(i.max(0) as usize))
+    });
+    ui.on_row_clicked({
+        let clicks = clicks.clone();
+        move |i| clicks(Click::SettingsRow(i.max(0) as usize))
+    });
+    ui.on_dialog_clicked({
+        let clicks = clicks.clone();
+        move |i| clicks(Click::DialogButton(i.max(0) as usize))
+    });
+    ui.on_quick_clicked({
+        let clicks = clicks.clone();
+        move |i| clicks(Click::QuickCard(i.max(0) as usize))
+    });
     if let Some(overlay) = overlay.and_then(|o| o.upgrade()) {
+        overlay.on_quick_clicked({
+            let clicks = clicks.clone();
+            move |i| clicks(Click::QuickCard(i.max(0) as usize))
+        });
+        overlay.on_dialog_clicked({
+            let clicks = clicks.clone();
+            move |i| clicks(Click::DialogButton(i.max(0) as usize))
+        });
         overlay.on_action({
             let ui = ui.as_weak();
             let shell = shell.clone();
@@ -268,6 +310,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     });
 
     shell.borrow_mut().start_network(options.fake_network);
+    if !options.bench {
+        shell.borrow_mut().start_system_services(!options.dummy);
+    }
     let network_timer = Timer::default();
     network_timer.start(TimerMode::Repeated, NETWORK_POLL, {
         let ui = ui.as_weak();
@@ -451,6 +496,7 @@ fn run_script(ui: &AppWindow, shell: Rc<RefCell<Shell>>, steps: Vec<ScriptStep>)
         match steps.get(next) {
             Some(ScriptStep::Wait(ms)) => due = Instant::now() + Duration::from_millis(*ms),
             Some(ScriptStep::Action(action)) => shell.borrow_mut().apply(&ui, *action),
+            Some(ScriptStep::Click(click)) => shell.borrow_mut().click(&ui, *click),
             // Development aid for testing toasts (also over running apps)
             Some(ScriptStep::Toast) => {
                 shell.borrow_mut().toast(&ui, "◆", "Test notice", "From --actions (development)")

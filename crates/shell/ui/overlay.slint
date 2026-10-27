@@ -1,6 +1,6 @@
 import { ControllerStyle, NavAction, QuickItem } from "types.slint";
 import { QuickMenu } from "quickmenu.slint";
-import { Dialog } from "dialog.slint";
+import { Dialog } from "@consoleui/dialog.slint";
 
 // Own transparent window for the quick menu. In gamescope, Rust sets STEAM_OVERLAY before it is
 // shown; gamescope then puts it over the running game. In our own compositor the title (announced
@@ -28,6 +28,9 @@ export component OverlayWindow inherits Window {
     in property <int> dialog-focused;
 
     callback action(NavAction);
+    // The pointer picked a quick menu card or a dialog button
+    callback quick-clicked(int);
+    callback dialog-clicked(int);
 
     // The bar at the bottom edge, full width, where it is in this frame: our compositor blurs
     // the game below it (Story 7.13).
@@ -63,6 +66,7 @@ export component OverlayWindow inherits Window {
             focused: root.focused;
             style: root.controller-style;
             s: root.s;
+            card-clicked(i) => { root.quick-clicked(i); }
         }
 
         dialog := Dialog {
@@ -75,6 +79,7 @@ export component OverlayWindow inherits Window {
             focused: root.dialog-focused;
             style: root.controller-style;
             s: root.s;
+            button-clicked(i) => { root.dialog-clicked(i); }
         }
     }
 }

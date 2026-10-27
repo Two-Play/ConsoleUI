@@ -1,0 +1,107 @@
+import { SettingRow } from "types.slint";
+import { Theme } from "theme.slint";
+import { FocusFill } from "focusfill.slint";
+
+// A list of settings rows; ◀ ▶ changes the value of the focused row. The list scrolls when it does
+// not fit its height, so the focused row stays visible.
+export component SettingList inherits Rectangle {
+    in property <[SettingRow]> rows;
+    in property <int> focused;
+    in property <string> footer;
+    // The focused row is highlighted (off while the selection is on the tabs)
+    in property <bool> active: true;
+    in property <float> s: 1;
+
+    callback row-clicked(int);
+
+    property <length> row-height: 92px * root.s;
+    property <length> pitch: root.row-height + 12px * root.s;
+    // The rows, the footer and some room below the last row
+    property <length> content-height: root.rows.length * root.pitch + 110px * root.s;
+    // Scrolls so that the row after the focused one is fully visible and the one after that
+    // shows its top edge, which tells that the list goes on
+    property <length> scroll: max(0px, min((root.focused + 2) * root.pitch + 10px * root.s + 0.5 * root.pitch - root.height, root.content-height - root.height));
+    animate scroll {
+        duration: Theme.focus-duration;
+        easing: ease-out-quart;
+    }
+
+    // Direction of the last focus move; the fill flows that way
+    property <int> travel: 1;
+    property <int> previous;
+    changed focused => {
+        root.travel = root.focused >= root.previous ? 1 : -1;
+        root.previous = root.focused;
+    }
+
+    clip: true;
+
+    for row[i] in root.rows: card := Rectangle {
+        property <bool> is-focused: root.active && i == root.focused;
+        x: 0px;
+        y: 10px * root.s + i * root.pitch - root.scroll;
+        width: min(980px * root.s, root.width);
+        height: root.row-height;
+        border-radius: 18px * root.s;
+        background: Theme.surface;
+
+        fill := FocusFill {
+            width: 100%;
+            height: 100%;
+            focused: card.is-focused;
+            travel: root.travel;
+            wave: 9px * root.s;
+        }
+
+        // Outline; it takes the accent color while the entry is focused
+        Rectangle {
+            border-radius: card.border-radius;
+            border-width: 2px * root.s;
+            border-color: card.is-focused ? Theme.accent : #ffffff33;
+            animate border-color { duration: Theme.focus-duration; }
+        }
+
+        TouchArea {
+            clicked => { root.row-clicked(i); }
+        }
+
+        VerticalLayout {
+            x: 30px * root.s;
+            y: (parent.height - self.height) / 2;
+            height: self.preferred-height;
+            spacing: 4px * root.s;
+
+            Text {
+                text: row.label;
+                color: Theme.text.mix(Theme.base, clamp(fill.level, 0, 1));
+                font-size: 24px * root.s;
+                font-weight: 700;
+            }
+
+            Text {
+                text: row.description;
+                color: Theme.text-dim.mix(Theme.base.with-alpha(0.7), clamp(fill.level, 0, 1));
+                font-size: 17px * root.s;
+            }
+        }
+
+        Text {
+            x: parent.width - self.width - 30px * root.s;
+            height: 100%;
+            text: row.opens-page ? row.value + "   ›"
+                : (card.is-focused ? "◀  " : "") + row.value + (card.is-focused ? "  ▶" : "");
+            color: Theme.text.mix(Theme.base, clamp(fill.level, 0, 1));
+            font-size: 22px * root.s;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+    }
+
+    Text {
+        x: 0px;
+        y: 10px * root.s + root.rows.length * root.pitch + 24px * root.s - root.scroll;
+        text: root.footer;
+        color: Theme.text-dim;
+        font-size: 16px * root.s;
+    }
+}

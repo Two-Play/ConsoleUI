@@ -210,6 +210,26 @@ Cargo workspace (edition 2024, `default-members` = the shell):
   (`$XDG_RUNTIME_DIR/consoleui-<wayland-socket>.sock`), `child.rs` starts the shell with
   `WAYLAND_DISPLAY`, `DISPLAY` and `CONSOLEUI_COMPOSITOR`, `render.rs` builds frame elements and the
   offscreen PNG screenshot.
+- `crates/ui` (`consoleui-ui`): the design system, shared by the shell and every app. `ui/*.slint` holds
+  the tokens (`Theme`, `Glass`), the shared types (`NavAction`, `GlyphButton`, `AppTile`, ...) and the
+  components (`GlassPanel`, `Button`, `Toggle`, `Slider`, `ProgressBar`, `SegmentedControl`, `Badge`,
+  `Spinner`, `Avatar`, `ButtonGlyph`/`HintBar`, `TabBar`, `StatusBar`, `SettingList`, `TextField`/`OnScreenKeyboard`,
+  `Tile`/`TileRow`/`Shelf`, `EmptyState`, `Toast`, `Dialog`, `ContextMenu`); `ui/std.slint` re-exports all of it (a unit test checks that). Imported as
+  `@consoleui/<file>.slint`; an app's `build.rs` uses `consoleui_ui::compiler_config()` (feature `build`)
+  and lists the crate as dependency and build dependency. New reusable components go here, not into the
+  shell; the shell's `types.slint` re-exports the shared types so Rust keeps seeing them from `main.slint`.
+  `ui/input.slint` (`InputScope`) is the keyboard side of an app (arrows/WASD, Enter, Esc, ... as `NavAction`).
+  The `.po` catalog scan includes `ui/ui`. `crates/gallery` (`consoleui-gallery`, `--snapshot out.png`
+  `--dialog`) shows the components and is the smallest example app.
+- `crates/app` (`consoleui-app`): the runtime of an app, next to the design system. `gamepad` (gilrs →
+  `Action`, moved here from the shell) and `audio` (UI sounds through `pw-cat`) are shared with the shell;
+  `input::Input` polls controllers on a Slint timer, drops presses while the app's window has no focus
+  (`InputScope.active`) and the Guide button (the shell owns it), and reports `Event::Glyphs` for the
+  hint style; `Hints` builds the hint bar content; `Session::detect()` finds out desktop/compositor/
+  gamescope and loads the settings (accent, animations) of the profile chosen last. `slint_bridge!()`
+  generates `nav_action`, `hint_model`, `controller_style` and `apply_theme` against the app's own
+  generated Slint types. Under our compositor an app needs no protocol: the shell registers the process,
+  the compositor maps its windows and shows them fullscreen. Example: `crates/gallery`.
 - `crates/shell` (binary `consoleui`): Slint UI plus glue.
   - `src/compositor.rs`: counterpart of `gamescope.rs`, active when `CONSOLEUI_COMPOSITOR` is set (takes
     precedence over gamescope). Sends `Hello`/`Launched`/`Exited`/`Focus`/`Overlay`/`KeyboardLayout`;
@@ -226,11 +246,11 @@ Cargo workspace (edition 2024, `default-members` = the shell):
     `window().request_redraw()` after `show()` for a new toplevel to map.
   - `ui/main.slint`: `AppWindow`, the home screen. All sizes scale from a 1920×1080 reference via the
     `s` factor; tiles are positioned absolutely and animated (`animate x, y, width, height`).
-  - `ui/theme.slint`: the `Theme` global with design tokens (colors, durations). Use it instead of
+  - `@consoleui/theme.slint` (crate `ui`): the `Theme` global with design tokens (colors, durations). Use it instead of
     hard-coded values.
-  - `ui/glass.slint`: `GlassPanel`, the frosted background of menus, dialogs and toasts; it shows the
+  - `@consoleui/glass.slint`: `GlassPanel`, the frosted background of menus, dialogs and toasts; it shows the
     blurred hero copy from `hero.rs` (global `Glass`, set only by the main window).
-  - `ui/types.slint`: `NavAction` enum and `AppTile` struct shared with Rust.
+  - `ui/types.slint`: shell-only types (`Screen`, `NetView`, `ProfileView`, ...); the shared ones live in the `ui` crate.
   - `src/shell.rs`: `Shell` owns entries plus a parallel `tiles` vector, all `running` apps (each with a
     gamescope app ID, a stop handle and an `Owner`), the `foreground` app, the three tile models (home =
     `home_entries` from `home_view` + library tile, library view, search results), the `Collection`,
@@ -297,6 +317,14 @@ Cargo workspace (edition 2024, `default-members` = the shell):
     agent); only ever runs on the network thread. `src/network.rs`: glue between `NetPages`, the thread
     and the `NetView` Slint struct (`ui/network.slint`, shown over the settings page while a sub-page is
     open). `main.rs` polls responses every 100 ms (`Shell::poll_network`); results become toasts.
+  - `src/notifications.rs`: the shell answers `org.freedesktop.Notifications` on the session bus (zbus), so
+    `notify-send` and other programs show toasts, also over a game; it starts only when no desktop service owns
+    the name. `consoleui_core::notification` strips the markup. `src/downloads.rs` watches Steam's
+    `appmanifest_*.acf` (`steam::download_states`/`download_changes`) for download toasts and adds finished
+    games to the lists. Both are switched by the "Notifications" setting.
+  - Pointer: tabs, tiles, settings rows, dialog buttons and quick menu cards are clickable (`TouchArea`s →
+    `Shell::click(Click)`); `--actions` has `click-tab:N`, `click-tile:N`, `click-library:N`, `click-row:N`,
+    `click-dialog:N`, `click-quick:N`.
   - `src/perf.rs`: frame stats from Slint's rendering notifier. `src/cover.rs`: procedural
     placeholder covers. `src/options.rs`: hand-rolled CLI parsing.
 

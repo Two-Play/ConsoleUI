@@ -1,0 +1,39 @@
+import { Theme } from "theme.slint";
+
+// Value slider (volume, brightness). Left/Right on the focused slider changes `value` in Rust;
+// the knob shows up while it has the focus. `value` is 0 to 1.
+export component Slider inherits Rectangle {
+    in property <float> value;
+    in property <bool> focused;
+    in property <float> s: 1;
+
+    property <length> knob: 22px * root.s;
+
+    height: root.knob;
+
+    Rectangle {
+        y: (parent.height - self.height) / 2;
+        height: 6px * root.s;
+        border-radius: self.height / 2;
+        background: root.focused ? Theme.base.with-alpha(0.25) : #ffffff26;
+
+        Rectangle {
+            width: parent.width * clamp(root.value, 0, 1);
+            height: 100%;
+            border-radius: parent.border-radius;
+            background: root.focused ? Theme.base : Theme.text;
+            animate width { duration: Theme.focus-duration; easing: ease-out-quart; }
+        }
+    }
+
+    Rectangle {
+        x: (root.width - root.knob) * clamp(root.value, 0, 1);
+        width: root.knob;
+        height: root.knob;
+        border-radius: root.knob / 2;
+        background: root.focused ? Theme.base : Theme.text;
+        opacity: root.focused ? 1 : 0;
+        animate x { duration: Theme.focus-duration; easing: ease-out-quart; }
+        animate opacity { duration: Theme.focus-duration; }
+    }
+}

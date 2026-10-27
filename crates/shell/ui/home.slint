@@ -1,6 +1,6 @@
 import { AppTile } from "types.slint";
-import { Theme } from "theme.slint";
-import { TileRow } from "tilerow.slint";
+import { Theme } from "@consoleui/theme.slint";
+import { TileRow } from "@consoleui/tilerow.slint";
 
 // Ring with a small gap around a round button that has the focus
 component FocusRing inherits Rectangle {
@@ -151,6 +151,8 @@ export component HomePage inherits Rectangle {
     in property <int> area;
     in property <int> area-index;
 
+    callback tile-clicked(int);
+
     out property <length> focus-x: row.focus-x;
     out property <length> focus-y: row.focus-y;
     out property <length> focus-size: row.focus-size;
@@ -170,6 +172,7 @@ export component HomePage inherits Rectangle {
         // One tile stays visible to the left of the focused one.
         lead: 1;
         ring: root.area == 0;
+        clicked(i) => { root.tile-clicked(i); }
     }
 
     // Info on the focused entry: when the focus moves, the old text fades out and the new one in. The layer being shown follows `current` live, the other one keeps the

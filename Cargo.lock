@@ -796,7 +796,9 @@ name = "consoleui"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "consoleui-app",
  "consoleui-core",
+ "consoleui-ui",
  "gilrs",
  "image",
  "libc",
@@ -807,6 +809,15 @@ dependencies = [
  "slint-build",
  "x11rb 0.14.0",
  "zbus",
+]
+
+[[package]]
+name = "consoleui-app"
+version = "0.1.0"
+dependencies = [
+ "consoleui-core",
+ "gilrs",
+ "slint",
 ]
 
 [[package]]
@@ -832,6 +843,25 @@ dependencies = [
  "chrono",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "consoleui-gallery"
+version = "0.1.0"
+dependencies = [
+ "consoleui-app",
+ "consoleui-core",
+ "consoleui-ui",
+ "png",
+ "slint",
+ "slint-build",
+]
+
+[[package]]
+name = "consoleui-ui"
+version = "0.1.0"
+dependencies = [
+ "slint-build",
 ]
 
 [[package]]

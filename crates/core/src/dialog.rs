@@ -54,6 +54,11 @@ impl<T: Clone> Dialog<T> {
         self.focused
     }
 
+    /// Focuses button `index` (a click), clamped.
+    pub fn focus(&mut self, index: usize) {
+        self.focused = index.min(self.buttons.len() - 1);
+    }
+
     pub fn apply(&mut self, action: Action) -> DialogOutcome<T> {
         match action {
             Action::Left | Action::PrevTab => self.focused = self.focused.saturating_sub(1),
@@ -89,6 +94,15 @@ mod tests {
         dialog.apply(Action::Right);
         assert_eq!(dialog.focused(), 1);
         assert_eq!(dialog.apply(Action::Confirm), DialogOutcome::Chosen("quit"));
+    }
+
+    #[test]
+    fn focus_sets_the_button_clamped() {
+        let mut dialog = two();
+        dialog.focus(1);
+        assert_eq!(dialog.apply(Action::Confirm), DialogOutcome::Chosen("quit"));
+        dialog.focus(9);
+        assert_eq!(dialog.focused(), 1);
     }
 
     #[test]

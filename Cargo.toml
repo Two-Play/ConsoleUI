@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/core", "crates/shell", "crates/compositor"]
+members = ["crates/core", "crates/ui", "crates/app", "crates/gallery", "crates/shell", "crates/compositor"]
 # The compositor needs -devel packages the host does not have (see dev/toolbox.sh), so a plain
 # `cargo build`/`cargo run` only builds the shell.
 default-members = ["crates/shell"]
@@ -12,6 +12,8 @@ license = "GPL-3.0-or-later"
 
 [workspace.dependencies]
 consoleui-core = { path = "crates/core" }
+consoleui-ui = { path = "crates/ui" }
+consoleui-app = { path = "crates/app" }
 
 # Slint renders noticeably slower in debug builds otherwise; our own crates stay quick to compile.
 [profile.dev]

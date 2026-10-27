@@ -1,0 +1,139 @@
+import { InputScope, Theme, GlassPanel, Button, HintBar, TabBar, StatusBar, Shelf, SettingList, TextField, OnScreenKeyboard, Toggle, Slider, ProgressBar, SegmentedControl, Badge, Spinner, Avatar, EmptyState, Toast, Dialog, AppTile, KeyCap, SettingRow, ControllerStyle, GlyphButton, Hint, NetworkState, NavAction } from "@consoleui/std.slint";
+
+// The design system on one page: tiles, buttons, hints, toast, dialog and context menu.
+export { Theme }
+
+export component GalleryWindow inherits Window {
+    in property <[AppTile]> tiles;
+    in property <[SettingRow]> rows;
+    in property <[KeyCap]> keys;
+    in-out property <int> focused;
+    in-out property <int> row-focus: 1;
+    in property <bool> dialog-open;
+    in property <[Hint]> hints;
+    in property <ControllerStyle> style: ControllerStyle.keyboard;
+    out property <bool> active: scope.active;
+    callback action(NavAction);
+    callback quit();
+
+    title: "ConsoleUI gallery";
+    preferred-width: 1600px;
+    preferred-height: 900px;
+    background: Theme.base;
+
+    property <float> s: self.width / 1920px;
+
+    scope := InputScope {
+        action(a) => { root.action(a); }
+        quit => { root.quit(); }
+    }
+
+    TabBar {
+        x: 90px * root.s;
+        y: 50px * root.s;
+        tabs: ["Home", "Library", "Settings"];
+        current: 0;
+        style: root.style;
+        s: root.s;
+    }
+
+    StatusBar {
+        x: root.width - 90px * root.s - self.width;
+        y: 50px * root.s;
+        s: root.s;
+        clock: "21:43";
+        network: NetworkState.wifi;
+        battery-percent: 82;
+        controller-connected: true;
+        controller-battery: 100;
+        avatar-initial: "P";
+    }
+
+    Shelf {
+        x: 90px * root.s;
+        y: 140px * root.s;
+        width: root.width - 180px * root.s;
+        title: "Recently played";
+        tiles: root.tiles;
+        focused: root.focused;
+        s: root.s;
+    }
+
+    SettingList {
+        x: 90px * root.s;
+        y: 470px * root.s;
+        width: 880px * root.s;
+        height: 420px * root.s;
+        rows: root.rows;
+        focused: root.row-focus;
+        footer: "SettingList scrolls with the focus";
+        s: root.s;
+    }
+
+    GlassPanel {
+        x: 1010px * root.s;
+        y: 470px * root.s;
+        width: 820px * root.s;
+        height: 560px * root.s;
+        border-radius: 24px * root.s;
+
+        VerticalLayout {
+            padding: 28px * root.s;
+            spacing: 18px * root.s;
+
+            HorizontalLayout {
+                spacing: 14px * root.s;
+                alignment: start;
+                Button { text: "Play"; focused: true; s: root.s; }
+                Button { text: "Options"; s: root.s; }
+                Toggle { checked: true; y: 12px * root.s; s: root.s; }
+                Toggle { y: 12px * root.s; s: root.s; }
+                Avatar { initial: "A"; tint: #2a5a9a; size: 58px * root.s; s: root.s; }
+                Spinner { size: 48px * root.s; s: root.s; }
+            }
+
+            SegmentedControl { items: ["All", "Games", "Apps"]; current: 0; focused: true; s: root.s; }
+            Slider { value: 0.62; focused: false; s: root.s; }
+            ProgressBar { value: 0.4; s: root.s; }
+
+            HorizontalLayout {
+                spacing: 10px * root.s;
+                alignment: start;
+                Badge { text: "● RUNNING"; tint: Theme.charging; s: root.s; }
+                Badge { text: "NEW"; s: root.s; }
+                Badge { text: "62 %"; s: root.s; }
+            }
+
+            TextField { text: "ConsoleUI"; placeholder: "Type here"; s: root.s; }
+            OnScreenKeyboard { keys: root.keys; focused: 2; unit: 30px * root.s; s: root.s; }
+
+            HintBar {
+                style: root.style;
+                s: root.s;
+                hints: root.hints;
+            }
+        }
+    }
+
+    Toast {
+        x: root.width - self.width - 90px * root.s;
+        y: 120px * root.s;
+        shown: true;
+        symbol: "🎮";
+        title: "Controller connected";
+        text: "DualSense Wireless Controller";
+        s: root.s;
+    }
+
+    Dialog {
+        width: 100%;
+        height: 100%;
+        open: root.dialog-open;
+        title: "Quit gallery?";
+        text: "Everything you see here comes from the ConsoleUI design system.";
+        buttons: ["Stay", "Quit"];
+        focused: 1;
+        style: root.style;
+        s: root.s;
+    }
+}

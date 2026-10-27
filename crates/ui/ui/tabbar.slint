@@ -1,0 +1,83 @@
+import { Theme } from "theme.slint";
+import { ControllerStyle, GlyphButton } from "types.slint";
+import { ButtonGlyph } from "glyph.slint";
+
+// Page tabs with the shoulder button glyphs (L1/R1) at both ends. `current` is underlined,
+// `selected` (the selection moved up onto the tabs) gets a pill; -1 shows neither. Both fade over
+// to the next tab.
+export component TabBar inherits HorizontalLayout {
+    in property <[string]> tabs;
+    in property <int> current;
+    in property <int> selected: -1;
+    in property <ControllerStyle> style;
+    in property <float> s: 1;
+
+    callback clicked(int);
+
+    width: self.preferred-width;
+    height: 36px * root.s;
+    spacing: 28px * root.s;
+
+    ButtonGlyph {
+        y: (parent.height - self.height) / 2;
+        button: GlyphButton.l1;
+        style: root.style;
+        s: root.s;
+        opacity: root.current > 0 ? 1 : 0.35;
+    }
+
+    for tab[i] in root.tabs: Rectangle {
+        property <bool> is-current: i == root.current;
+        width: label.preferred-width;
+
+        // Selection on the tabs: a pill around the tab
+        Rectangle {
+            x: -11px * root.s;
+            y: -6px * root.s;
+            width: parent.width + 22px * root.s;
+            height: parent.height + 12px * root.s;
+            border-radius: self.height / 2;
+            border-width: 3px * root.s;
+            border-color: Theme.accent;
+            background: Theme.accent.with-alpha(0.12);
+            opacity: i == root.selected ? 1 : 0;
+            animate opacity { duration: Theme.focus-duration; }
+        }
+
+        label := Text {
+            text: tab;
+            color: parent.is-current ? Theme.text : Theme.text-dim;
+            font-size: 26px * root.s;
+            font-weight: parent.is-current ? 700 : 600;
+            width: self.preferred-width;
+            height: 100%;
+            vertical-alignment: center;
+        }
+
+        // Underline of the current tab
+        Rectangle {
+            y: parent.height + 6px * root.s;
+            height: 3px * root.s;
+            border-radius: self.height / 2;
+            background: Theme.accent;
+            drop-shadow-blur: 8px * root.s;
+            drop-shadow-color: Theme.accent.with-alpha(0.6);
+            opacity: parent.is-current ? 1 : 0;
+            animate opacity { duration: Theme.page-duration * 1.6; }
+        }
+
+        TouchArea {
+            x: -10px * root.s;
+            width: parent.width + 20px * root.s;
+            clicked => { root.clicked(i); }
+        }
+    }
+
+    ButtonGlyph {
+        y: (parent.height - self.height) / 2;
+        button: GlyphButton.r1;
+        style: root.style;
+        s: root.s;
+        opacity: root.current >= 0 && root.current < root.tabs.length - 1 ? 1 : 0.35;
+    }
+}

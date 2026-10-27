@@ -1,54 +1,7 @@
-// Input-agnostic actions; Rust maps them to `consoleui_core::Action`.
-export enum NavAction { up, down, left, right, confirm, back, menu, search, secondary, prev-tab, next-tab, guide }
-
-export enum NetworkState { offline, ethernet, wifi }
+export { NavAction, GlyphButton, ControllerStyle, Hint, AppTile, ContextItem, KeyCap, SettingRow, NetworkState } from "@consoleui/types.slint";
+import { KeyCap, ContextItem } from "@consoleui/types.slint";
 
 export enum Screen { home, library, settings, search }
-
-// Which button a hint shows; the glyph depends on the ControllerStyle.
-export enum GlyphButton { dpad, updown, confirm, back, north, west, menu, guide, l1, r1, quit }
-
-export enum ControllerStyle { keyboard, playstation, xbox }
-
-export struct Hint {
-    button: GlyphButton,
-    label: string,
-}
-
-export struct AppTile {
-    title: string,
-    subtitle: string,
-    kind: string,
-    action-label: string,
-    monogram: string,
-    // Only for placeholder covers without an icon
-    show-monogram: bool,
-    // Real cover or generated gradient
-    cover: image,
-    icon: image,
-    has-icon: bool,
-    logo: image,
-    has-logo: bool,
-    accent: color,
-    running: bool,
-    // Pinned in the context menu: comes first in home and carries a pin
-    pinned: bool,
-}
-
-// Context menu item (pin, hide, ...)
-export struct ContextItem {
-    label: string,
-    // Symbol as text (monochrome)
-    symbol: string,
-}
-
-// On-screen keyboard key; position and width in key widths
-export struct KeyCap {
-    label: string,
-    row: int,
-    x: float,
-    width: float,
-}
 
 // Quick menu item
 export struct QuickItem {
@@ -61,15 +14,6 @@ export struct QuickItem {
     adjustable: bool,
     // 0-100 for the bar, otherwise -1
     level: int,
-}
-
-// Row of the settings page
-export struct SettingRow {
-    label: string,
-    description: string,
-    value: string,
-    // Opens a sub-page (Wi-Fi, Bluetooth) instead of changing the value
-    opens-page: bool,
 }
 
 // Row of the Wi-Fi or Bluetooth page

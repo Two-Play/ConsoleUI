@@ -1,0 +1,57 @@
+import { Theme } from "theme.slint";
+
+// The accent fill of a focused list entry, drawn like a liquid: it flows in from the side the focus
+// comes from, its surface is a travelling wave that calms down as the entry fills up, and when the
+// focus moves on, the liquid runs out on the far side, in the direction of the navigation.
+//
+// `travel` is the direction of the last focus move (1 = down or right, -1 = up or left), set by
+// the list; the entry that gains the focus is filled from the side facing the old one, the entry
+// that loses it empties towards the new one. Put it first in a rounded entry (it clips to the
+// entry's `border-radius`) and draw the outline on top. Text on it should follow `level`.
+export component FocusFill inherits Rectangle {
+    in property <bool> focused;
+    in property <int> travel: 1;
+    // Rows fill from top to bottom, horizontal controls (dialog buttons, tabs) from left to right
+    in property <bool> vertical: true;
+    in property <color> fill: Theme.accent;
+    // Height of the surface waves while the front is half way
+    in property <length> wave: 10px;
+    // 0 empty, 1 full
+    out property <float> level: root.focused ? 1 : 0;
+
+    // The liquid hangs on the start edge (top or left) when it arrives from there or runs out
+    // towards the far edge, and on the other edge otherwise.
+    property <bool> from-start: root.focused ? root.travel > 0 : root.travel < 0;
+    property <float> w: root.width / 1px;
+    property <float> h: root.height / 1px;
+    property <float> front: clamp(root.level, 0, 1) * (root.vertical ? root.h : root.w);
+    property <float> amp: root.wave / 1px * Math.sin(clamp(root.level, 0, 1) * 180deg);
+    property <string> down: "M 0 0 L " + root.w + " 0 L " + root.w + " " + root.front
+        + " Q " + root.w * 0.875 + " " + (root.front - root.amp) + " " + root.w * 0.75 + " " + root.front
+        + " T " + root.w * 0.5 + " " + root.front
+        + " T " + root.w * 0.25 + " " + root.front
+        + " T 0 " + root.front + " Z";
+    property <string> right: "M 0 0 L 0 " + root.h + " L " + root.front + " " + root.h
+        + " Q " + (root.front - root.amp) + " " + root.h * 0.875 + " " + root.front + " " + root.h * 0.75
+        + " T " + root.front + " " + root.h * 0.5
+        + " T " + root.front + " " + root.h * 0.25
+        + " T " + root.front + " 0 Z";
+
+    clip: true;
+    animate level {
+        duration: Theme.focus-duration * 1.6;
+        easing: cubic-bezier(0.25, 0.9, 0.3, 1);
+    }
+
+    Path {
+        width: 100%;
+        height: 100%;
+        viewbox-width: root.w;
+        viewbox-height: root.h;
+        commands: root.vertical ? root.down : root.right;
+        fill: root.fill;
+        visible: root.level > 0.002;
+        transform-scale-y: root.vertical && !root.from-start ? -1 : 1;
+        transform-scale-x: !root.vertical && !root.from-start ? -1 : 1;
+    }
+}

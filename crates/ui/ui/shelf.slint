@@ -1,0 +1,40 @@
+import { AppTile } from "types.slint";
+import { Theme } from "theme.slint";
+import { TileRow } from "tilerow.slint";
+
+// A titled row of tiles ("Recently played", "New in your library"), like the shelves of the
+// PlayStation home screen. Size and spacing come from `s`.
+export component Shelf inherits Rectangle {
+    in property <string> title;
+    in property <[AppTile]> tiles;
+    in property <int> focused;
+    in property <bool> active: true;
+    in property <bool> pulse;
+    in property <float> s: 1;
+
+    callback clicked(int);
+
+    height: 52px * root.s + row.height;
+
+    Text {
+        x: 0px;
+        y: 0px;
+        text: root.title;
+        color: Theme.text-dim;
+        font-size: 22px * root.s;
+        font-weight: 600;
+    }
+
+    row := TileRow {
+        y: 52px * root.s;
+        width: parent.width;
+        tiles: root.tiles;
+        focused: root.focused;
+        active: root.active;
+        pulse: root.pulse;
+        tile: 130px * root.s;
+        tile-focused: 190px * root.s;
+        gap: 18px * root.s;
+        clicked(i) => { root.clicked(i); }
+    }
+}

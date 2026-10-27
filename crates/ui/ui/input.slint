@@ -1,0 +1,61 @@
+import { NavAction } from "types.slint";
+
+// Keyboard input of an app: the same keys as in the shell (arrows or WASD, Enter/Space confirm,
+// Esc/Backspace back, Tab/M menu, Q/E tabs, / search, F secondary, F1 guide, Ctrl+Q quit),
+// reported as `NavAction`s. Put the page content inside; the scope fills it.
+//
+// `typing` switches the letter shortcuts off while text is entered: printable keys then go to
+// `typed(text)` and Backspace to `erase()`. `active` is false while another window has the focus
+// (e.g. the quick menu), so the app can ignore controller input then.
+export component InputScope inherits FocusScope {
+    in property <bool> typing;
+    out property <bool> active: self.has-focus;
+
+    callback action(NavAction);
+    callback typed(string);
+    callback erase();
+    callback quit();
+
+    width: 100%;
+    height: 100%;
+
+    // Takes the keyboard focus right away; a window has no focused element otherwise
+    init => { self.focus(); }
+
+    key-pressed(event) => {
+        if (event.modifiers.control) {
+            if (event.text == "q" || event.text == "Q") {
+                root.quit();
+                return accept;
+            }
+            return reject;
+        }
+        if (event.text == Key.LeftArrow) { root.action(NavAction.left); return accept; }
+        if (event.text == Key.RightArrow) { root.action(NavAction.right); return accept; }
+        if (event.text == Key.UpArrow) { root.action(NavAction.up); return accept; }
+        if (event.text == Key.DownArrow) { root.action(NavAction.down); return accept; }
+        if (event.text == Key.Return) { root.action(NavAction.confirm); return accept; }
+        if (event.text == Key.Escape) { root.action(NavAction.back); return accept; }
+        if (event.text == Key.Tab) { root.action(NavAction.menu); return accept; }
+        if (event.text == Key.F1) { root.action(NavAction.guide); return accept; }
+        if (root.typing) {
+            if (event.text == Key.Backspace) { root.erase(); return accept; }
+            root.typed(event.text);
+            return accept;
+        }
+        if (event.text == "a") { root.action(NavAction.left); return accept; }
+        if (event.text == "d") { root.action(NavAction.right); return accept; }
+        if (event.text == "w") { root.action(NavAction.up); return accept; }
+        if (event.text == "s") { root.action(NavAction.down); return accept; }
+        if (event.text == Key.Space) { root.action(NavAction.confirm); return accept; }
+        if (event.text == Key.Backspace) { root.action(NavAction.back); return accept; }
+        if (event.text == "m") { root.action(NavAction.menu); return accept; }
+        if (event.text == "q") { root.action(NavAction.prev-tab); return accept; }
+        if (event.text == "e") { root.action(NavAction.next-tab); return accept; }
+        if (event.text == "/") { root.action(NavAction.search); return accept; }
+        if (event.text == "f") { root.action(NavAction.secondary); return accept; }
+        reject
+    }
+
+    @children
+}

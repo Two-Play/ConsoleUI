@@ -2,6 +2,8 @@ use std::path::PathBuf;
 
 use consoleui_core::Action;
 
+use crate::shell::Click;
+
 pub const USAGE: &str = "\
 Usage: consoleui [OPTIONS]
 
@@ -39,6 +41,8 @@ pub enum StartScreen {
 pub enum ScriptStep {
     Action(Action),
     Wait(u64),
+    /// A pointer click, e.g. `click-tab:1`, `click-tile:3`, `click-library:2`, `click-row:4`
+    Click(Click),
     /// Development aid: shows a test notice (e.g. to check toasts over games)
     Toast,
 }
@@ -125,6 +129,19 @@ fn parse_script(list: &str) -> Result<Vec<ScriptStep>, String> {
         .map(|step| {
             if let Some(ms) = step.strip_prefix("wait:") {
                 return ms.parse().map(ScriptStep::Wait).map_err(|_| format!("Invalid wait time: {step}"));
+            }
+            if let Some((kind, index)) = step.strip_prefix("click-").and_then(|rest| rest.split_once(':')) {
+                let index: usize = index.parse().map_err(|_| format!("Invalid click: {step}"))?;
+                return match kind {
+                    "tab" => Ok(Click::Tab(index)),
+                    "tile" => Ok(Click::HomeTile(index)),
+                    "library" => Ok(Click::LibraryTile(index)),
+                    "row" => Ok(Click::SettingsRow(index)),
+                    "dialog" => Ok(Click::DialogButton(index)),
+                    "quick" => Ok(Click::QuickCard(index)),
+                    _ => Err(format!("Unknown click: {step}")),
+                }
+                .map(ScriptStep::Click);
             }
             if step == "toast" {
                 return Ok(ScriptStep::Toast);

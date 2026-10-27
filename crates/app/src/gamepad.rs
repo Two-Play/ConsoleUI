@@ -13,6 +13,7 @@ pub struct ControllerStatus {
 }
 
 /// Connection of a controller, for toasts
+#[derive(Debug)]
 pub enum Connection {
     Connected(String),
     Disconnected(String),

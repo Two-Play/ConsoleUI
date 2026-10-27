@@ -1,7 +1,7 @@
 import { AppTile, ControllerStyle, GlyphButton } from "types.slint";
-import { Theme } from "theme.slint";
-import { Tile } from "tile.slint";
-import { ButtonGlyph } from "glyph.slint";
+import { Theme } from "@consoleui/theme.slint";
+import { Tile } from "@consoleui/tile.slint";
+import { ButtonGlyph } from "@consoleui/glyph.slint";
 
 component Chip inherits HorizontalLayout {
     in property <GlyphButton> button;
@@ -35,6 +35,8 @@ export component LibraryPage inherits Rectangle {
     in property <string> filter-label;
     in property <string> sort-label;
     in property <ControllerStyle> style;
+
+    callback tile-clicked(int);
 
     property <length> margin: 110px * root.s;
     property <length> tile: 180px * root.s;
@@ -130,6 +132,12 @@ export component LibraryPage inherits Rectangle {
                     duration: Theme.focus-duration;
                     easing: ease-out-quart;
                 }
+            }
+
+            TouchArea {
+                width: root.tile;
+                height: root.tile;
+                clicked => { root.tile-clicked(i); }
             }
 
             Text {

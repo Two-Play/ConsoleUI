@@ -1,0 +1,25 @@
+import { Theme } from "theme.slint";
+
+// On/off switch. The look follows the row it sits in: on the focused (accent) row it is drawn
+// dark, otherwise light.
+export component Toggle inherits Rectangle {
+    in property <bool> checked;
+    in property <bool> focused;
+    in property <float> s: 1;
+
+    width: 60px * root.s;
+    height: 34px * root.s;
+    border-radius: self.height / 2;
+    background: root.checked ? (root.focused ? Theme.base : Theme.accent) : (root.focused ? Theme.base.with-alpha(0.3) : #ffffff33);
+    animate background { duration: Theme.focus-duration; }
+
+    Rectangle {
+        x: root.checked ? parent.width - self.width - 4px * root.s : 4px * root.s;
+        y: 4px * root.s;
+        width: parent.height - 8px * root.s;
+        height: self.width;
+        border-radius: self.width / 2;
+        background: root.checked ? (root.focused ? Theme.accent : Theme.base) : Theme.text;
+        animate x, background { duration: Theme.focus-duration; easing: ease-out-quart; }
+    }
+}

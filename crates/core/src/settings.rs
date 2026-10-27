@@ -141,6 +141,8 @@ pub struct Settings {
     pub palette: Palette,
     /// Load covers and logos (off: generated placeholders, nothing decoded)
     pub artwork: bool,
+    /// Show messages of other programs and download news as toasts
+    pub notifications: bool,
     pub sounds: bool,
     pub music: MusicChoice,
     /// File name of the track to play on repeat from the music folder (`None`: all, shuffled)
@@ -161,6 +163,7 @@ impl Default for Settings {
             shader: Style::default(),
             palette: Palette::default(),
             artwork: true,
+            notifications: true,
             sounds: true,
             music: MusicChoice::default(),
             music_track: None,
@@ -184,6 +187,8 @@ pub enum Setting {
     AnimationColors,
     /// Load covers and logos
     Artwork,
+    /// Toasts for messages of other programs and downloads
+    Notifications,
     Sounds,
     /// Background music on the home screen
     Music,
@@ -201,13 +206,14 @@ pub enum Setting {
 }
 
 impl Setting {
-    pub const ALL: [Setting; 14] = [
+    pub const ALL: [Setting; 15] = [
         Self::Accent,
         Self::Animations,
         Self::Background,
         Self::AnimationStyle,
         Self::AnimationColors,
         Self::Artwork,
+        Self::Notifications,
         Self::Sounds,
         Self::Music,
         Self::MusicTrack,
@@ -231,6 +237,7 @@ impl Setting {
             Self::AnimationStyle => tr("Animation style"),
             Self::AnimationColors => tr("Animation colors"),
             Self::Artwork => tr("Game artwork"),
+            Self::Notifications => tr("Notifications"),
             Self::Sounds => tr("Sounds"),
             Self::Music => tr("Background music"),
             Self::MusicTrack => tr("Music track"),
@@ -250,6 +257,7 @@ impl Setting {
             Self::AnimationStyle => tr("Look of the animated background"),
             Self::AnimationColors => tr("Colors of the animated background"),
             Self::Artwork => tr("Load covers and logos; off saves memory"),
+            Self::Notifications => tr("Toasts for messages from other programs and downloads"),
             Self::Sounds => tr("Sounds while navigating"),
             Self::Music => tr("Plays while the home screen is in front"),
             Self::MusicTrack => tr("One file on repeat, or all shuffled"),
@@ -323,6 +331,7 @@ impl Settings {
             Setting::AnimationStyle => self.shader.label(),
             Setting::AnimationColors => self.palette.label(),
             Setting::Artwork => on_off(self.artwork),
+            Setting::Notifications => on_off(self.notifications),
             Setting::Sounds => on_off(self.sounds),
             Setting::Music => self.music.label(),
             // Names a file: the shell has the list
@@ -343,6 +352,7 @@ impl Settings {
             Setting::AnimationStyle => self.shader = cycle(&Style::ALL, self.shader, forward),
             Setting::AnimationColors => self.palette = cycle(&Palette::ALL, self.palette, forward),
             Setting::Artwork => self.artwork = !self.artwork,
+            Setting::Notifications => self.notifications = !self.notifications,
             Setting::Sounds => self.sounds = !self.sounds,
             Setting::Music => self.music = cycle(&MusicChoice::ALL, self.music, forward),
             Setting::Glyphs => self.glyphs = cycle(&GlyphChoice::ALL, self.glyphs, forward),

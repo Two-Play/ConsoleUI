@@ -1,0 +1,13 @@
+[package]
+name = "consoleui-ui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "The ConsoleUI design system: Slint components, tokens and build helper for the shell and for apps"
+
+[features]
+# `compiler_config()` for build scripts of apps (needs slint-build)
+build = ["dep:slint-build"]
+
+[dependencies]
+slint-build = { version = "1.18.1", optional = true }

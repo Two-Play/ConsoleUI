@@ -939,3 +939,15 @@ msgstr "Animationsfarben"
 
 msgid "Colors of the animated background"
 msgstr "Farben des animierten Hintergrunds"
+
+msgid "Notifications"
+msgstr "Benachrichtigungen"
+
+msgid "Toasts for messages from other programs and downloads"
+msgstr "Hinweise zu Nachrichten anderer Programme und zu Downloads"
+
+msgid "Download finished"
+msgstr "Download abgeschlossen"
+
+msgid "Download started"
+msgstr "Download gestartet"

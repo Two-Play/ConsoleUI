@@ -15,6 +15,7 @@ use consoleui_core::i18n::{self, Language, tr, trf};
 use consoleui_core::keymap::KeyboardLayout;
 use consoleui_core::launch::{self, ProcessHandle};
 use consoleui_core::netpages::Page;
+use consoleui_core::notification::Incoming;
 use consoleui_core::osk::{KeyboardEvent, OnScreenKeyboard};
 use consoleui_core::ownership::{self, FIRST_DESKTOP_APP_ID, Owner, SHELL_APP_ID};
 use consoleui_core::profile_picker::{PickerOutcome, ProfilePicker};
@@ -30,15 +31,17 @@ use consoleui_core::{
 };
 use slint::{ComponentHandle, Image, Model, ModelRc, VecModel};
 
-use crate::audio::Audio;
+use consoleui_app::audio::Audio;
 use crate::backdrop::{Backdrop, Look};
 use crate::compositor::Compositor;
 use crate::context::{ContextAction, ContextMenu, ContextOutcome, EntryState};
+use crate::downloads::{self, DownloadNews};
 use crate::gamescope::{Gamescope, x11_window_id};
 use crate::hero::Heroes;
 use crate::loader::{self, Library, LoadedEntry};
 use crate::music::Music;
 use crate::network::Network;
+use crate::notifications;
 use crate::profiles::{self as profile_view, ProfileStart};
 use crate::quick::{ForegroundApp, QuickAction, QuickMenu, QuickOutcome};
 use crate::{
@@ -51,6 +54,17 @@ const HOME_COUNT: usize = 12;
 /// Buttons below the info on the home screen: the main action and "more options"
 const HOME_BUTTONS: usize = 2;
 /// The tabs of the top bar, left to right
+/// What the pointer clicked.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Click {
+    Tab(usize),
+    HomeTile(usize),
+    LibraryTile(usize),
+    SettingsRow(usize),
+    DialogButton(usize),
+    QuickCard(usize),
+}
+
 /// What a button of the modal dialog does.
 #[derive(Debug, Clone, PartialEq)]
 enum DialogTag {
@@ -187,6 +201,11 @@ pub struct Shell {
     /// Covers and logos are decoded ("Game artwork"); `artwork_rx` brings them when switched on
     artwork_loaded: bool,
     artwork_rx: Option<mpsc::Receiver<Vec<LoadedEntry>>>,
+    /// Messages of other programs, and Steam download news (`start_system_services`)
+    notifications_rx: Option<mpsc::Receiver<Incoming>>,
+    downloads_rx: Option<mpsc::Receiver<DownloadNews>>,
+    /// Steam games that finished downloading, looked up after a download finished
+    new_games_rx: Option<mpsc::Receiver<Vec<LoadedEntry>>>,
     /// The dialog is shown in the overlay window (opened from the quick menu over an app)
     dialog_in_overlay: bool,
     quick: Option<QuickMenu>,
@@ -344,6 +363,9 @@ impl Shell {
             pending_front: Vec::new(),
             artwork_loaded: start.settings.artwork,
             artwork_rx: None,
+            notifications_rx: None,
+            downloads_rx: None,
+            new_games_rx: None,
             dialog_in_overlay: false,
             quick: None,
             gamescope,
@@ -744,6 +766,65 @@ impl Shell {
         }
     }
 
+    /// A click of the pointer: it focuses what was clicked, and a second click on the focused
+    /// tile, row, card or button does what ✕ does. While a menu or panel is open other clicks do
+    /// nothing; the dialog and the quick menu take theirs.
+    pub fn click(&mut self, ui: &AppWindow, click: Click) {
+        if let Click::DialogButton(index) = click {
+            if let Some(dialog) = &mut self.dialog {
+                dialog.focus(index);
+                self.apply(ui, Action::Confirm);
+            }
+            return;
+        }
+        if self.dialog.is_some() {
+            return;
+        }
+        if let Click::QuickCard(index) = click {
+            if let Some(quick) = &mut self.quick {
+                quick.focus(index);
+                self.apply(ui, Action::Confirm);
+            }
+            return;
+        }
+        let busy = self.quick.is_some()
+            || ui.get_launching()
+            || self.picker.is_some()
+            || self.context.is_some()
+            || self.game_options_panel.is_some()
+            || self.network.pages.is_open();
+        if busy {
+            return;
+        }
+        match click {
+            Click::Tab(tab) => {
+                self.screen = HOME_TABS[tab.min(HOME_TABS.len() - 1)];
+                self.home_area = HomeArea::Tiles;
+                self.sync(ui);
+            }
+            Click::HomeTile(index) if self.screen == Screen::Home => {
+                let again = self.home.focused() == index && self.home_area == HomeArea::Tiles;
+                self.home_area = HomeArea::Tiles;
+                self.home.focus(index);
+                if again { self.apply(ui, Action::Confirm) } else { self.sync(ui) }
+            }
+            Click::LibraryTile(index) if self.screen == Screen::Library => {
+                let again = self.grid.focused() == index && self.home_area == HomeArea::Tiles;
+                self.home_area = HomeArea::Tiles;
+                self.grid.focus(index);
+                if again { self.apply(ui, Action::Confirm) } else { self.sync(ui) }
+            }
+            Click::SettingsRow(index) if self.screen == Screen::Settings => {
+                let rows = self.settings_list().len();
+                let again = self.settings_row == index && self.home_area == HomeArea::Tiles;
+                self.home_area = HomeArea::Tiles;
+                self.settings_row = index.min(rows - 1);
+                if again { self.apply(ui, Action::Confirm) } else { self.sync(ui) }
+            }
+            _ => {}
+        }
+    }
+
     fn apply_action(&mut self, ui: &AppWindow, action: Action) {
         if self.dialog.is_some() {
             self.apply_dialog(ui, action);
@@ -978,6 +1059,68 @@ impl Shell {
             }
         } else if !self.artwork_loaded && self.artwork_rx.is_none() {
             self.artwork_rx = Some(loader::spawn_artwork(self.entries.clone()));
+        }
+    }
+
+    /// Starts listening for messages of other programs and, with `steam`, for Steam downloads.
+    pub fn start_system_services(&mut self, steam: bool) {
+        self.notifications_rx = Some(notifications::start());
+        self.downloads_rx = steam.then(downloads::start);
+    }
+
+    /// Shows what came from the system services as toasts; a finished download also adds the new
+    /// game to the lists.
+    fn poll_system_services(&mut self, ui: &AppWindow) {
+        let messages: Vec<Incoming> = self.notifications_rx.iter().flat_map(|rx| rx.try_iter()).collect();
+        let news: Vec<DownloadNews> = self.downloads_rx.iter().flat_map(|rx| rx.try_iter()).collect();
+        if !self.settings.notifications {
+            return self.poll_new_games(ui, !news.is_empty());
+        }
+        // Only the latest message shows; a toast replaces the one before it.
+        if let Some(message) = messages.last() {
+            self.toast(ui, "✉", &message.title, &message.text);
+        }
+        let started: Vec<String> = news.iter().flat_map(|n| n.started.clone()).collect();
+        let finished: Vec<String> = news.iter().flat_map(|n| n.finished.clone()).collect();
+        if !finished.is_empty() {
+            self.toast(ui, "⬇", tr("Download finished"), &finished.join(", "));
+        } else if !started.is_empty() {
+            self.toast(ui, "⬇", tr("Download started"), &started.join(", "));
+        }
+        self.poll_new_games(ui, !finished.is_empty());
+    }
+
+    /// Adds Steam games that finished downloading (`look`: a download just finished).
+    fn poll_new_games(&mut self, ui: &AppWindow, look: bool) {
+        if look && self.new_games_rx.is_none() && !self.dummy {
+            let known = self.entries.iter().map(|e| e.id.clone()).collect();
+            self.new_games_rx = Some(loader::spawn_new_games(known, self.settings.artwork));
+        }
+        let Some(done) = self.new_games_rx.as_ref().and_then(|rx| rx.try_recv().ok()) else { return };
+        self.new_games_rx = None;
+        if done.is_empty() {
+            return;
+        }
+        let keep = self.focused_entry().map(|i| self.entries[i].id.clone());
+        let today = tiles::today();
+        for loaded in done {
+            if self.entries.iter().any(|e| e.id == loaded.entry.id) {
+                continue;
+            }
+            let tile = tiles::to_tile(&loaded, self.tiles.len(), today);
+            self.discovered_last_used.insert(loaded.entry.id.clone(), loaded.entry.last_used);
+            self.entries.push(loaded.entry);
+            self.tiles.push(tile);
+        }
+        apply_history(&mut self.entries, &self.history);
+        self.resort();
+        for index in 0..self.tiles.len() {
+            self.relabel_tile(index);
+        }
+        self.library_tile = tiles::library_tile(self.entries.len());
+        self.refresh(ui);
+        if let Some(id) = keep {
+            self.focus_entry(&id);
         }
     }
 
@@ -1954,6 +2097,7 @@ impl Shell {
     pub fn watch_running(&mut self, ui: &AppWindow) {
         self.apply_pending_front(ui);
         self.poll_artwork(ui);
+        self.poll_system_services(ui);
         if let Some(failed) = self.failed_launch
             && failed.elapsed() >= MIN_HOLD
         {

@@ -1,7 +1,7 @@
-import { Theme } from "theme.slint";
+import { Theme } from "@consoleui/theme.slint";
 import { ControllerStyle, GlyphButton, Hint, QuickItem } from "types.slint";
-import { HintBar } from "glyph.slint";
-import { GlassPanel } from "glass.slint";
+import { HintBar } from "@consoleui/glyph.slint";
+import { GlassPanel } from "@consoleui/glass.slint";
 
 // Quick menu: a bar of cards at the bottom edge with a slight darkening above. Used in the overlay
 // window (gamescope) or as a layer of the main window.
@@ -12,6 +12,8 @@ export component QuickMenu inherits Rectangle {
     in property <int> focused;
     in property <ControllerStyle> style;
     in property <float> s: 1;
+
+    callback card-clicked(int);
 
     property <QuickItem> current: root.items[root.focused];
     property <length> card: 170px * root.s;
@@ -71,6 +73,10 @@ export component QuickMenu inherits Rectangle {
             // Only the lift animates: a fading background with the text color switched at once
             // left the card that loses the focus as a pale "ghost" for a moment.
             animate y { duration: Theme.focus-duration; easing: ease-out-quart; }
+
+            TouchArea {
+                clicked => { root.card-clicked(i); }
+            }
 
             Text {
                 x: 18px * root.s;

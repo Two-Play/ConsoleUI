@@ -1,23 +1,24 @@
-import { Theme } from "theme.slint";
+import { Theme } from "@consoleui/theme.slint";
 import { AppTile, ContextItem, ControllerStyle, GlyphButton, Hint, KeyCap, NavAction, NetRow, NetView, NetworkState, ProfileTile, ProfileView, QuickItem, Screen, SettingRow } from "types.slint";
-import { StatusBar } from "statusbar.slint";
-import { ButtonGlyph, HintBar } from "glyph.slint";
+import { StatusBar } from "@consoleui/statusbar.slint";
+import { TabBar } from "@consoleui/tabbar.slint";
+import { ButtonGlyph, HintBar } from "@consoleui/glyph.slint";
 import { HomePage } from "home.slint";
 import { LibraryPage } from "library.slint";
 import { SearchPage } from "search.slint";
 import { QuickMenu } from "quickmenu.slint";
-import { ContextMenu } from "contextmenu.slint";
-import { Dialog } from "dialog.slint";
+import { ContextMenu } from "@consoleui/contextmenu.slint";
+import { Dialog } from "@consoleui/dialog.slint";
 import { GameOptionsPanel } from "gameoptions.slint";
 import { OverlayWindow } from "overlay.slint";
 import { NotificationWindow } from "notification.slint";
 import { SettingsPage } from "settings.slint";
 import { NetworkPage } from "network.slint";
 import { BootScreen } from "boot.slint";
-import { Toast } from "toast.slint";
+import { Toast } from "@consoleui/toast.slint";
 import { HeroLayer } from "hero.slint";
 import { ProfilePage } from "profiles.slint";
-import { Glass, GlassPanel } from "glass.slint";
+import { Glass, GlassPanel } from "@consoleui/glass.slint";
 
 export { AppTile, ContextItem, ControllerStyle, GlyphButton, Hint, KeyCap, NavAction, NetRow, NetView, NetworkState, ProfileTile, ProfileView, QuickItem, Screen, SettingRow, OverlayWindow, NotificationWindow, Theme, Glass }
 
@@ -136,6 +137,13 @@ export component AppWindow inherits Window {
     out property <length> tile-size: root.screen == Screen.home ? home.focus-size : root.screen == Screen.library ? library.focus-size : search.focus-size;
 
     callback action(NavAction);
+    // The pointer clicked a tab, a tile, a settings row, a dialog button or a quick menu card
+    callback tab-clicked(int);
+    callback tile-clicked(int);
+    callback library-clicked(int);
+    callback row-clicked(int);
+    callback dialog-clicked(int);
+    callback quick-clicked(int);
     // Keyboard input in the search; returns whether the character was taken.
     callback typed(string) -> bool;
     callback erase();
@@ -349,94 +357,15 @@ export component AppWindow inherits Window {
             animate opacity { duration: Theme.page-duration; }
         }
 
-        // Tabs
-        tabs := HorizontalLayout {
+        tabs := TabBar {
             x: root.margin;
             y: 50px * s;
-            width: self.preferred-width;
-            height: 36px * s;
-            spacing: 28px * s;
-
-            ButtonGlyph {
-                y: (parent.height - self.height) / 2;
-                button: GlyphButton.l1;
-                style: root.controller-style;
-                s: root.s;
-                opacity: root.screen == Screen.library || root.screen == Screen.settings ? 1 : 0.35;
-            }
-
-            home-tab := Text {
-                text: @tr("Home");
-                color: root.screen == Screen.home ? Theme.text : Theme.text-dim;
-                font-size: 26px * s;
-                font-weight: root.screen == Screen.home ? 700 : 600;
-                vertical-alignment: center;
-            }
-
-            library-tab := Text {
-                text: @tr("Library");
-                color: root.screen == Screen.library ? Theme.text : Theme.text-dim;
-                font-size: 26px * s;
-                font-weight: root.screen == Screen.library ? 700 : 600;
-                vertical-alignment: center;
-            }
-
-            settings-tab := Text {
-                text: @tr("Settings");
-                color: root.screen == Screen.settings ? Theme.text : Theme.text-dim;
-                font-size: 26px * s;
-                font-weight: root.screen == Screen.settings ? 700 : 600;
-                vertical-alignment: center;
-            }
-
-            ButtonGlyph {
-                y: (parent.height - self.height) / 2;
-                button: GlyphButton.r1;
-                style: root.controller-style;
-                s: root.s;
-                opacity: root.screen == Screen.home || root.screen == Screen.library ? 1 : 0.35;
-            }
-        }
-
-        // Selection on the tabs (up from the top row of home, library and settings): a pill around the tab
-        Rectangle {
-            property <bool> shown: root.home-area == 2;
-            property <length> tab-x: root.home-area-index == 1 ? library-tab.x : root.home-area-index == 2 ? settings-tab.x : home-tab.x;
-            property <length> tab-width: root.home-area-index == 1 ? library-tab.width : root.home-area-index == 2 ? settings-tab.width : home-tab.width;
-            x: tabs.x + self.tab-x - 11px * s;
-            y: tabs.y - 6px * s;
-            width: self.tab-width + 22px * s;
-            height: tabs.height + 12px * s;
-            border-radius: self.height / 2;
-            border-width: 3px * s;
-            border-color: Theme.accent;
-            background: Theme.accent.with-alpha(0.12);
-            opacity: self.shown ? 1 : 0;
-            animate x, width {
-                duration: Theme.focus-duration;
-                easing: ease-out-quart;
-            }
-            animate opacity { duration: Theme.focus-duration; }
-        }
-
-        // Underline of the current tab; glides to the next one
-        Rectangle {
-            property <length> tab-x: root.screen == Screen.library ? library-tab.x : root.screen == Screen.settings ? settings-tab.x : home-tab.x;
-            property <length> tab-width: root.screen == Screen.library ? library-tab.width : root.screen == Screen.settings ? settings-tab.width : home-tab.width;
-            x: tabs.x + self.tab-x;
-            y: tabs.y + tabs.height + 6px * s;
-            width: self.tab-width;
-            height: 3px * s;
-            border-radius: self.height / 2;
-            background: Theme.accent;
-            drop-shadow-blur: 8px * s;
-            drop-shadow-color: Theme.accent.with-alpha(0.6);
-            opacity: root.screen == Screen.search ? 0 : 1;
-            animate x, width {
-                duration: Theme.page-duration * 1.6;
-                easing: ease-out-quart;
-            }
-            animate opacity { duration: Theme.page-duration; }
+            tabs: [@tr("Home"), @tr("Library"), @tr("Settings")];
+            current: root.screen == Screen.library ? 1 : root.screen == Screen.settings ? 2 : root.screen == Screen.home ? 0 : -1;
+            selected: root.home-area == 2 ? root.home-area-index : -1;
+            style: root.controller-style;
+            s: root.s;
+            clicked(i) => { root.tab-clicked(i); }
         }
 
         StatusBar {
@@ -470,6 +399,7 @@ export component AppWindow inherits Window {
             area-index: root.home-area-index;
             pulse: root.pulse && root.screen == Screen.home;
             s: root.s;
+            tile-clicked(i) => { root.tile-clicked(i); }
         }
 
         SettingsPage {
@@ -486,6 +416,7 @@ export component AppWindow inherits Window {
             focused: root.settings-focused;
             footer: root.settings-footer;
             active: root.home-area != 2;
+            row-clicked(i) => { root.row-clicked(i); }
             s: root.s;
         }
 
@@ -517,6 +448,7 @@ export component AppWindow inherits Window {
             focused: root.library-focused;
             pulse: root.pulse && root.screen == Screen.library;
             ring: root.home-area != 2;
+            tile-clicked(i) => { root.library-clicked(i); }
             s: root.s;
             filter-label: root.filter-label;
             sort-label: root.sort-label;
@@ -697,6 +629,7 @@ export component AppWindow inherits Window {
             focused: root.dialog-focused;
             style: root.controller-style;
             s: root.s;
+            button-clicked(i) => { root.dialog-clicked(i); }
         }
 
         QuickMenu {
@@ -708,6 +641,7 @@ export component AppWindow inherits Window {
             focused: root.quick-focused;
             style: root.controller-style;
             s: root.s;
+            card-clicked(i) => { root.quick-clicked(i); }
         }
 
         Toast {
