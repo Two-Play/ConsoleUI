@@ -35,6 +35,7 @@ pub mod sound;
 pub mod status;
 pub mod steam;
 pub mod system;
+pub mod updates;
 pub mod vdf;
 pub mod wifi;
 pub mod xdg;

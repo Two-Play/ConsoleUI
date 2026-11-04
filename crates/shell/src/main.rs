@@ -29,6 +29,7 @@ mod profiles;
 mod quick;
 mod shell;
 mod tiles;
+mod updates;
 
 use consoleui_app::gamepad::{Connection, Gamepads};
 use loader::LoadOptions;
@@ -311,6 +312,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     });
 
     shell.borrow_mut().start_network(options.fake_network);
+    shell.borrow_mut().start_updates(options.fake_updates);
     if !options.bench {
         shell.borrow_mut().start_system_services(!options.dummy);
     }
@@ -321,6 +323,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         move || {
             if let Some(ui) = ui.upgrade() {
                 shell.borrow_mut().poll_network(&ui);
+                shell.borrow_mut().poll_updates(&ui);
             }
         }
     });

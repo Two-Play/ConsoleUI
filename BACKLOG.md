@@ -103,6 +103,7 @@ Schätzung in Story Points (SP): 1, 2, 3, 5, 8, 13. Ein Sprint dauert 2 Wochen.
 | 5.5 | Settings page: theme/accent color, sounds, resolution (on a real display under our compositor) | 5 |
 | 5.6 | Notifications as toasts (download finished, controller connected) | 3 |
 | 5.7 | **Done.** As a player in a household I pick my profile at the start ("Who's playing?", like the users of a PS5): several profiles within one Linux user, each with its own history, pinned/hidden entries, game options and settings in `$XDG_DATA_HOME/consoleui/profiles/<id>/`. Profiles can be added, renamed, recolored and deleted with the gamepad (name entry with the on-screen keyboard); "Switch profile" in the control center; the first profile takes over the existing files. Not a login manager: no passwords, no separate Linux users | 5 |
+| 5.8 | **Done.** Updates without knowing the distribution: settings page "Updates" lists what PackageKit, Flatpak, fwupd and rpm-ostree offer, shows what changed, installs everything (apps at once, the system as an offline update at the next restart), searches in the background and tells with a toast | 8 |
 
 ## Epic 6 – Polish & Animations
 
@@ -857,6 +858,28 @@ Branch `agent/compositor-blur`, on top of the UI feedback round (6.10).
   desktop. The game also sees R1 during the chord. There is no "keep this resolution?" dialog with a
   revert: a mode the TV cannot show stays saved in the profile. No brightness for external monitors
   (DDC/CI).
+
+### Updates (done: 5.8)
+
+- **Sources:** PackageKit over the system bus (not on image-based systems, `/run/ostree-booted`),
+  `flatpak`, `fwupdmgr --json` and `rpm-ostree` as programs with `LC_ALL=C`. A source that is not
+  there is left out, one that fails shows in the page's status line. `consoleui_core::updates` has
+  the model, page state, parsers and `FakeBackend` (`--fake-updates`); `src/updates.rs` the real
+  backend on its own thread; `src/shell/updates.rs` shows the page in the Wi-Fi page's layer.
+- **Page:** ✕ opens what changed in a dialog (PackageKit's update text or changelog and CVEs, fwupd's
+  release text, the commit subject for Flatpak), □ asks and installs all, ≡ searches again. Security
+  updates are marked. Nothing is installed while an app runs, and the search in the background (after
+  2 minutes, then every 6 hours) waits for that too; its toast respects the "Notifications" setting.
+- **Install:** Flatpak at once; PackageKit only downloads and triggers the offline update
+  (`Offline.Trigger("reboot")`), so packages never change under the running session.
+- **Tested:** on the host the list matches `pkcon get-updates` (read-only, security flags too); in the
+  VM a real install through the UI prepared the offline update (`/system-update`). Not tested: the
+  offline update's restart itself, Flatpak and firmware installs, `rpm-ostree` and other
+  distributions.
+- **Known gaps:** no polkit rule. The VM's test user is in `wheel`; a session user without that right
+  gets an error toast, as a console session has no password dialog. The transaction waits for
+  PackageKit's `Finished` without a timeout, on the update thread. Arch and NixOS have no usable
+  PackageKit, there only Flatpak and fwupd show.
 
 ## Risiken / offene Fragen
 

@@ -98,6 +98,7 @@ Snapshot, `--actions` and `--bench` start only after the boot screen is gone (li
 with `--actions` the snapshot waits until the script is done (+0.7 s).
 The WLAN/Bluetooth pages really change system state on ✕/□/≡ (connect, radio, discovery, pairing).
 Use `--fake-network` for scripted tests; without it, only opening the pages is read-only.
+Likewise `--fake-updates`: without it the "Updates" page searches the real sources (read-only) and □ really installs.
 A scratch `XDG_DATA_HOME` (to keep the history untouched) also hides `~/.local/share/applications`;
 prepend `$HOME/.local/share` to `XDG_DATA_DIRS` to still see those entries.
 
@@ -337,6 +338,9 @@ Cargo workspace (edition 2024, `default-members` = the shell):
     for the main window, the overlay and the notification window separately (globals are per component instance).
   - `ui/settings.slint`, `ui/boot.slint`, `ui/toast.slint`: settings page, boot screen, toast.
   - `ui/glyph.slint`: `ButtonGlyph` (button symbol per `ControllerStyle`) and `HintBar`; Rust fills `hints`.
+  - `src/updates.rs`: real update backend (Story 5.8) on its own thread: PackageKit over zbus, `flatpak`,
+    `fwupdmgr`, `rpm-ostree` as programs; `consoleui_core::updates` holds the model, `UpdatePage`, the parsers and
+    `FakeBackend`, `src/shell/updates.rs` shows the page in the Wi-Fi page's layer (`NetView`).
   - `src/dbus.rs`: real WLAN/Bluetooth backend (zbus blocking API on the system bus, own BlueZ pairing
     agent); only ever runs on the network thread. `src/network.rs`: glue between `NetPages`, the thread
     and the `NetView` Slint struct (`ui/network.slint`, shown over the settings page while a sub-page is
