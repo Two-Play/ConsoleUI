@@ -33,6 +33,7 @@ use smithay::wayland::compositor::with_states;
 use consoleui_core::protocol::{BlurRegion, WindowRole};
 
 use crate::blur::{self, BackdropElement, BlurCache};
+use crate::preview;
 use crate::rounded::{self, RoundedSurface};
 use crate::transition::Effect;
 
@@ -127,6 +128,16 @@ pub fn output_elements(
     elements
 }
 
+/// One window alone, for its preview in the window switcher.
+pub fn preview_elements(
+    renderer: &mut GlesRenderer,
+    drawn: &Drawn,
+    output: &Output,
+    output_size: Size<i32, Physical>,
+) -> Vec<OutputElement> {
+    window_elements(renderer, drawn, Scale::from(output.current_scale().fractional_scale()), output_size)
+}
+
 /// The elements of one window, transformed by its transition.
 fn window_elements(
     renderer: &mut GlesRenderer,
@@ -215,6 +226,28 @@ pub fn save_screenshot(
     size: Size<i32, Physical>,
     path: &Path,
 ) -> Result<(), Box<dyn Error>> {
+    let rows = read_pixels(renderer, elements, size)?;
+    write_png(&rows, size.w as u32, size.h as u32, path)
+}
+
+/// Like [`save_screenshot`], reduced to the size of a preview.
+pub fn save_preview(
+    renderer: &mut GlesRenderer,
+    elements: &[OutputElement],
+    size: Size<i32, Physical>,
+    path: &Path,
+) -> Result<(), Box<dyn Error>> {
+    let rows = read_pixels(renderer, elements, size)?;
+    let (rows, width, height) = preview::shrink(&rows, size.w as usize, size.h as usize);
+    write_png(&rows, width as u32, height as u32, path)
+}
+
+/// The rendered `elements` as RGBA rows, top row first.
+fn read_pixels(
+    renderer: &mut GlesRenderer,
+    elements: &[OutputElement],
+    size: Size<i32, Physical>,
+) -> Result<Vec<u8>, Box<dyn Error>> {
     let buffer_size = size.to_logical(1).to_buffer(1, Transform::Normal);
     let mut texture: GlesTexture = renderer.create_buffer(Fourcc::Abgr8888, buffer_size)?;
     let mut damage_tracker = OutputDamageTracker::new(size, 1.0, Transform::Normal);
@@ -235,13 +268,17 @@ pub fn save_screenshot(
     for pixel in rows.as_chunks_mut::<4>().0 {
         pixel[3] = 255;
     }
+    Ok(rows)
+}
+
+fn write_png(rows: &[u8], width: u32, height: u32, path: &Path) -> Result<(), Box<dyn Error>> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
     let file = std::io::BufWriter::new(std::fs::File::create(path)?);
-    let mut encoder = png::Encoder::new(file, width as u32, height as u32);
+    let mut encoder = png::Encoder::new(file, width, height);
     encoder.set_color(png::ColorType::Rgba);
     encoder.set_depth(png::BitDepth::Eight);
-    encoder.write_header()?.write_image_data(&rows)?;
+    encoder.write_header()?.write_image_data(rows)?;
     Ok(())
 }

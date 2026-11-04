@@ -143,6 +143,7 @@ fn parse_script(list: &str) -> Result<Vec<ScriptStep>, String> {
                     "row" => Ok(Click::SettingsRow(index)),
                     "dialog" => Ok(Click::DialogButton(index)),
                     "quick" => Ok(Click::QuickCard(index)),
+                    "switcher" => Ok(Click::SwitcherCard(index)),
                     _ => Err(format!("Unknown click: {step}")),
                 }
                 .map(ScriptStep::Click);

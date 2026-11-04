@@ -22,6 +22,8 @@ pub enum Owner {
 /// What we need to know about a process.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ProcessInfo {
+    /// Name of the program (`/proc/<pid>/comm`, at most 15 characters)
+    pub name: String,
     pub parent: Option<u32>,
     pub steam_app_id: Option<u32>,
     pub cgroup: String,
@@ -32,10 +34,19 @@ pub fn read_process(pid: u32) -> Option<ProcessInfo> {
     let stat = fs::read_to_string(format!("{dir}/stat")).ok()?;
     let environ = fs::read(format!("{dir}/environ")).unwrap_or_default();
     Some(ProcessInfo {
+        name: name_from_stat(&stat),
         parent: parent_from_stat(&stat),
         steam_app_id: steam_app_id(&environ),
         cgroup: fs::read_to_string(format!("{dir}/cgroup")).unwrap_or_default(),
     })
+}
+
+/// Second field of `/proc/<pid>/stat`, in parentheses; the name itself may contain them.
+fn name_from_stat(stat: &str) -> String {
+    match (stat.find('('), stat.rfind(')')) {
+        (Some(start), Some(end)) if start < end => stat[start + 1..end].to_owned(),
+        _ => String::new(),
+    }
 }
 
 /// Fourth field of `/proc/<pid>/stat`; the process name in parentheses may contain spaces.
@@ -50,6 +61,22 @@ fn steam_app_id(environ: &[u8]) -> Option<u32> {
         .find_map(|var| var.strip_prefix(b"SteamAppId="))
         .and_then(|v| std::str::from_utf8(v).ok()?.parse().ok())
         .filter(|&id| id != 0)
+}
+
+/// Whether `pid` belongs to the Steam client itself (or was started by it): its splash, the
+/// "Launching" and shader dialogs and the library. Ask only for processes that are no known game,
+/// because games are children of Steam too.
+pub fn is_steam_client(pid: u32, lookup: impl Fn(u32) -> Option<ProcessInfo>) -> bool {
+    let mut current = Some(pid);
+    // Bounded, in case /proc changes during the search
+    for _ in 0..64 {
+        let Some(info) = current.and_then(&lookup) else { return false };
+        if info.name == "steam" || info.name == "steam.sh" || info.name.starts_with("steamwebhelper") {
+            return true;
+        }
+        current = info.parent;
+    }
+    false
 }
 
 /// Walks up the parent processes to find the app `pid` belongs to; `apps` are (app ID, matcher).
@@ -85,11 +112,27 @@ mod tests {
     }
 
     fn process(parent: Option<u32>, steam: Option<u32>, cgroup: &str) -> ProcessInfo {
-        ProcessInfo { parent, steam_app_id: steam, cgroup: cgroup.into() }
+        ProcessInfo { parent, steam_app_id: steam, cgroup: cgroup.into(), ..Default::default() }
+    }
+
+    #[test]
+    fn recognizes_the_steam_client_and_what_it_started() {
+        let named = |name: &str, parent| ProcessInfo { name: name.into(), parent, ..Default::default() };
+        let lookup = table(&[
+            (10, named("steam", None)),
+            (11, named("steamwebhelper", Some(10))),
+            (12, named("sh", Some(11))),
+            (20, named("glxgears", None)),
+        ]);
+        assert!(is_steam_client(10, &lookup));
+        assert!(is_steam_client(12, &lookup));
+        assert!(!is_steam_client(20, &lookup));
+        assert!(!is_steam_client(99, &lookup));
     }
 
     #[test]
     fn parses_proc_files() {
+        assert_eq!(name_from_stat("1234 (Web (Content)) S 987"), "Web (Content)");
         assert_eq!(parent_from_stat("1234 (Web Content) S 987 1234 1234 0"), Some(987));
         assert_eq!(parent_from_stat("1 (systemd) S 0 1 1"), None);
         assert_eq!(steam_app_id(b"A=1\0SteamAppId=730\0B=2\0"), Some(730));

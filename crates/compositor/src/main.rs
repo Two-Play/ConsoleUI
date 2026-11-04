@@ -17,6 +17,7 @@ mod input;
 mod modes;
 mod options;
 mod policy;
+mod preview;
 mod render;
 mod rounded;
 mod state;

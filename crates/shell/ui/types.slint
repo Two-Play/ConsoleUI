@@ -18,6 +18,16 @@ export struct QuickItem {
     level: int,
 }
 
+// Card of the window switcher in the quick menu
+export struct SwitcherItem {
+    title: string,
+    // Title of the window, for apps with several windows
+    detail: string,
+    // Live preview, or the entry's artwork
+    image: image,
+    in-front: bool,
+}
+
 // Row of the Wi-Fi or Bluetooth page
 export struct NetRow {
     // Symbol as text (Bluetooth device kind, on/off)

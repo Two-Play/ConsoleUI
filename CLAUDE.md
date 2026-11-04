@@ -152,6 +152,9 @@ Cargo workspace (edition 2024, `default-members` = the shell):
     copies the files from before profiles into it. `profile_picker.rs` is the "Who's playing?" state
     (tile row with "Add profile", menu: rename/color/delete, name entry with the on-screen keyboard,
     delete confirmation) and returns `PickerOutcome`s; the shell saves and switches.
+  - `switcher.rs` (Story 4.7): the window switcher's row (running apps, most recently used first, one card
+    per window once the compositor reported them); `Switcher::apply` returns `SwitcherOutcome`s, the shell's
+    `QuickMenu` holds it.
   - `dialog.rs`: `Dialog<T>`, the state of the modal alert/confirmation dialog (title, text, 1–3 buttons with a tag `T`,
     Left/Right/Confirm/Back → `DialogOutcome`); the shell shows it with `ui/dialog.slint` (`Shell::show_dialog` / `show_alert`).
   - `Action` / `Carousel` (row) / `Grid` (library) handle input-agnostic navigation; `osk.rs` is the
@@ -209,7 +212,9 @@ Cargo workspace (edition 2024, `default-members` = the shell):
   `drm.rs` reports the sizes with `CompositorMessage::Modes`, so the row exists only on a real display).
   `policy.rs` is the Smithay-free, unit-tested window policy (owner shell/app/unknown, front, stacking,
   keyboard focus; every toplevel is fullscreen, an app comes to the front once its window shows
-  content). `xwayland.rs` runs `X11Wm` and maps windows to apps via `_NET_WM_PID` or the X-Resource
+  content). The Steam client's windows (`ownership::is_steam_client`) are never taken for a Steam game
+  being launched, they stay behind the launch screen until the shell sends `ShowSteam`. `ListWindows`
+  is answered after the next frame (`State::answer_window_lists`, `preview.rs` shrinks the images). `xwayland.rs` runs `X11Wm` and maps windows to apps via `_NET_WM_PID` or the X-Resource
   client PID plus `consoleui_core::ownership`. `control.rs` is the control socket
   (`$XDG_RUNTIME_DIR/consoleui-<wayland-socket>.sock`), `child.rs` starts the shell with
   `WAYLAND_DISPLAY`, `DISPLAY` and `CONSOLEUI_COMPOSITOR`, `render.rs` builds frame elements and the
@@ -307,7 +312,8 @@ Cargo workspace (edition 2024, `default-members` = the shell):
   - `src/gamepad.rs`: gilrs polling → `Action`s (only devices with an SDL mapping); PS/Guide → `Action::Guide`.
   - `src/gamescope.rs`: X11 control of gamescope (tagging windows, baselayer, preparing the overlay and
     notification windows).
-  - `src/quick.rs`: quick menu ("Steuerzentrale") items and input handling. In gamescope it is shown in
+  - `src/quick.rs`: quick menu ("Steuerzentrale") items and input handling, with the window switcher row
+    above the cards when there is something to switch to (Story 4.7). In gamescope it is shown in
     `OverlayWindow` (`ui/overlay.slint`, transparent, gets `STEAM_OVERLAY` and is remapped before first
     use); otherwise it is the `QuickMenu` layer inside `AppWindow`.
   - `src/context.rs`: context menu (Menu/Tab on a focused entry in home and library: pin/unpin, hide,
@@ -352,7 +358,7 @@ Cargo workspace (edition 2024, `default-members` = the shell):
     games to the lists. Both are switched by the "Notifications" setting.
   - Pointer: tabs, tiles, settings rows, dialog buttons and quick menu cards are clickable (`TouchArea`s →
     `Shell::click(Click)`); `--actions` also has `screenshot`, `click-tab:N`, `click-tile:N`, `click-library:N`, `click-row:N`,
-    `click-dialog:N`, `click-quick:N`.
+    `click-dialog:N`, `click-quick:N`, `click-switcher:N`.
   - `src/perf.rs`: frame stats from Slint's rendering notifier. `src/cover.rs`: procedural
     placeholder covers. `src/options.rs`: hand-rolled CLI parsing.
 

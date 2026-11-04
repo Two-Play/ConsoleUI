@@ -1,28 +1,38 @@
 import { Theme } from "@consoleui/theme.slint";
-import { ControllerStyle, GlyphButton, Hint, QuickItem } from "types.slint";
+import { ControllerStyle, GlyphButton, Hint, QuickItem, SwitcherItem } from "types.slint";
 import { HintBar } from "@consoleui/glyph.slint";
 import { GlassPanel } from "@consoleui/glass.slint";
 import { FocusFill } from "@consoleui/focusfill.slint";
 import { FocusRing } from "@consoleui/focusring.slint";
 
-// Quick menu: a bar of cards at the bottom edge with a slight darkening above. Used in the overlay
-// window (gamescope) or as a layer of the main window.
+// Quick menu: a bar of cards at the bottom edge with a slight darkening above, with the window
+// switcher (a row of the running apps) above the cards when there is something to switch to. Used
+// in the overlay window (gamescope) or as a layer of the main window.
 export component QuickMenu inherits Rectangle {
     in property <bool> open;
     in property <string> title;
     in property <[QuickItem]> items;
     in property <int> focused;
+    in property <[SwitcherItem]> apps;
+    // -1: the focus is on the cards
+    in property <int> app-focused: -1;
     in property <ControllerStyle> style;
     in property <float> s: 1;
 
     callback card-clicked(int);
-
+    callback app-clicked(int);
 
     property <QuickItem> current: root.items[root.focused];
     property <length> card: 170px * root.s;
     property <length> gap: 18px * root.s;
+    property <length> app-width: 320px * root.s;
+    property <length> app-height: self.app-width * 9 / 16;
+    // The row scrolls just far enough to show the focused card.
+    property <length> app-scroll: max(0px, (max(root.app-focused, 0) + 1) * (root.app-width + root.gap) - root.width + 220px * root.s);
+    // Where the row of cards starts, below the switcher
+    property <length> cards-y: (root.apps.length > 0 ? root.app-height + 34px * root.s : 0px) + 70px * root.s;
     // Height of the bar when open (the overlay window reports it to the compositor for the blur)
-    out property <length> panel-height: 330px * root.s;
+    out property <length> panel-height: root.cards-y + 260px * root.s;
     // Where the bar is right now (animated); the compositor's blur follows it.
     out property <length> panel-y: panel.y;
 
@@ -65,10 +75,89 @@ export component QuickMenu inherits Rectangle {
             letter-spacing: 2px * root.s;
         }
 
+        for app[i] in root.apps: Rectangle {
+            property <bool> is-focused: i == root.app-focused;
+            x: 110px * root.s + i * (root.app-width + root.gap) - root.app-scroll;
+            y: 70px * root.s + (self.is-focused ? 0 : 8px * root.s);
+            width: root.app-width;
+            height: root.app-height;
+            border-radius: 18px * root.s;
+            background: Theme.surface;
+            animate x, y { duration: Theme.focus-duration; easing: ease-out-quart; }
+
+            Rectangle {
+                width: 100%;
+                height: 100%;
+                border-radius: parent.border-radius;
+                clip: true;
+
+                Image {
+                    width: 100%;
+                    height: 100%;
+                    source: app.image;
+                    image-fit: cover;
+                }
+
+                Rectangle {
+                    width: 100%;
+                    height: 100%;
+                    background: @linear-gradient(180deg, transparent 45%, #000000cc 100%);
+                }
+            }
+
+            if app.in-front: Rectangle {
+                x: 12px * root.s;
+                y: 12px * root.s;
+                width: label.preferred-width + 20px * root.s;
+                height: 28px * root.s;
+                border-radius: self.height / 2;
+                background: #000000aa;
+
+                label := Text {
+                    text: @tr("In front");
+                    color: Theme.text;
+                    font-size: 14px * root.s;
+                    font-weight: 600;
+                }
+            }
+
+            VerticalLayout {
+                x: 16px * root.s;
+                y: parent.height - self.height - 12px * root.s;
+                width: parent.width - 32px * root.s;
+                height: self.preferred-height;
+
+                Text {
+                    text: app.title;
+                    color: Theme.text;
+                    font-size: 18px * root.s;
+                    font-weight: 700;
+                    overflow: elide;
+                }
+
+                if app.detail != "": Text {
+                    text: app.detail;
+                    color: Theme.text-dim;
+                    font-size: 14px * root.s;
+                    overflow: elide;
+                }
+            }
+
+            FocusRing {
+                border-radius: parent.border-radius;
+                focused: parent.is-focused;
+                s: root.s;
+            }
+
+            TouchArea {
+                clicked => { root.app-clicked(i); }
+            }
+        }
+
         for item[i] in root.items: card := Rectangle {
             property <bool> is-focused: i == root.focused;
             x: 110px * root.s + i * (root.card + root.gap);
-            y: 70px * root.s + (self.is-focused ? 0 : 8px * root.s);
+            y: root.cards-y + (self.is-focused ? 0 : 8px * root.s);
             width: root.card;
             height: root.card * 0.82;
             border-radius: 18px * root.s;
@@ -144,7 +233,10 @@ export component QuickMenu inherits Rectangle {
             height: 28px * root.s;
             style: root.style;
             s: root.s;
-            hints: root.current.can-mute ? [{ button: GlyphButton.dpad, label: @tr("Select") }, { button: GlyphButton.updown, label: @tr("Volume") }, { button: GlyphButton.confirm, label: @tr("Mute") }, { button: GlyphButton.back, label: @tr("Close") }]
+            hints: root.app-focused >= 0 ? [{ button: GlyphButton.dpad, label: @tr("Select") }, { button: GlyphButton.confirm, label: @tr("Switch") }, { button: GlyphButton.west, label: @tr("Quit") }, { button: GlyphButton.back, label: @tr("Close") }]
+                : root.current.can-mute && root.apps.length > 0 ? [{ button: GlyphButton.dpad, label: @tr("Select") }, { button: GlyphButton.updown, label: @tr("Volume") }, { button: GlyphButton.confirm, label: @tr("Mute") }, { button: GlyphButton.r1, label: @tr("Running apps") }, { button: GlyphButton.back, label: @tr("Close") }]
+                : root.current.adjustable && root.apps.length > 0 ? [{ button: GlyphButton.dpad, label: @tr("Select") }, { button: GlyphButton.updown, label: @tr("Brightness") }, { button: GlyphButton.r1, label: @tr("Running apps") }, { button: GlyphButton.back, label: @tr("Close") }]
+                : root.current.can-mute ? [{ button: GlyphButton.dpad, label: @tr("Select") }, { button: GlyphButton.updown, label: @tr("Volume") }, { button: GlyphButton.confirm, label: @tr("Mute") }, { button: GlyphButton.back, label: @tr("Close") }]
                 : root.current.adjustable ? [{ button: GlyphButton.dpad, label: @tr("Select") }, { button: GlyphButton.updown, label: @tr("Brightness") }, { button: GlyphButton.back, label: @tr("Close") }]
                 : [{ button: GlyphButton.dpad, label: @tr("Select") }, { button: GlyphButton.confirm, label: @tr("OK") }, { button: GlyphButton.back, label: @tr("Close") }];
         }

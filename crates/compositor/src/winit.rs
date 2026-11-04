@@ -5,6 +5,7 @@
 use std::os::fd::OwnedFd;
 use std::time::Duration;
 
+use consoleui_core::protocol::{CompositorMessage, WindowInfo};
 use smithay::backend::drm::DrmDeviceFd;
 use smithay::backend::egl::EGLDevice;
 use smithay::backend::egl::context::GlAttributes;
@@ -27,7 +28,7 @@ use tracing::{info, warn};
 
 use crate::backend::Backend;
 use crate::options::Options;
-use crate::render;
+use crate::render::{self, Drawn};
 use crate::state::State;
 
 pub struct WinitData {
@@ -192,8 +193,48 @@ impl State {
         self.take_screenshots(output);
     }
 
+    /// Answers `ListWindows` with a preview of every window of a launched app. Windows behind the
+    /// one in front still have their last buffer, so this works for them too.
+    fn answer_window_lists(&mut self, output: &Output) {
+        if self.window_lists.is_empty() {
+            return;
+        }
+        let Some(size) = output.current_mode().map(|mode| mode.size) else { return };
+        let clients = std::mem::take(&mut self.window_lists);
+        // Windows that closed since the last request leave no files behind.
+        let dir = self.previews_dir.clone();
+        if let Err(err) = std::fs::remove_dir_all(&dir)
+            && err.kind() != std::io::ErrorKind::NotFound
+        {
+            warn!("cannot clean up {}: {err}", dir.display());
+        }
+        let mut windows = Vec::new();
+        for switchable in self.policy.switchable() {
+            let Some(window) = self.find_window(switchable.id) else { continue };
+            let location = self.space.element_location(&window).unwrap_or_default() - window.geometry().loc;
+            // X11 titles are not followed after the window was mapped.
+            let title = window.x11_surface().map_or(switchable.title, |surface| surface.title());
+            let drawn = Drawn { window, location, effect: None, blur: None };
+            let path = dir.join(format!("window-{}.png", switchable.id));
+            let Some(renderer) = self.backend.renderer() else { return };
+            let elements = render::preview_elements(renderer, &drawn, output, size);
+            let preview = match render::save_preview(renderer, &elements, size, &path) {
+                Ok(()) => Some(path.to_string_lossy().into_owned()),
+                Err(err) => {
+                    warn!("no preview of window {}: {err}", switchable.id);
+                    None
+                }
+            };
+            windows.push(WindowInfo { id: switchable.id, app_id: switchable.app_id, title, preview });
+        }
+        for client in clients {
+            self.control.send_to(client, &CompositorMessage::WindowList { windows: windows.clone() });
+        }
+    }
+
     /// Serves pending screenshot requests with the current window contents.
     pub fn take_screenshots(&mut self, output: &Output) {
+        self.answer_window_lists(output);
         if self.screenshots.is_empty() {
             return;
         }

@@ -1,5 +1,5 @@
 import { Theme } from "@consoleui/theme.slint";
-import { AppTile, ContextItem, ControllerStyle, GlyphButton, Hint, KeyCap, NavAction, NetRow, NetView, NetworkState, ProfileTile, ProfileView, QuickItem, Screen, SettingRow } from "types.slint";
+import { AppTile, ContextItem, ControllerStyle, GlyphButton, Hint, KeyCap, NavAction, NetRow, NetView, NetworkState, ProfileTile, ProfileView, QuickItem, Screen, SettingRow, SwitcherItem } from "types.slint";
 import { StatusBar } from "@consoleui/statusbar.slint";
 import { TabBar } from "@consoleui/tabbar.slint";
 import { ButtonGlyph, HintBar } from "@consoleui/glyph.slint";
@@ -21,7 +21,7 @@ import { HeroLayer } from "hero.slint";
 import { ProfilePage } from "profiles.slint";
 import { Glass, GlassPanel } from "@consoleui/glass.slint";
 
-export { AppTile, ContextItem, ControllerStyle, GlyphButton, Hint, KeyCap, NavAction, NetRow, NetView, NetworkState, ProfileTile, ProfileView, QuickItem, Screen, SettingRow, OverlayWindow, NotificationWindow, Theme, Glass }
+export { AppTile, ContextItem, ControllerStyle, GlyphButton, Hint, KeyCap, NavAction, NetRow, NetView, NetworkState, ProfileTile, ProfileView, QuickItem, Screen, SettingRow, SwitcherItem, OverlayWindow, NotificationWindow, Theme, Glass }
 
 export component AppWindow inherits Window {
     title: "ConsoleUI";
@@ -98,12 +98,16 @@ export component AppWindow inherits Window {
     in property <color> launch-accent;
     // The app is still starting (progress indicator on the launch screen)
     in property <bool> launch-busy;
+    // A Steam game has no window yet: ✕ shows the hidden windows of the Steam client
+    in property <bool> launch-help;
 
     // Quick menu as a layer of the main window (without gamescope; there it is its own overlay window)
     in property <bool> quick-open;
     in property <string> quick-title;
     in property <[QuickItem]> quick-items;
     in property <int> quick-focused;
+    in property <[SwitcherItem]> quick-apps;
+    in property <int> quick-app-focused: -1;
 
     // Context menu (Options/Tab) for the focused entry
     in property <bool> context-open;
@@ -151,6 +155,7 @@ export component AppWindow inherits Window {
     callback row-clicked(int);
     callback dialog-clicked(int);
     callback quick-clicked(int);
+    callback app-clicked(int);
     // Keyboard input in the search; returns whether the character was taken.
     callback typed(string) -> bool;
     callback erase();
@@ -616,7 +621,9 @@ export component AppWindow inherits Window {
 
                 HintBar {
                     padding-top: 10px * s;
-                    hints: [{ button: GlyphButton.back, label: @tr("Go to Home") }];
+                    hints: root.launch-help
+                        ? [{ button: GlyphButton.confirm, label: @tr("Show Steam") }, { button: GlyphButton.back, label: @tr("Go to Home") }]
+                        : [{ button: GlyphButton.back, label: @tr("Go to Home") }];
                     style: root.controller-style;
                     s: root.s;
                 }
@@ -667,9 +674,12 @@ export component AppWindow inherits Window {
             title: root.quick-title;
             items: root.quick-items;
             focused: root.quick-focused;
+            apps: root.quick-apps;
+            app-focused: root.quick-app-focused;
             style: root.controller-style;
             s: root.s;
             card-clicked(i) => { root.quick-clicked(i); }
+            app-clicked(i) => { root.app-clicked(i); }
         }
 
         Toast {

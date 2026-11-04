@@ -1,4 +1,4 @@
-import { ControllerStyle, Hint, KeyCap, NavAction, QuickItem } from "types.slint";
+import { ControllerStyle, Hint, KeyCap, NavAction, QuickItem, SwitcherItem } from "types.slint";
 import { QuickMenu } from "quickmenu.slint";
 import { Dialog } from "@consoleui/dialog.slint";
 import { KeyboardPanel } from "@consoleui/keyboardpanel.slint";
@@ -18,6 +18,8 @@ export component OverlayWindow inherits Window {
     in property <string> title-text;
     in property <[QuickItem]> items;
     in property <int> focused;
+    in property <[SwitcherItem]> apps;
+    in property <int> app-focused: -1;
     in property <ControllerStyle> controller-style;
 
     // A confirmation above the menu (Story 5.1: restart, power off, quit ...), the same dialog as in
@@ -50,6 +52,7 @@ export component OverlayWindow inherits Window {
     callback action(NavAction);
     // The pointer picked a quick menu card or a dialog button
     callback quick-clicked(int);
+    callback app-clicked(int);
     callback dialog-clicked(int);
 
     // The bar at the bottom edge, full width, where it is in this frame: our compositor blurs
@@ -74,6 +77,9 @@ export component OverlayWindow inherits Window {
             if (event.text == Key.Return || event.text == Key.Space) { root.action(NavAction.confirm); return accept; }
             if (event.text == Key.Escape || event.text == Key.Backspace) { root.action(NavAction.back); return accept; }
             if (event.text == Key.F1) { root.action(NavAction.guide); return accept; }
+            if (event.text == "q" || event.text == "Q") { root.action(NavAction.prev-tab); return accept; }
+            if (event.text == "e" || event.text == "E") { root.action(NavAction.next-tab); return accept; }
+            if (event.text == "f" || event.text == "F") { root.action(NavAction.secondary); return accept; }
             reject
         }
 
@@ -84,9 +90,12 @@ export component OverlayWindow inherits Window {
             title: root.title-text;
             items: root.items;
             focused: root.focused;
+            apps: root.apps;
+            app-focused: root.app-focused;
             style: root.controller-style;
             s: root.s;
             card-clicked(i) => { root.quick-clicked(i); }
+            app-clicked(i) => { root.app-clicked(i); }
         }
 
         kb := KeyboardPanel {

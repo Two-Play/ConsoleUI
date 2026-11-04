@@ -91,6 +91,7 @@ Schätzung in Story Points (SP): 1, 2, 3, 5, 8, 13. Ein Sprint dauert 2 Wochen.
 | 4.4 | Running apps are shown in the shell ("Running now"); you can switch back to them or quit them | 5 |
 | 4.5 | Processes run in their own systemd scope (`systemd-run --user --scope`), so crashes and quitting work cleanly | 3 |
 | 4.6 | Quick menu as an overlay above running games (volume, brightness, back to the shell, quit the game). Brightness only on screens with a backlight, the card is hidden otherwise | 8 (spike 0.3) |
+| 4.7 | **Done.** Window switcher in the quick menu: a row with every running app, most recently used first, one card per window with a live preview (our compositor; artwork in gamescope and on the desktop). ✕ switches, □ quits, ✕ right after opening goes to the previous app | 5 |
 
 ## Epic 5 – System & settings
 
@@ -886,3 +887,27 @@ Branch `agent/compositor-blur`, on top of the UI feedback round (6.10).
 - **gamescope-Fokussteuerung** ist kaum dokumentiert und auf XWayland bzw. Steam ausgelegt → deshalb Spike 0.3 früh einplanen. Falls das nicht klappt, wird Epic 7 wichtiger.
 - **Overlay über Spielen** (4.6) ist mit gamescope der schwierigste Teil.
 - **Testen der Session** am besten zuerst verschachtelt (`gamescope -- consoleui` im KDE-Desktop) und erst danach auf einem TTY bzw. als Login-Session.
+
+### Window switcher and Steam launches (done: 4.7, part of 7.4)
+
+- **Steam's windows during a launch:** the fallback for windows without a known owner took the Steam
+  client's splash, "Launching" and shader dialogs for the game, so the launch screen closed over them.
+  `ownership::is_steam_client` now keeps them away from a Steam game, in the compositor and in the
+  gamescope session; they stay behind the launch screen until the game's own window shows content.
+- **Way out:** a hidden Steam dialog may be waiting for an answer (cloud conflict, EULA, launch options,
+  shader processing with its Skip button). After 15 s without a game window the launch screen offers
+  "Show Steam" (`ShellMessage::ShowSteam`). `STEAM_START_TIMEOUT` went from 90 s to 10 minutes, because
+  Steam may process shaders for that long; quitting a game that has not started ends the wait.
+- **Window switcher (4.7):** `consoleui_core::switcher` and the row in `quickmenu.slint`. Up from a card or
+  L1/R1 from every card reach it (up/down change the volume on some cards). The compositor answers
+  `ListWindows` after the next frame with previews (`preview.rs`, about 480 px wide, in
+  `$XDG_RUNTIME_DIR/consoleui-previews-<socket>`), `RaiseWindow` puts a window above the others of its app.
+- **Tested:** nested compositor with a stand-in `steam` script and an isolated `HOME`: on the old code the
+  stand-in's splash is shown after 12 s, now it stays hidden, "Show Steam" appears and the game comes to the
+  front by itself. Switcher with two apps of two windows each: previews, switching and raising work.
+- **Not tested:** the real Steam client (window names and process tree of its dialogs), a real game, the
+  gamescope path, DRM in the VM. Steam's dialogs cannot be used with a gamepad yet, "Show Steam" needs a
+  keyboard or mouse, or Steam Input's desktop layout.
+- **Open observation:** in 2 of 3 runs with a second glxgears window it was first drawn only 300 px wide
+  (llvmpipe, nested); not seen in 2 runs of the old code, in another run of the same test it was complete.
+  The sizing code did not change. Check with a real game.

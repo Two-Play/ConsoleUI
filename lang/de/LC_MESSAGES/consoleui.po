@@ -1066,3 +1066,21 @@ msgstr "Sicherheit"
 
 msgid "New versions show up here."
 msgstr "Neue Versionen erscheinen hier."
+
+msgid "Show Steam"
+msgstr "Steam anzeigen"
+
+msgid "Steam is preparing the game …"
+msgstr "Steam bereitet das Spiel vor …"
+
+msgid "Looking for Steam's windows …"
+msgstr "Steam-Fenster werden gesucht …"
+
+msgid "In front"
+msgstr "Im Vordergrund"
+
+msgid "Switch"
+msgstr "Wechseln"
+
+msgid "Running apps"
+msgstr "Laufende Apps"

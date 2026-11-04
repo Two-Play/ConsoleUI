@@ -34,6 +34,7 @@ pub mod settings;
 pub mod sound;
 pub mod status;
 pub mod steam;
+pub mod switcher;
 pub mod system;
 pub mod updates;
 pub mod vdf;

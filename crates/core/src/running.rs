@@ -8,8 +8,12 @@ use crate::launch::ProcessHandle;
 /// Minimum duration of the launch screen, even if the process exits immediately
 /// (e.g. because the app was already running and only opens a window).
 pub const MIN_HOLD: Duration = Duration::from_millis(2600);
-/// How long we wait for Steam to report a game as running before giving up.
-pub const STEAM_START_TIMEOUT: Duration = Duration::from_secs(90);
+/// How long we wait for Steam to report a game as running before giving up. Generous, because
+/// Steam processes Vulkan shaders, installs Proton or updates the game before it starts it.
+pub const STEAM_START_TIMEOUT: Duration = Duration::from_secs(600);
+/// After this time without a game window the launch screen offers to show Steam: the windows of
+/// the Steam client stay hidden, but one of them may be waiting for an answer.
+pub const STEAM_HELP_AFTER: Duration = Duration::from_secs(15);
 
 /// Gap without a game process that does not count as exit yet (e.g. launcher exited, game starting).
 pub const STEAM_EXIT_GRACE: Duration = Duration::from_secs(2);
@@ -80,6 +84,18 @@ impl RunningApp {
     pub fn is_steam(&self) -> bool {
         matches!(self.liveness, Liveness::Steam { .. })
     }
+
+    /// How long ago the app was launched.
+    pub fn age(&self, now: Instant) -> Duration {
+        now.saturating_duration_since(self.started)
+    }
+
+    /// The user quit a Steam game: stop waiting for it to start, it ends with its processes.
+    pub fn give_up(&mut self) {
+        if let Liveness::Steam { seen, .. } = &mut self.liveness {
+            *seen = true;
+        }
+    }
 }
 
 #[cfg(test)]
@@ -96,6 +112,17 @@ mod tests {
         let mut app = RunningApp::process(ProcessHandle::finished(), t0);
         assert_eq!(app.phase(t0 + Duration::from_secs(1), &games(&[])), Phase::Starting);
         assert_eq!(app.phase(t0 + MIN_HOLD, &games(&[])), Phase::Finished);
+    }
+
+    #[test]
+    fn a_steam_game_that_was_given_up_ends_without_waiting_for_the_timeout() {
+        let t0 = Instant::now();
+        let mut app = RunningApp::steam(730, t0);
+        let t = |s| t0 + Duration::from_secs(s);
+        assert_eq!(app.phase(t(20), &games(&[])), Phase::Starting);
+        app.give_up();
+        assert_eq!(app.phase(t(21), &games(&[])), Phase::Running);
+        assert_eq!(app.phase(t(21) + STEAM_EXIT_GRACE, &games(&[])), Phase::Finished);
     }
 
     #[test]

@@ -145,11 +145,19 @@ fn main() -> Result<(), Box<dyn Error>> {
         let clicks = clicks.clone();
         move |i| clicks(Click::DialogButton(i.max(0) as usize))
     });
+    ui.on_app_clicked({
+        let clicks = clicks.clone();
+        move |i| clicks(Click::SwitcherCard(i.max(0) as usize))
+    });
     ui.on_quick_clicked({
         let clicks = clicks.clone();
         move |i| clicks(Click::QuickCard(i.max(0) as usize))
     });
     if let Some(overlay) = overlay.and_then(|o| o.upgrade()) {
+        overlay.on_app_clicked({
+            let clicks = clicks.clone();
+            move |i| clicks(Click::SwitcherCard(i.max(0) as usize))
+        });
         overlay.on_quick_clicked({
             let clicks = clicks.clone();
             move |i| clicks(Click::QuickCard(i.max(0) as usize))

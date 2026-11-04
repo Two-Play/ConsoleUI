@@ -39,6 +39,12 @@ pub const FEATURE_BLUR: &str = "backdrop_blur";
 /// Feature: the compositor offers `zwp_text_input_v3` to apps and `zwp_input_method_v2` to the shell
 /// (and only to it), so the shell learns when a text field has the focus and can type into it.
 pub const FEATURE_TEXT_INPUT: &str = "text_input";
+/// The compositor hides the Steam client's windows during a launch and understands
+/// [`ShellMessage::ShowSteam`].
+pub const FEATURE_SHOW_STEAM: &str = "show_steam";
+/// The compositor answers [`ShellMessage::ListWindows`] and understands
+/// [`ShellMessage::RaiseWindow`] (the window switcher in the quick menu).
+pub const FEATURE_WINDOW_LIST: &str = "window_list";
 
 /// A rectangle in output pixels (logical, origin top left).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -93,6 +99,18 @@ pub enum Target {
     },
 }
 
+/// A window of a launched app (see [`CompositorMessage::WindowList`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WindowInfo {
+    pub id: u64,
+    pub app_id: u32,
+    #[serde(default)]
+    pub title: String,
+    /// PNG with the window's current content, if it could be rendered
+    #[serde(default)]
+    pub preview: Option<String>,
+}
+
 /// Shell → compositor
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type")]
@@ -140,6 +158,14 @@ pub enum ShellMessage {
         #[serde(default)]
         fade_ms: u32,
     },
+    /// The Steam client's windows stay hidden while a game starts. This gives them to the app, so
+    /// the user can answer a dialog that keeps the game from starting (with [`FEATURE_SHOW_STEAM`]).
+    ShowSteam { app_id: u32 },
+    /// Asks for a [`CompositorMessage::WindowList`], with previews (with [`FEATURE_WINDOW_LIST`]).
+    ListWindows,
+    /// Puts the window above the other windows of its app; [`ShellMessage::Focus`] brings the app
+    /// to the front.
+    RaiseWindow { id: u64 },
     /// Save the composed output as PNG (development, basis for Story 7.12).
     Screenshot { path: String },
     /// Save the composed output into the Pictures folder like the Print key does (Story 7.12);
@@ -185,6 +211,8 @@ pub enum CompositorMessage {
     FocusChanged { target: Target },
     /// The Guide key combination was pressed (Story 7.5); the focused window does not get it.
     Guide,
+    /// Answer to [`ShellMessage::ListWindows`]: the windows of all launched apps, the top one first.
+    WindowList { windows: Vec<WindowInfo> },
     /// The sizes the output can switch to, largest first (sent on connect and when they change;
     /// never when nested, a window has no modes).
     Modes { sizes: Vec<(u32, u32)> },
@@ -303,6 +331,9 @@ mod tests {
                 transition: Some(Transition { tile: Some(Rect { x: 1, y: 2, width: 3, height: 4 }), card_ms: 450 }),
             },
             ShellMessage::Overlay { open: true },
+            ShellMessage::ShowSteam { app_id: 730 },
+            ShellMessage::ListWindows,
+            ShellMessage::RaiseWindow { id: 12 },
             ShellMessage::WindowRole { title: "ConsoleUI Overlay".into(), role: WindowRole::Overlay },
             ShellMessage::WindowRole { title: "ConsoleUI notification".into(), role: WindowRole::Notification },
             ShellMessage::Screenshot { path: "/tmp/a.png".into() },
@@ -329,6 +360,9 @@ mod tests {
             CompositorMessage::Guide,
             CompositorMessage::Output { width: 1920, height: 1080 },
             CompositorMessage::WindowMapped { app_id: 5, title: "glxgears".into() },
+            CompositorMessage::WindowList {
+                windows: vec![WindowInfo { id: 3, app_id: 5, title: "a".into(), preview: Some("/run/a.png".into()) }],
+            },
             CompositorMessage::AppGone { app_id: 5 },
             CompositorMessage::FocusChanged { target: Target::Shell },
             CompositorMessage::ScreenshotDone { path: "/tmp/a.png".into(), error: None },

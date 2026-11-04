@@ -1,6 +1,8 @@
 //! Content and state of the quick menu (PS/Guide button).
 
 use consoleui_core::i18n::{tr, trf};
+use consoleui_core::protocol::WindowInfo;
+use consoleui_core::switcher::{Switcher, SwitcherEntry, SwitcherOutcome};
 use consoleui_core::system::{self, Backlight, PowerAction, Volume};
 
 use crate::QuickItem;
@@ -9,6 +11,11 @@ use crate::QuickItem;
 pub enum QuickAction {
     /// Back to the running app (gamescope app ID)
     Resume(u32),
+    /// From the window switcher: to this app, and this window of it if it is known
+    Switch {
+        app_id: u32,
+        window: Option<u64>,
+    },
     Home,
     /// Quit the running app (entry ID)
     Quit(String),
@@ -47,6 +54,10 @@ pub struct QuickMenu {
     app_in_front: bool,
     /// Name of the active profile
     profile: String,
+    /// The row of running apps above the cards
+    switcher: Switcher,
+    /// The focus is in that row
+    in_switcher: bool,
 }
 
 /// What should happen after an input in the quick menu
@@ -59,7 +70,7 @@ pub enum QuickOutcome {
 }
 
 impl QuickMenu {
-    pub fn new(foreground: Option<ForegroundApp>, profile: String) -> Self {
+    pub fn new(foreground: Option<ForegroundApp>, profile: String, switcher: Switcher) -> Self {
         let mut actions = Vec::new();
         let app_title = foreground.as_ref().map(|app| app.title.clone());
         let app_in_front = foreground.as_ref().is_some_and(|app| app.in_front);
@@ -78,17 +89,63 @@ impl QuickMenu {
             QuickAction::Power(PowerAction::PowerOff),
             QuickAction::Logout,
         ]);
-        Self { actions, focused: 0, volume: system::volume(), brightness, app_title, app_in_front, profile }
+        let in_switcher = switcher.is_useful();
+        Self {
+            actions,
+            focused: 0,
+            volume: system::volume(),
+            brightness,
+            app_title,
+            app_in_front,
+            profile,
+            switcher,
+            in_switcher,
+        }
     }
 
-    pub fn focused(&self) -> usize {
-        self.focused
+    /// The focused card, -1 while the focus is in the switcher row.
+    pub fn focused(&self) -> i32 {
+        if self.in_switcher { -1 } else { self.focused as i32 }
+    }
+
+    /// The focused card of the switcher row, -1 while the focus is elsewhere.
+    pub fn switcher_focused(&self) -> i32 {
+        if self.in_switcher { self.switcher.focused() as i32 } else { -1 }
+    }
+
+    /// Changes with every move of the focus, in whichever row (for the sounds).
+    pub fn focus_key(&self) -> usize {
+        if self.in_switcher { self.actions.len() + self.switcher.focused() } else { self.focused }
     }
 
     /// Focuses card `index` (a click), if there is one.
     pub fn focus(&mut self, index: usize) {
         if index < self.actions.len() {
             self.focused = index;
+            self.in_switcher = false;
+        }
+    }
+
+    /// Focuses card `index` of the switcher row (a click), if there is one.
+    pub fn focus_switcher(&mut self, index: usize) {
+        if index < self.switcher.entries().len() {
+            self.switcher.focus(index);
+            self.in_switcher = true;
+        }
+    }
+
+    /// The cards of the switcher row; empty when there is nothing to switch to.
+    pub fn switcher_entries(&self) -> &[SwitcherEntry] {
+        if self.switcher.is_useful() { self.switcher.entries() } else { &[] }
+    }
+
+    /// The compositor reported the windows. A second window of a single app may only now make the
+    /// row useful, then the focus starts there like with several apps.
+    pub fn set_windows(&mut self, windows: &[WindowInfo]) {
+        let useful = self.switcher.is_useful();
+        self.switcher.set_windows(windows);
+        if self.switcher.is_useful() != useful {
+            self.in_switcher = !useful;
         }
     }
 
@@ -101,6 +158,23 @@ impl QuickMenu {
 
     pub fn apply(&mut self, action: consoleui_core::Action) -> QuickOutcome {
         use consoleui_core::Action;
+        // L1/R1 reach the row from every card; up/down change the volume on some of them.
+        if matches!(action, Action::PrevTab | Action::NextTab) && self.switcher.is_useful() {
+            self.in_switcher = !self.in_switcher;
+            return QuickOutcome::Stay;
+        }
+        if self.in_switcher {
+            return match self.switcher.apply(action) {
+                SwitcherOutcome::Stay => QuickOutcome::Stay,
+                SwitcherOutcome::Leave => {
+                    self.in_switcher = false;
+                    QuickOutcome::Stay
+                }
+                SwitcherOutcome::Close => QuickOutcome::Close,
+                SwitcherOutcome::Switch { app_id, window } => QuickOutcome::Run(QuickAction::Switch { app_id, window }),
+                SwitcherOutcome::Quit(entry_id) => QuickOutcome::Confirm(QuickAction::Quit(entry_id)),
+            };
+        }
         let current = self.actions[self.focused].clone();
         match action {
             Action::Left | Action::Right => {
@@ -124,6 +198,10 @@ impl QuickMenu {
                 self.brightness = system::backlight();
                 QuickOutcome::Stay
             }
+            Action::Up if self.switcher.is_useful() => {
+                self.in_switcher = true;
+                QuickOutcome::Stay
+            }
             Action::Confirm if current == QuickAction::Brightness => QuickOutcome::Stay,
             Action::Confirm if current == QuickAction::Volume => {
                 report(system::toggle_mute());
@@ -143,6 +221,8 @@ impl QuickMenu {
             .map(|action| {
                 let (symbol, label, value) = match action {
                     QuickAction::Resume(_) => ("▶", tr("Resume"), self.app_title.clone().unwrap_or_default()),
+                    // Only a card of the switcher row, never of this one
+                    QuickAction::Switch { .. } => ("▶", tr("Resume"), String::new()),
                     QuickAction::Home => ("⌂", tr("Home"), tr("Go to Home").to_string()),
                     QuickAction::Quit(_) => ("■", tr("Quit"), self.app_title.clone().unwrap_or_default()),
                     QuickAction::SwitchProfile => ("☺", tr("Switch profile"), self.profile.clone()),

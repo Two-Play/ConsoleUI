@@ -13,6 +13,9 @@
 //! - Shell windows with a role are stacked above everything else: overlay windows, then
 //!   notification windows on top. Notification windows never get keyboard or pointer input,
 //!   overlay windows only while the overlay is open.
+//! - The Steam client's windows (splash, "Launching" and shader dialogs, library) are never taken
+//!   for the Steam game being launched: they stay behind the shell's launch screen, until the
+//!   user asks for them with `ShowSteam`.
 //! - Popups (X11 override-redirect windows) are drawn directly above their owner's windows and
 //!   never get the keyboard focus.
 
@@ -46,12 +49,24 @@ struct Window {
     /// Has shown content (a buffer was committed)
     visible: bool,
     title: String,
+    /// Belongs to the Steam client itself
+    steam_client: bool,
 }
 
 #[derive(Debug, Clone)]
 struct App {
     app_id: u32,
     owner: Option<Owner>,
+    /// The user asked for the Steam client's windows (`ShowSteam`)
+    shows_steam: bool,
+}
+
+/// A window the user can switch to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SwitchableWindow {
+    pub id: WindowId,
+    pub app_id: u32,
+    pub title: String,
 }
 
 #[derive(Debug, Default)]
@@ -84,13 +99,47 @@ impl Policy {
     ) -> Vec<CompositorMessage> {
         self.change(|policy| {
             policy.apps.retain(|app| app.app_id != app_id);
-            policy.apps.push(App { app_id, owner });
+            policy.apps.push(App { app_id, owner, shows_steam: false });
             policy.reclassify(lookup);
         })
     }
 
     pub fn exited(&mut self, app_id: u32) -> Vec<CompositorMessage> {
         self.change(|policy| policy.apps.retain(|app| app.app_id != app_id))
+    }
+
+    /// The Steam client's windows go to this app, those of now and later ones.
+    pub fn show_steam(&mut self, app_id: u32) -> Vec<CompositorMessage> {
+        self.change(|policy| {
+            if let Some(app) = policy.apps.iter_mut().find(|app| app.app_id == app_id) {
+                app.shows_steam = true;
+            }
+            policy.assign_fallback();
+        })
+    }
+
+    /// Puts the window above the other windows of its app (and gives it the keyboard if the app is
+    /// in front): the order of `windows` decides both.
+    pub fn raise(&mut self, id: WindowId) -> Vec<CompositorMessage> {
+        self.change(|policy| {
+            if let Some(pos) = policy.windows.iter().position(|w| w.id == id) {
+                let window = policy.windows.remove(pos);
+                policy.windows.push(window);
+            }
+        })
+    }
+
+    /// The normal windows of launched apps that show content, the top one first.
+    pub fn switchable(&self) -> Vec<SwitchableWindow> {
+        self.windows
+            .iter()
+            .rev()
+            .filter(|w| !w.popup && w.visible && w.layer == Layer::Normal)
+            .filter_map(|w| match w.role {
+                Role::App(app_id) => Some(SwitchableWindow { id: w.id, app_id, title: w.title.clone() }),
+                _ => None,
+            })
+            .collect()
     }
 
     pub fn set_target(&mut self, target: Target) -> Vec<CompositorMessage> {
@@ -120,6 +169,7 @@ impl Policy {
     ) -> Vec<CompositorMessage> {
         self.change(|policy| {
             let role = policy.classify(pid, lookup);
+            let steam_client = pid.is_some_and(|pid| ownership::is_steam_client(pid, lookup));
             policy.windows.retain(|w| w.id != id);
             policy.windows.push(Window {
                 id,
@@ -129,6 +179,7 @@ impl Policy {
                 popup,
                 visible: false,
                 title: title.to_owned(),
+                steam_client,
             });
             policy.assign_fallback();
         })
@@ -376,21 +427,28 @@ impl Policy {
         self.assign_fallback();
     }
 
-    /// Normal windows nobody claims (no PID, or a process outside every launched app, e.g. Steam
-    /// on its first start) belong to the newest launched app that has no window yet, like in the
-    /// gamescope session.
+    /// Normal windows nobody claims (no PID, or a process outside every launched app) belong to the
+    /// newest launched app that has no window yet, like in the gamescope session. Not so for a Steam
+    /// game and the windows of the Steam client: the game would count as shown and the launch
+    /// screen would close over Steam's splash.
     fn assign_fallback(&mut self) {
-        loop {
-            let Some(app_id) = self
-                .apps
-                .iter()
-                .rev()
-                .find(|a| !self.windows.iter().any(|w| w.role == Role::App(a.app_id)))
-                .map(|a| a.app_id)
-            else {
-                return;
-            };
-            let Some(window) = self.windows.iter_mut().find(|w| w.role == Role::Unknown && !w.popup) else { return };
+        if let Some(app_id) = self.apps.iter().rev().find(|a| a.shows_steam).map(|a| a.app_id) {
+            let unclaimed = |w: &&mut Window| w.role == Role::Unknown && w.steam_client && !w.popup;
+            for window in self.windows.iter_mut().filter(unclaimed) {
+                tracing::info!("showing the Steam window {} ({:?}) for app {app_id}", window.id, window.title);
+                window.role = Role::App(app_id);
+            }
+        }
+        let waiting: Vec<(u32, bool)> = self
+            .apps
+            .iter()
+            .rev()
+            .filter(|a| !self.windows.iter().any(|w| w.role == Role::App(a.app_id)))
+            .map(|a| (a.app_id, matches!(a.owner, Some(Owner::Steam(_)))))
+            .collect();
+        for (app_id, steam_game) in waiting {
+            let unclaimed = |w: &&mut Window| w.role == Role::Unknown && !w.popup && !(steam_game && w.steam_client);
+            let Some(window) = self.windows.iter_mut().find(unclaimed) else { continue };
             tracing::info!(
                 "window {} ({:?}) has no known owner, assigning it to app {app_id}",
                 window.id,
@@ -417,12 +475,16 @@ mod tests {
     const SHELL: u32 = 100;
 
     fn processes() -> impl Fn(u32) -> Option<ProcessInfo> {
-        // 100: shell, 200: launched app (child of the shell), 201: its child, 300: unrelated
+        // 100: shell, 200: launched app (child of the shell), 201: its child, 300: unrelated,
+        // 400: the Steam client, 401: its web helper, 402: game started by Steam
         let table: HashMap<u32, ProcessInfo> = [
             (100, ProcessInfo { parent: None, ..Default::default() }),
             (200, ProcessInfo { parent: Some(100), ..Default::default() }),
             (201, ProcessInfo { parent: Some(200), ..Default::default() }),
             (300, ProcessInfo { parent: None, ..Default::default() }),
+            (400, ProcessInfo { name: "steam".into(), parent: None, ..Default::default() }),
+            (401, ProcessInfo { name: "steamwebhelper".into(), parent: Some(400), ..Default::default() }),
+            (402, ProcessInfo { parent: Some(400), steam_app_id: Some(730), ..Default::default() }),
         ]
         .into_iter()
         .collect();
@@ -511,6 +573,109 @@ mod tests {
         // Unknown windows are at the bottom.
         policy.show(3);
         assert_eq!(policy.stacking()[0], 3);
+    }
+
+    #[test]
+    fn steam_client_windows_are_not_taken_for_the_game() {
+        let lookup = processes();
+        let mut policy = policy();
+        // The library window is already there, the splash opens during the launch.
+        policy.add_window(2, Some(401), false, "Steam", &lookup);
+        policy.show(2);
+        assert_eq!(policy.launched(730, Some(Owner::Steam(730)), &lookup), vec![]);
+        policy.set_target(Target::App { app_id: 730 });
+        policy.add_window(3, Some(400), false, "Launching...", &lookup);
+        assert_eq!(policy.show(3), vec![]);
+        assert_eq!(policy.role(2), Some(Role::Unknown));
+        assert_eq!(policy.role(3), Some(Role::Unknown));
+        assert_eq!(policy.front(), Target::Shell);
+        assert_eq!(*policy.stacking().last().unwrap(), 1);
+
+        // The game's own window ends the launch screen.
+        policy.add_window(4, Some(402), false, "Game", &lookup);
+        assert_eq!(
+            policy.show(4),
+            vec![
+                CompositorMessage::WindowMapped { app_id: 730, title: "Game".into() },
+                CompositorMessage::FocusChanged { target: Target::App { app_id: 730 } },
+            ]
+        );
+    }
+
+    #[test]
+    fn a_steam_game_still_gets_windows_without_a_pid() {
+        let lookup = processes();
+        let mut policy = policy();
+        policy.launched(730, Some(Owner::Steam(730)), &lookup);
+        policy.add_window(2, None, false, "Game", &lookup);
+        assert_eq!(policy.role(2), Some(Role::App(730)));
+    }
+
+    #[test]
+    fn other_apps_keep_the_fallback_for_steam_windows() {
+        let lookup = processes();
+        let mut policy = policy();
+        // Launching the "Steam" entry while Steam already runs: its window is the app's window.
+        policy.launched(7, Some(Owner::Scope("x.scope".into())), &lookup);
+        policy.add_window(2, Some(400), false, "Steam", &lookup);
+        assert_eq!(policy.role(2), Some(Role::App(7)));
+    }
+
+    #[test]
+    fn show_steam_brings_the_client_windows_to_the_game() {
+        let lookup = processes();
+        let mut policy = policy();
+        policy.launched(730, Some(Owner::Steam(730)), &lookup);
+        policy.set_target(Target::App { app_id: 730 });
+        policy.add_window(2, Some(400), false, "Cloud conflict", &lookup);
+        policy.show(2);
+        assert_eq!(policy.front(), Target::Shell);
+        assert_eq!(
+            policy.show_steam(730),
+            vec![
+                CompositorMessage::WindowMapped { app_id: 730, title: "Cloud conflict".into() },
+                CompositorMessage::FocusChanged { target: Target::App { app_id: 730 } },
+            ]
+        );
+        assert_eq!(policy.keyboard_focus(), Some(2));
+        // Later dialogs follow, and the game's window comes out on top.
+        policy.add_window(3, Some(400), false, "Second", &lookup);
+        assert_eq!(policy.role(3), Some(Role::App(730)));
+        policy.add_window(4, Some(402), false, "Game", &lookup);
+        policy.show(4);
+        assert_eq!(policy.keyboard_focus(), Some(4));
+    }
+
+    #[test]
+    fn raised_window_gets_the_top_and_the_keyboard() {
+        let lookup = processes();
+        let mut policy = policy();
+        policy.launched(7, Some(Owner::Process(200)), &lookup);
+        policy.set_target(Target::App { app_id: 7 });
+        for (id, title) in [(2, "first"), (3, "second")] {
+            policy.add_window(id, Some(200), false, title, &lookup);
+            policy.show(id);
+        }
+        let ids = |policy: &Policy| policy.switchable().iter().map(|w| w.id).collect::<Vec<_>>();
+        assert_eq!(ids(&policy), [3, 2]);
+        assert_eq!(policy.keyboard_focus(), Some(3));
+        policy.raise(2);
+        assert_eq!(ids(&policy), [2, 3]);
+        assert_eq!(policy.keyboard_focus(), Some(2));
+        assert_eq!(*policy.stacking().last().unwrap(), 2);
+    }
+
+    #[test]
+    fn switchable_leaves_out_the_shell_popups_and_unshown_windows() {
+        let lookup = processes();
+        let mut policy = policy();
+        policy.launched(7, Some(Owner::Process(200)), &lookup);
+        policy.add_window(2, Some(200), false, "shown", &lookup);
+        policy.show(2);
+        policy.add_window(3, Some(200), false, "no content yet", &lookup);
+        policy.add_window(4, Some(200), true, "popup", &lookup);
+        policy.show(4);
+        assert_eq!(policy.switchable(), [SwitchableWindow { id: 2, app_id: 7, title: "shown".into() }]);
     }
 
     #[test]

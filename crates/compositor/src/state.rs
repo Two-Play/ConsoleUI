@@ -166,6 +166,10 @@ pub struct State {
     pub control: Control,
     pub shell: Option<ShellProcess>,
     pub screenshots: Vec<ScreenshotRequest>,
+    /// Shells waiting for a `WindowList`; answered after the next frame like screenshots
+    pub window_lists: Vec<ControlClient>,
+    /// Where the previews of the window switcher go
+    pub previews_dir: PathBuf,
 
     pub xwayland_shell_state: XWaylandShellState,
     pub primary_selection_state: PrimarySelectionState,
@@ -246,6 +250,7 @@ impl State {
         };
 
         let runtime_dir = std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
+        let previews_dir = runtime_dir.join(format!("consoleui-previews-{socket_name}"));
         let mut control = Control::listen(&runtime_dir.join(format!("consoleui-{socket_name}.sock")), &handle)?;
         control.set_greeting(keymap_message(&keymap));
 
@@ -299,6 +304,8 @@ impl State {
             control,
             shell: None,
             screenshots: Vec::new(),
+            window_lists: Vec::new(),
+            previews_dir,
             xwayland_shell_state: XWaylandShellState::new::<Self>(&dh_for_x),
             primary_selection_state: PrimarySelectionState::new::<Self>(&dh_for_x),
             xwm: None,
@@ -554,6 +561,8 @@ impl State {
                     protocol::FEATURE_OVERLAYS.to_owned(),
                     protocol::FEATURE_GUIDE_KEY.to_owned(),
                     protocol::FEATURE_TRANSITIONS.to_owned(),
+                    protocol::FEATURE_SHOW_STEAM.to_owned(),
+                    protocol::FEATURE_WINDOW_LIST.to_owned(),
                 ];
                 if self.blur {
                     features.push(protocol::FEATURE_BLUR.to_owned());
@@ -584,6 +593,15 @@ impl State {
                 self.backdrops.get_mut(role).set(regions, fade, self.clock.now().into());
                 Vec::new()
             }
+            ShellMessage::ShowSteam { app_id } => {
+                info!("showing Steam's windows for app {app_id}");
+                self.policy.show_steam(app_id)
+            }
+            ShellMessage::ListWindows => {
+                self.window_lists.push(client);
+                Vec::new()
+            }
+            ShellMessage::RaiseWindow { id } => self.policy.raise(id),
             ShellMessage::Screenshot { path } => {
                 self.screenshots.push(ScreenshotRequest { path: path.into(), reply: Some(client), notify: false });
                 Vec::new()

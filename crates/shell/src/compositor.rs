@@ -135,6 +135,16 @@ impl Compositor {
         self.features.iter().any(|f| f == protocol::FEATURE_TRANSITIONS)
     }
 
+    /// The compositor keeps the Steam client's windows hidden until the shell asks for them.
+    pub fn show_steam(&self) -> bool {
+        self.features.iter().any(|f| f == protocol::FEATURE_SHOW_STEAM)
+    }
+
+    /// The compositor lists the apps' windows with previews for the window switcher.
+    pub fn window_list(&self) -> bool {
+        self.features.iter().any(|f| f == protocol::FEATURE_WINDOW_LIST)
+    }
+
     pub fn modes(&self) -> &[(u32, u32)] {
         &self.modes
     }

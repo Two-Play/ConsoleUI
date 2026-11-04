@@ -128,10 +128,15 @@ impl Gamescope {
         Some((geometry.width.into(), geometry.height.into()))
     }
 
-    /// Gives new, visible windows an app ID. `resolve` maps a window's PID to an app; windows
-    /// without a match get `fallback` (the app being launched) or are retried on the next pass.
+    /// Gives new, visible windows an app ID. `resolve` maps a window's PID to an app; for windows
+    /// without a match `fallback` gets the PID and may name an app (the one being launched),
+    /// otherwise they are retried on the next pass, and gamescope does not show them until then.
     /// Returns the app IDs of the newly tagged windows.
-    pub fn tag_windows(&mut self, resolve: impl Fn(u32) -> Option<u32>, fallback: Option<u32>) -> Vec<u32> {
+    pub fn tag_windows(
+        &mut self,
+        resolve: impl Fn(u32) -> Option<u32>,
+        fallback: impl Fn(Option<u32>) -> Option<u32>,
+    ) -> Vec<u32> {
         match self.try_tag_windows(resolve, fallback) {
             Ok(tagged) => tagged,
             Err(err) => {
@@ -144,7 +149,7 @@ impl Gamescope {
     fn try_tag_windows(
         &mut self,
         resolve: impl Fn(u32) -> Option<u32>,
-        fallback: Option<u32>,
+        fallback: impl Fn(Option<u32>) -> Option<u32>,
     ) -> Result<Vec<u32>, Box<dyn Error>> {
         let children = self.conn.query_tree(self.root)?.reply()?.children;
         self.known.retain(|window, _| children.contains(window));
@@ -162,7 +167,7 @@ impl Gamescope {
                 continue;
             }
             let pid = self.cardinal(window, self.atoms.wm_pid)?;
-            if let Some(app_id) = pid.and_then(&resolve).or(fallback) {
+            if let Some(app_id) = pid.and_then(&resolve).or_else(|| fallback(pid)) {
                 self.change_cardinal(window, self.atoms.steam_game, &[app_id])?;
                 self.known.insert(window, app_id);
                 tagged.push(app_id);

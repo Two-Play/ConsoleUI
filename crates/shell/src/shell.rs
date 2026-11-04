@@ -22,15 +22,16 @@ use consoleui_core::placement::KeyboardPlacement;
 use consoleui_core::profile_picker::{PickerOutcome, ProfilePicker};
 use consoleui_core::profiles::{self, ProfilePaths, Profiles};
 use consoleui_core::protocol::{BlurRegion, CompositorMessage, Rect, ShellMessage, Transition, WindowRole};
-use consoleui_core::running::{MIN_HOLD, Phase, RunningApp};
+use consoleui_core::running::{MIN_HOLD, Phase, RunningApp, STEAM_HELP_AFTER};
 use consoleui_core::settings::{BackgroundChoice, GlyphChoice, Setting, Settings};
 use consoleui_core::sound::Sound;
+use consoleui_core::switcher::{Switcher, SwitcherApp, most_recent_first};
 use consoleui_core::system::{self, PowerAction};
 use consoleui_core::{
     Action, AppEntry, AppKind, Carousel, Collection, Grid, History, HomeArea, HomeOutcome, Launch, LibraryFilter,
     LibrarySort, apply_history, compare_recent, home_view, library_view, localize_entries, search, steam,
 };
-use slint::{ComponentHandle, Image, Model, ModelRc, VecModel};
+use slint::{ComponentHandle, Image, Model, ModelRc, SharedPixelBuffer, VecModel};
 
 use crate::backdrop::{Backdrop, Look};
 mod typing;
@@ -49,7 +50,7 @@ use crate::profiles::{self as profile_view, ProfileStart};
 use crate::quick::{ForegroundApp, QuickAction, QuickMenu, QuickOutcome};
 use crate::{
     AppTile, AppWindow, ControllerStyle, Glass, GlyphButton, Hint, KeyCap, NotificationWindow, OverlayWindow,
-    QuickItem, Screen, SettingRow, Theme, tiles,
+    QuickItem, Screen, SettingRow, SwitcherItem, Theme, tiles,
 };
 use consoleui_app::audio::Audio;
 
@@ -67,6 +68,7 @@ pub enum Click {
     SettingsRow(usize),
     DialogButton(usize),
     QuickCard(usize),
+    SwitcherCard(usize),
 }
 
 /// What a button of the modal dialog does.
@@ -105,6 +107,10 @@ struct Running {
     owner: Option<Owner>,
     /// Already assigned a window in gamescope (or shown by our compositor)?
     has_window: bool,
+    /// The user asked for the Steam client's windows during the launch
+    show_steam: bool,
+    /// When it was last in front, in the order of `Shell::front_changes` (0: never)
+    last_front: u64,
 }
 
 /// Only in the gamescope session: window control, the overlay window for the quick menu and the
@@ -198,6 +204,12 @@ pub struct Shell {
     next_app_id: u32,
     /// App currently in front in gamescope (`None`: the shell)
     foreground: Option<u32>,
+    /// Counts the apps coming to the front, for the order of the window switcher
+    front_changes: u64,
+    /// The launch screen offers to show Steam for this app
+    steam_help: Option<u32>,
+    /// Decoded previews of the open window switcher, by file
+    previews: HashMap<String, Image>,
     /// Time of a failed launch; the launch screen shows the error briefly.
     failed_launch: Option<Instant>,
     /// Our compositor zooms the app in over the launch screen (Story 7.7); it closes afterwards.
@@ -247,6 +259,7 @@ pub struct Shell {
     /// The quick menu's cards; kept across actions so that only changed cards are updated and the
     /// focus animates instead of the whole row being rebuilt
     quick_items: Rc<VecModel<QuickItem>>,
+    quick_apps: Rc<VecModel<SwitcherItem>>,
     /// The quick menu was last shown open (`show_quick`)
     quick_shown: bool,
     /// "Controller battery low" warning already shown
@@ -379,6 +392,9 @@ impl Shell {
             running: Vec::new(),
             next_app_id: FIRST_DESKTOP_APP_ID,
             foreground: None,
+            front_changes: 0,
+            steam_help: None,
+            previews: HashMap::new(),
             failed_launch: None,
             close_launch_at: None,
             front_due: None,
@@ -404,6 +420,7 @@ impl Shell {
             toast_generation: Rc::default(),
             quick_generation: Rc::default(),
             quick_items: Rc::default(),
+            quick_apps: Rc::default(),
             quick_shown: false,
             battery_warned: false,
             network: Network::default(),
@@ -768,7 +785,7 @@ impl Shell {
                 self.result_row.focused(),
                 self.keyboard.focused(),
                 self.settings_row,
-                self.quick.as_ref().map_or(0, QuickMenu::focused),
+                self.quick.as_ref().map_or(0, QuickMenu::focus_key),
                 usize::from(self.search_area == SearchArea::Results),
                 self.context.as_ref().map_or(0, ContextMenu::focused),
             ],
@@ -824,6 +841,13 @@ impl Shell {
         if let Click::QuickCard(index) = click {
             if let Some(quick) = &mut self.quick {
                 quick.focus(index);
+                self.apply(ui, Action::Confirm);
+            }
+            return;
+        }
+        if let Click::SwitcherCard(index) = click {
+            if let Some(quick) = &mut self.quick {
+                quick.focus_switcher(index);
                 self.apply(ui, Action::Confirm);
             }
             return;
@@ -911,6 +935,8 @@ impl Shell {
             // "Back" brings up the overview; the app keeps running and stays tracked.
             if action == Action::Back {
                 self.show_shell(ui);
+            } else if action == Action::Confirm {
+                self.show_steam(ui);
             }
             return;
         }
@@ -1906,8 +1932,56 @@ impl Shell {
             })
         });
         let profile = self.profiles.get(&self.profile).map(|p| p.name.clone()).unwrap_or_default();
-        self.quick = Some(QuickMenu::new(foreground, profile));
+        let switcher = self.switcher(in_front);
+        self.quick = Some(QuickMenu::new(foreground, profile, switcher));
+        self.previews.clear();
+        // The previews follow with the next frame of the compositor; until then the row shows covers.
+        if let Some(compositor) = self.compositor.as_mut().filter(|compositor| compositor.window_list()) {
+            compositor.send(&ShellMessage::ListWindows);
+        }
         self.show_quick(ui, true);
+    }
+
+    /// The running apps for the quick menu's row, most recently used first.
+    fn switcher(&self, app_in_front: bool) -> Switcher {
+        let running = most_recent_first(self.running.iter().collect(), |running| running.last_front);
+        let apps = running.into_iter().filter_map(|running| {
+            let entry = self.entries.iter().find(|e| e.id == running.entry_id)?;
+            Some(SwitcherApp {
+                app_id: running.app_id,
+                entry_id: entry.id.clone(),
+                title: entry.title.clone(),
+                in_front: app_in_front && self.foreground == Some(running.app_id),
+            })
+        });
+        Switcher::new(apps.collect())
+    }
+
+    /// The cards of the switcher row: the window's preview, or the entry's artwork without one.
+    fn switcher_items(&mut self) -> Vec<SwitcherItem> {
+        let Some(quick) = &self.quick else { return Vec::new() };
+        let entries = quick.switcher_entries().to_vec();
+        for path in entries.iter().filter_map(|entry| entry.preview.as_ref()) {
+            if !self.previews.contains_key(path)
+                && let Some(preview) = load_preview(path)
+            {
+                self.previews.insert(path.clone(), preview);
+            }
+        }
+        let artwork = |id: &str| {
+            let index = self.entries.iter().position(|e| e.id == id);
+            index.map(|index| self.launch_image(index)).unwrap_or_default()
+        };
+        let items = entries.iter().map(|entry| {
+            let preview = entry.preview.as_ref().and_then(|path| self.previews.get(path));
+            SwitcherItem {
+                title: entry.title.as_str().into(),
+                detail: entry.detail.as_str().into(),
+                image: preview.cloned().unwrap_or_else(|| artwork(&entry.entry_id)),
+                in_front: entry.in_front,
+            }
+        });
+        items.collect()
     }
 
     fn apply_quick(&mut self, ui: &AppWindow, action: Action) {
@@ -1954,6 +2028,7 @@ impl Shell {
             {
                 match action {
                     QuickAction::Resume(app_id) => self.bring_to_front(ui, app_id, None),
+                    QuickAction::Switch { app_id, window } => self.switch_to(ui, app_id, window),
                     QuickAction::Home => {
                         // Home first, so the app shrinks into its tile there.
                         self.screen = Screen::Home;
@@ -1982,6 +2057,21 @@ impl Shell {
         }
     }
 
+    /// From the window switcher: the app comes to the front, with the chosen window on top. The app
+    /// may have ended while the menu was open.
+    fn switch_to(&mut self, ui: &AppWindow, app_id: u32, window: Option<u64>) {
+        let Some(running) = self.running.iter().find(|r| r.app_id == app_id) else { return };
+        // Coming from another app's launch screen: nobody else closes it for an app with a window.
+        if running.has_window && (self.gamescope.is_some() || self.compositor.is_some()) {
+            self.close_launch_at = None;
+            ui.set_launching(false);
+        }
+        if let (Some(id), Some(compositor)) = (window, &mut self.compositor) {
+            compositor.send(&ShellMessage::RaiseWindow { id });
+        }
+        self.bring_to_front(ui, app_id, None);
+    }
+
     fn close_quick(&mut self, ui: &AppWindow) {
         self.show_quick(ui, false);
         self.quick = None;
@@ -1990,6 +2080,7 @@ impl Shell {
     /// Shows the quick menu in the overlay window (gamescope, our compositor) or as a layer in the
     /// main window.
     fn show_quick(&mut self, ui: &AppWindow, open: bool) {
+        let new_apps = self.switcher_items();
         let Some(quick) = &self.quick else { return };
         let new_items = quick.items();
         if new_items.len() == self.quick_items.row_count() {
@@ -2002,7 +2093,18 @@ impl Shell {
             self.quick_items.set_vec(new_items);
         }
         let items = ModelRc::from(self.quick_items.clone());
-        let (title, focused) = (quick.title(), quick.focused() as i32);
+        if new_apps.len() == self.quick_apps.row_count() {
+            for (row, app) in new_apps.into_iter().enumerate() {
+                if self.quick_apps.row_data(row).as_ref() != Some(&app) {
+                    self.quick_apps.set_row_data(row, app);
+                }
+            }
+        } else {
+            self.quick_apps.set_vec(new_apps);
+        }
+        let apps = ModelRc::from(self.quick_apps.clone());
+        let app_focused = quick.switcher_focused();
+        let (title, focused) = (quick.title(), quick.focused());
         if open && !self.quick_shown {
             self.quick_generation.set(self.quick_generation.get() + 1);
         }
@@ -2015,6 +2117,8 @@ impl Shell {
         if let Some(overlay) = self.compositor_ui().map(|c| c.overlay.clone_strong()) {
             // Story 7.6: the compositor stacks this window above the app; the game stays visible.
             overlay.set_items(items);
+            overlay.set_apps(apps);
+            overlay.set_app_focused(app_focused);
             overlay.set_title_text(title.into());
             overlay.set_focused(focused);
             overlay.set_controller_style(ui.get_controller_style());
@@ -2040,6 +2144,8 @@ impl Shell {
             // Without overlay windows (desktop, older compositor): a layer in the main window; an
             // older compositor brings the whole shell window above the app.
             ui.set_quick_items(items);
+            ui.set_quick_apps(apps);
+            ui.set_quick_app_focused(app_focused);
             ui.set_quick_title(title.into());
             ui.set_quick_focused(focused);
             ui.set_quick_open(open);
@@ -2047,6 +2153,8 @@ impl Shell {
         };
         let overlay = &gamescope.overlay;
         overlay.set_items(items);
+        overlay.set_apps(apps);
+        overlay.set_app_focused(app_focused);
         overlay.set_title_text(title.into());
         overlay.set_focused(focused);
         overlay.set_controller_style(ui.get_controller_style());
@@ -2112,7 +2220,16 @@ impl Shell {
                         steam_app_id,
                     });
                 }
-                self.running.push(Running { entry_id: id.clone(), app_id, app, stop, owner, has_window: false });
+                self.running.push(Running {
+                    entry_id: id.clone(),
+                    app_id,
+                    app,
+                    stop,
+                    owner,
+                    has_window: false,
+                    show_steam: false,
+                    last_front: 0,
+                });
                 ui.set_launch_status(tr("Starting …").into());
                 ui.set_launch_busy(true);
                 ui.set_launching(true);
@@ -2185,6 +2302,10 @@ impl Shell {
 
     fn set_foreground(&mut self, app_id: Option<u32>, transition: Option<Transition>) {
         self.foreground = app_id;
+        if let Some(running) = self.running.iter_mut().find(|r| Some(r.app_id) == app_id) {
+            self.front_changes += 1;
+            running.last_front = self.front_changes;
+        }
         self.front_due = None;
         if let Some(compositor) = &mut self.compositor {
             compositor.focus(app_id, transition);
@@ -2243,6 +2364,7 @@ impl Shell {
                 Phase::Finished => finished.push((running.entry_id.clone(), running.app_id)),
             }
         }
+        self.update_steam_help(ui, now);
         if finished.is_empty() {
             return;
         }
@@ -2260,6 +2382,39 @@ impl Shell {
             }
         }
         self.refresh(ui);
+    }
+
+    /// A Steam game has no window for a while: the Steam client's windows are hidden, so the launch
+    /// screen says what is going on and offers them (one may be waiting for an answer).
+    fn update_steam_help(&mut self, ui: &AppWindow, now: Instant) {
+        let can_show = self.gamescope.is_some() || self.compositor.as_ref().is_some_and(Compositor::show_steam);
+        let waiting = |r: &&Running| {
+            Some(r.app_id) == self.foreground
+                && r.app.is_steam()
+                && !r.has_window
+                && !r.show_steam
+                && r.app.age(now) >= STEAM_HELP_AFTER
+        };
+        let help = self.running.iter().find(waiting).map(|r| r.app_id).filter(|_| can_show && ui.get_launching());
+        if help.is_some() {
+            ui.set_launch_status(tr("Steam is preparing the game …").into());
+            ui.set_launch_busy(true);
+        }
+        self.steam_help = help;
+        ui.set_launch_help(help.is_some());
+    }
+
+    /// Hands the Steam client's windows to the game being launched, in front of the launch screen.
+    fn show_steam(&mut self, ui: &AppWindow) {
+        let Some(app_id) = self.steam_help.take() else { return };
+        if let Some(running) = self.running.iter_mut().find(|r| r.app_id == app_id) {
+            running.show_steam = true;
+        }
+        if let Some(compositor) = &mut self.compositor {
+            compositor.send(&ShellMessage::ShowSteam { app_id });
+        }
+        ui.set_launch_help(false);
+        ui.set_launch_status(tr("Looking for Steam's windows …").into());
     }
 
     /// Messages from our compositor: which launched apps show a window (the launch screen closes
@@ -2292,8 +2447,10 @@ impl Shell {
         let mut rows_changed = false;
         let mut modes_changed = false;
         let mut screenshot = None;
+        let mut window_list = None;
         for message in compositor.poll() {
             match message {
+                CompositorMessage::WindowList { windows } => window_list = Some(windows),
                 CompositorMessage::WindowMapped { app_id, .. } => {
                     if let Some(running) = self.running.iter_mut().find(|r| r.app_id == app_id) {
                         running.has_window = true;
@@ -2326,6 +2483,10 @@ impl Shell {
                 CompositorMessage::ScreenshotDone { path, error } => screenshot = Some((path, error)),
                 _ => {}
             }
+        }
+        if let (Some(windows), Some(quick)) = (window_list, &mut self.quick) {
+            quick.set_windows(&windows);
+            self.show_quick(ui, true);
         }
         if modes_changed {
             self.send_resolution();
@@ -2372,9 +2533,19 @@ impl Shell {
         let own_pid = std::process::id();
         let apps: Vec<(u32, Owner)> =
             self.running.iter().filter_map(|r| r.owner.clone().map(|owner| (r.app_id, owner))).collect();
-        // Windows without a recognizable owner (e.g. Steam itself on first start) belong to the
-        // most recently launched app that has no window yet.
-        let fallback = self.running.iter().rev().find(|r| !r.has_window).map(|r| r.app_id);
+        // Windows without a recognizable owner belong to the most recently launched app that has no
+        // window yet. The Steam client's windows stay untagged, and so hidden, during the launch of
+        // a Steam game, until the user asks for them.
+        let waiting = self.running.iter().rev().find(|r| !r.has_window).map(|r| (r.app_id, r.app.is_steam()));
+        let shown_for = self.running.iter().rev().find(|r| r.show_steam).map(|r| r.app_id);
+        let fallback = |pid: Option<u32>| {
+            let steam_client = pid.is_some_and(|pid| ownership::is_steam_client(pid, ownership::read_process));
+            match waiting {
+                _ if steam_client && shown_for.is_some() => shown_for,
+                Some((_, true)) if steam_client => None,
+                waiting => waiting.map(|(app_id, _)| app_id),
+            }
+        };
         let tagged = gamescope.control.tag_windows(
             |pid| {
                 if pid == own_pid {
@@ -2520,7 +2691,8 @@ impl Shell {
 
     /// Asks the app to quit. The badge disappears as soon as `watch_running` sees it exit.
     fn quit_running(&mut self, entry_id: &str) {
-        let Some(running) = self.running.iter().find(|r| r.entry_id == entry_id) else { return };
+        let Some(running) = self.running.iter_mut().find(|r| r.entry_id == entry_id) else { return };
+        running.app.give_up();
         let result = match &running.stop {
             Stop::Process(handle) => handle.stop(),
             Stop::Steam(app_id) => steam::stop_game(*app_id).map(|_| ()),
@@ -2685,4 +2857,18 @@ fn hide_notification_window(notification: &NotificationWindow) {
             let _ = notification.hide();
         }
     });
+}
+
+/// A preview from the compositor. Decoded by hand: Slint caches images it loads by file name, and
+/// the compositor reuses the names.
+fn load_preview(path: &str) -> Option<Image> {
+    let preview = match image::open(path) {
+        Ok(preview) => preview.into_rgba8(),
+        Err(err) => {
+            eprintln!("Cannot read the preview {path}: {err}");
+            return None;
+        }
+    };
+    let (width, height) = preview.dimensions();
+    Some(Image::from_rgba8(SharedPixelBuffer::clone_from_slice(preview.as_raw(), width, height)))
 }
