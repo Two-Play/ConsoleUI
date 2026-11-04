@@ -1,5 +1,4 @@
 import { Theme } from "@consoleui/theme.slint";
-import { OnScreenKeyboard, TextField } from "@consoleui/keyboard.slint";
 import { ProfileView, GlyphButton, ControllerStyle } from "types.slint";
 import { ContextMenu } from "@consoleui/contextmenu.slint";
 import { HintBar } from "@consoleui/glyph.slint";
@@ -148,12 +147,9 @@ export component ProfilePage inherits Rectangle {
         s: root.s;
     }
 
-    // Name entry: the on-screen keyboard as on the Wi-Fi password page
+    // Name entry: heading and note; the text field and the keyboard are the floating `KeyboardPanel` of the main window
     name := Rectangle {
-        property <length> unit: 62px * root.s;
-        property <length> key-gap: 8px * root.s;
-        property <length> keyboard-y: 330px * root.s;
-        property <length> left: (root.width - 11 * self.unit) / 2;
+        property <length> left: 110px * root.s;
 
         width: 100%;
         height: 100%;
@@ -171,27 +167,9 @@ export component ProfilePage inherits Rectangle {
             font-weight: 800;
         }
 
-        TextField {
-            x: name.left;
-            y: 210px * root.s;
-            width: 11 * name.unit - name.key-gap;
-            text: root.view.name-text;
-            placeholder: @tr("Enter a name");
-            s: root.s;
-        }
-
-        OnScreenKeyboard {
-            x: name.left;
-            y: name.keyboard-y;
-            keys: root.view.keys;
-            focused: root.view.key-focused;
-            unit: name.unit;
-            s: root.s;
-        }
-
         Text {
             x: name.left;
-            y: name.keyboard-y + 5 * name.unit + 20px * root.s;
+            y: 190px * root.s;
             text: @tr("⇧ switches to upper case and symbols. “Done” saves the name.");
             color: Theme.text-dim;
             font-size: 18px * root.s;

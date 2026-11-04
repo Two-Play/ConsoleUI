@@ -1,13 +1,10 @@
-import { AppTile, KeyCap } from "types.slint";
+import { AppTile } from "types.slint";
 import { Theme } from "@consoleui/theme.slint";
 import { TileRow } from "@consoleui/tilerow.slint";
-import { OnScreenKeyboard, TextField } from "@consoleui/keyboard.slint";
 
-// Search: input field, on-screen keyboard and below it the results as a row of tiles.
+// Search: the results as a row of tiles; the text field and the keyboard are the floating `KeyboardPanel` of the main window.
 export component SearchPage inherits Rectangle {
     in property <string> query;
-    in property <[KeyCap]> keys;
-    in property <int> key-focused;
     in property <bool> keyboard-active: true;
     in property <[AppTile]> results;
     in property <int> result-focused;
@@ -19,9 +16,6 @@ export component SearchPage inherits Rectangle {
     out property <length> focus-size: row.focus-size;
 
     property <length> margin: 110px * root.s;
-    property <length> unit: 62px * root.s;
-    property <length> key-gap: 8px * root.s;
-    property <length> keyboard-y: 230px * root.s;
 
     Text {
         x: root.margin;
@@ -33,29 +27,9 @@ export component SearchPage inherits Rectangle {
         font-weight: 800;
     }
 
-    TextField {
-        x: root.margin + 260px * root.s;
-        y: 116px * root.s;
-        width: 11 * root.unit - root.key-gap;
-        text: root.query;
-        placeholder: @tr("Search games and apps");
-        active: root.keyboard-active;
-        s: root.s;
-    }
-
-    OnScreenKeyboard {
-        x: root.margin + 260px * root.s;
-        y: root.keyboard-y;
-        keys: root.keys;
-        focused: root.key-focused;
-        active: root.keyboard-active;
-        unit: root.unit;
-        s: root.s;
-    }
-
     Text {
         x: root.margin;
-        y: root.keyboard-y + 5 * root.unit + 28px * root.s;
+        y: 200px * root.s;
         text: root.query == "" ? @tr("Recently used") : root.results.length == 0 ? @tr("No results") : @tr("{n} result" | "{n} results" % root.results.length);
         color: Theme.text-dim;
         font-size: 20px * root.s;
@@ -63,7 +37,7 @@ export component SearchPage inherits Rectangle {
 
     row := TileRow {
         x: root.margin;
-        y: root.keyboard-y + 5 * root.unit + 72px * root.s;
+        y: 250px * root.s;
         tiles: root.results;
         focused: root.result-focused;
         active: !root.keyboard-active;

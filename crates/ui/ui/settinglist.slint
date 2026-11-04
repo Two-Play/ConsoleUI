@@ -1,6 +1,7 @@
 import { SettingRow } from "types.slint";
 import { Theme } from "theme.slint";
 import { FocusFill } from "focusfill.slint";
+import { FocusRing } from "focusring.slint";
 
 // A list of settings rows; ◀ ▶ changes the value of the focused row. The list scrolls when it does
 // not fit its height, so the focused row stays visible.
@@ -26,13 +27,6 @@ export component SettingList inherits Rectangle {
         easing: ease-out-quart;
     }
 
-    // Direction of the last focus move; the fill flows that way
-    property <int> travel: 1;
-    property <int> previous;
-    changed focused => {
-        root.travel = root.focused >= root.previous ? 1 : -1;
-        root.previous = root.focused;
-    }
 
     clip: true;
 
@@ -48,17 +42,14 @@ export component SettingList inherits Rectangle {
         fill := FocusFill {
             width: 100%;
             height: 100%;
+            border-radius: card.border-radius;
             focused: card.is-focused;
-            travel: root.travel;
-            wave: 9px * root.s;
         }
 
-        // Outline; it takes the accent color while the entry is focused
-        Rectangle {
+        FocusRing {
             border-radius: card.border-radius;
-            border-width: 2px * root.s;
-            border-color: card.is-focused ? Theme.accent : #ffffff33;
-            animate border-color { duration: Theme.focus-duration; }
+            focused: card.is-focused;
+            s: root.s;
         }
 
         TouchArea {
@@ -73,14 +64,14 @@ export component SettingList inherits Rectangle {
 
             Text {
                 text: row.label;
-                color: Theme.text.mix(Theme.base, clamp(fill.level, 0, 1));
+                color: Theme.text;
                 font-size: 24px * root.s;
                 font-weight: 700;
             }
 
             Text {
                 text: row.description;
-                color: Theme.text-dim.mix(Theme.base.with-alpha(0.7), clamp(fill.level, 0, 1));
+                color: Theme.text-dim;
                 font-size: 17px * root.s;
             }
         }
@@ -90,7 +81,7 @@ export component SettingList inherits Rectangle {
             height: 100%;
             text: row.opens-page ? row.value + "   ›"
                 : (card.is-focused ? "◀  " : "") + row.value + (card.is-focused ? "  ▶" : "");
-            color: Theme.text.mix(Theme.base, clamp(fill.level, 0, 1));
+            color: Theme.text;
             font-size: 22px * root.s;
             font-weight: 600;
             vertical-alignment: center;

@@ -1,7 +1,7 @@
 import { NavAction } from "types.slint";
 
 // Keyboard input of an app: the same keys as in the shell (arrows or WASD, Enter/Space confirm,
-// Esc/Backspace back, Tab/M menu, Q/E tabs, / search, F secondary, F1 guide, Ctrl+Q quit),
+// Esc/Backspace back, Tab/M menu, Q/E tabs, / search, F secondary, F1 guide, F2 move the keyboard, Ctrl+Q quit),
 // reported as `NavAction`s. Put the page content inside; the scope fills it.
 //
 // `typing` switches the letter shortcuts off while text is entered: printable keys then go to
@@ -38,6 +38,7 @@ export component InputScope inherits FocusScope {
         if (event.text == Key.Escape) { root.action(NavAction.back); return accept; }
         if (event.text == Key.Tab) { root.action(NavAction.menu); return accept; }
         if (event.text == Key.F1) { root.action(NavAction.guide); return accept; }
+        if (event.text == Key.F2) { root.action(NavAction.reposition); return accept; }
         if (root.typing) {
             if (event.text == Key.Backspace) { root.erase(); return accept; }
             root.typed(event.text);

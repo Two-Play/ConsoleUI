@@ -807,6 +807,9 @@ dependencies = [
  "serde",
  "slint",
  "slint-build",
+ "wayland-client",
+ "wayland-protocols",
+ "wayland-protocols-misc",
  "x11rb 0.14.0",
  "zbus",
 ]

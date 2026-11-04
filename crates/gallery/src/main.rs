@@ -8,6 +8,7 @@ use std::time::Duration;
 
 use consoleui_app::audio::Audio;
 use consoleui_app::{Action, Event, Hints, Input, Session, Sound};
+use consoleui_core::placement::KeyboardPlacement;
 use slint::{Color, Image, Model, ModelRc, SharedPixelBuffer, Timer, TimerMode, VecModel};
 
 slint::include_modules!();
@@ -98,11 +99,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
     ui.set_hints(hint_model(hints(ui.get_dialog_open())));
 
+    let placement = Rc::new(RefCell::new(KeyboardPlacement::default()));
+    ui.set_keyboard_open(args.iter().any(|a| a == "--keyboard"));
     let audio = Rc::new(RefCell::new(Audio::start()));
     let handle = {
         let ui = ui.as_weak();
         let model = model.clone();
         let audio = audio.clone();
+        let placement = placement.clone();
         move |action: Action| {
             let Some(ui) = ui.upgrade() else { return };
             let play = |sound| {
@@ -111,6 +115,21 @@ fn main() -> Result<(), Box<dyn Error>> {
                 }
             };
             let last = model.row_count() as i32 - 1;
+            if ui.get_keyboard_open() {
+                // R3 grabs the keyboard, the directions then move it; Back closes it
+                let mut placement = placement.borrow_mut();
+                if !placement.apply(action) && action == Action::Back {
+                    ui.set_keyboard_open(false);
+                }
+                ui.set_keyboard_moving(placement.moving());
+                ui.set_keyboard_x(placement.placement().x);
+                ui.set_keyboard_y(placement.placement().y);
+                return;
+            }
+            if action == Action::Search {
+                ui.set_keyboard_open(true);
+                return;
+            }
             if ui.get_dialog_open() {
                 match action {
                     Action::Confirm | Action::Back => {
@@ -190,10 +209,17 @@ fn main() -> Result<(), Box<dyn Error>> {
         },
     ));
 
-    // `--down` / `--up` move the list focus right away, for snapshots in the middle of the animation
+    // `--down` / `--up` move the list focus after a moment, for snapshots in the middle of the animation
+    let moves = Timer::default();
+    if args.iter().any(|a| a == "--move") {
+        for action in [Action::Reposition, Action::Left, Action::Left, Action::Left, Action::Up, Action::Up] {
+            (handle.borrow_mut())(action);
+        }
+    }
     for (flag, action) in [("--down", Action::Down), ("--up", Action::Up)] {
         if args.iter().any(|a| a == flag) {
-            (handle.borrow_mut())(action);
+            let handle = handle.clone();
+            moves.start(TimerMode::SingleShot, Duration::from_millis(600), move || (handle.borrow_mut())(action));
         }
     }
     let delay = args.iter().position(|a| a == "--delay").and_then(|i| args.get(i + 1)).and_then(|v| v.parse().ok());

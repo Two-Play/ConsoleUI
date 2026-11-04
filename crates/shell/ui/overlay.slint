@@ -1,6 +1,7 @@
-import { ControllerStyle, NavAction, QuickItem } from "types.slint";
+import { ControllerStyle, Hint, KeyCap, NavAction, QuickItem } from "types.slint";
 import { QuickMenu } from "quickmenu.slint";
 import { Dialog } from "@consoleui/dialog.slint";
+import { KeyboardPanel } from "@consoleui/keyboardpanel.slint";
 
 // Own transparent window for the quick menu. In gamescope, Rust sets STEAM_OVERLAY before it is
 // shown; gamescope then puts it over the running game. In our own compositor the title (announced
@@ -26,6 +27,25 @@ export component OverlayWindow inherits Window {
     in property <string> dialog-text;
     in property <[string]> dialog-buttons;
     in property <int> dialog-focused;
+
+    // The floating keyboard over an app with a focused text field (it types into the field; the app
+    // keeps the keyboard focus, so `open` stays false)
+    in property <bool> keyboard-open;
+    in property <string> keyboard-title;
+    in property <string> keyboard-text;
+    in property <string> keyboard-placeholder;
+    in property <[KeyCap]> keys;
+    in property <int> key-focused;
+    in property <float> keyboard-x: 0.5;
+    in property <float> keyboard-y: 0.94;
+    in property <bool> keyboard-moving;
+    in property <[Hint]> keyboard-hints;
+    // Where the keyboard panel is in this window, for the compositor's backdrop blur
+    out property <length> keyboard-panel-x: kb.panel-x;
+    out property <length> keyboard-panel-y: kb.panel-y;
+    out property <length> keyboard-panel-width: kb.panel-width;
+    out property <length> keyboard-panel-height: kb.panel-height;
+    out property <length> keyboard-panel-radius: kb.panel-radius;
 
     callback action(NavAction);
     // The pointer picked a quick menu card or a dialog button
@@ -67,6 +87,23 @@ export component OverlayWindow inherits Window {
             style: root.controller-style;
             s: root.s;
             card-clicked(i) => { root.quick-clicked(i); }
+        }
+
+        kb := KeyboardPanel {
+            width: 100%;
+            height: 100%;
+            open: root.keyboard-open;
+            title: root.keyboard-title;
+            text: root.keyboard-text;
+            placeholder: root.keyboard-placeholder;
+            keys: root.keys;
+            focused: root.key-focused;
+            place-x: root.keyboard-x;
+            place-y: root.keyboard-y;
+            moving: root.keyboard-moving;
+            hints: root.keyboard-hints;
+            style: root.controller-style;
+            s: root.s;
         }
 
         dialog := Dialog {

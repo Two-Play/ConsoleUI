@@ -18,6 +18,7 @@ mod downloads;
 mod gamescope;
 mod grab;
 mod hero;
+mod inputmethod;
 mod loader;
 mod music;
 mod network;
@@ -531,6 +532,7 @@ fn to_action(nav: NavAction) -> Action {
         NavAction::PrevTab => Action::PrevTab,
         NavAction::NextTab => Action::NextTab,
         NavAction::Guide => Action::Guide,
+        NavAction::Reposition => Action::Reposition,
     }
 }
 

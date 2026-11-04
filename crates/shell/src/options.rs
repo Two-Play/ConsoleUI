@@ -159,6 +159,7 @@ fn parse_script(list: &str) -> Result<Vec<ScriptStep>, String> {
                 "prev-tab" => Action::PrevTab,
                 "next-tab" => Action::NextTab,
                 "guide" => Action::Guide,
+                "reposition" | "r3" => Action::Reposition,
                 other => return Err(format!("Unknown action: {other}")),
             };
             Ok(ScriptStep::Action(action))

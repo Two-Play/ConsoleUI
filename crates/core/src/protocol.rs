@@ -36,6 +36,10 @@ pub const FEATURE_TRANSITIONS: &str = "transitions";
 /// [`ShellMessage::Blur`].
 pub const FEATURE_BLUR: &str = "backdrop_blur";
 
+/// Feature: the compositor offers `zwp_text_input_v3` to apps and `zwp_input_method_v2` to the shell
+/// (and only to it), so the shell learns when a text field has the focus and can type into it.
+pub const FEATURE_TEXT_INPUT: &str = "text_input";
+
 /// A rectangle in output pixels (logical, origin top left).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Rect {

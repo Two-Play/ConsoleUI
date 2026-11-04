@@ -218,6 +218,17 @@ Cargo workspace (edition 2024, `default-members` = the shell):
   `@consoleui/<file>.slint`; an app's `build.rs` uses `consoleui_ui::compiler_config()` (feature `build`)
   and lists the crate as dependency and build dependency. New reusable components go here, not into the
   shell; the shell's `types.slint` re-exports the shared types so Rust keeps seeing them from `main.slint`.
+  `ui/focusfill.slint` (`FocusFill`) and `ui/focusring.slint` (`FocusRing`) are the focus look of list entries,
+  cards and buttons: an accent outline (`FocusRing`) with two highlights that travel around it, opposite each other
+  with long fading tails, slowly and calmly (driven by `animation-tick()` only while focused and only with
+  animations on), plus a light accent wash (`FocusFill`) that trails the focus: the outline moves at once, the wash
+  fades in with ease-out-quint after a short delay (`level`); the text keeps its color. For a strong fill give
+  `FocusFill` an opaque `fill` and let the text blend with `Theme.base.mix(Theme.text, level)` (`mix` weights the
+  receiver). A liquid "sloshing" fill was tried and dropped.
+  `ui/keyboardpanel.slint` (`KeyboardPanel`) is the floating on-screen keyboard (glass panel with text field, keys
+  and hints) that the shell shows for the search, the Wi-Fi password and profile names; it sits at `place-x/-y`
+  (`consoleui_core::placement::KeyboardPlacement`), R3 (`Action::Reposition`, F2 on the keyboard) grabs it and the
+  directions move it.
   `ui/input.slint` (`InputScope`) is the keyboard side of an app (arrows/WASD, Enter, Esc, ... as `NavAction`).
   The `.po` catalog scan includes `ui/ui`. `crates/gallery` (`consoleui-gallery`, `--snapshot out.png`
   `--dialog`) shows the components and is the smallest example app.
@@ -230,6 +241,16 @@ Cargo workspace (edition 2024, `default-members` = the shell):
   generates `nav_action`, `hint_model`, `controller_style` and `apply_theme` against the app's own
   generated Slint types. Under our compositor an app needs no protocol: the shell registers the process,
   the compositor maps its windows and shows them fullscreen. Example: `crates/gallery`.
+- Typing into apps (feature `text_input` of the compositor's `Welcome`): the compositor offers `text-input-v3`
+  to apps and `input-method-v2` only to the shell's process (`State::shell_pid` from `Hello`); Smithay relays
+  between them and ties the text input focus to the keyboard focus. `crates/shell/src/inputmethod.rs` is the
+  shell's input method (own Wayland connection on a thread: activate/deactivate, surrounding text, content
+  purpose, `commit_string`, `delete_surrounding_text`); `src/shell/typing.rs` opens the floating keyboard in the
+  overlay window above the app when ✕ is pressed while a text field of the app in front is active, reads the
+  controllers exclusively (`wants_exclusive_input`) and types into the field; ○ closes it, R3 moves it. The app
+  keeps the keyboard focus (the `Overlay` message is not sent). X11/XWayland apps do not announce text fields (no
+  automatic keyboard there). Test: `--actions "wait:2000,confirm,wait:5000,confirm,wait:1200,confirm,right,confirm"`
+  with `--dummy-launch foot` in the VM (foot implements text-input-v3).
 - `crates/shell` (binary `consoleui`): Slint UI plus glue.
   - `src/compositor.rs`: counterpart of `gamescope.rs`, active when `CONSOLEUI_COMPOSITOR` is set (takes
     precedence over gamescope). Sends `Hello`/`Launched`/`Exited`/`Focus`/`Overlay`/`KeyboardLayout`;

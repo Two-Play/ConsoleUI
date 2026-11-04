@@ -951,3 +951,15 @@ msgstr "Download abgeschlossen"
 
 msgid "Download started"
 msgstr "Download gestartet"
+
+msgid "Move"
+msgstr "Verschieben"
+
+msgid "Drop"
+msgstr "Ablegen"
+
+msgid "Type into the app"
+msgstr "In die App tippen"
+
+msgid "Text field"
+msgstr "Textfeld"

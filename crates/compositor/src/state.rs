@@ -5,6 +5,7 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
 use consoleui_core::keymap::{self, Keymap};
@@ -38,6 +39,7 @@ use smithay::wayland::compositor::{
 };
 use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportNotifier, get_dmabuf};
 use smithay::wayland::drm_syncobj::{DrmSyncobjCachedState, DrmSyncobjHandler, DrmSyncobjState};
+use smithay::wayland::input_method::{InputMethodHandler, InputMethodManagerState, PopupSurface as InputPopupSurface};
 use smithay::wayland::output::{OutputHandler, OutputManagerState};
 use smithay::wayland::pointer_constraints::{
     PointerConstraintsHandler, PointerConstraintsState, with_pointer_constraint,
@@ -57,6 +59,7 @@ use smithay::wayland::shell::xdg::{
 use smithay::wayland::shm::{ShmHandler, ShmState};
 use smithay::wayland::single_pixel_buffer::SinglePixelBufferState;
 use smithay::wayland::socket::ListeningSocketSource;
+use smithay::wayland::text_input::{TextInputActivation, TextInputManagerState};
 use smithay::wayland::viewporter::ViewporterState;
 use smithay::wayland::xwayland_shell::XWaylandShellState;
 use smithay::xwayland::X11Wm;
@@ -99,10 +102,14 @@ pub struct Globals {
     relative_pointer_state: RelativePointerManagerState,
     viewporter_state: ViewporterState,
     single_pixel_buffer_state: SinglePixelBufferState,
+    text_input_state: TextInputManagerState,
+    input_method_state: InputMethodManagerState,
 }
 
 pub struct State {
     pub display_handle: DisplayHandle,
+    /// The process of the shell (from `Hello`): the only client that may be the input method
+    shell_pid: Arc<AtomicU32>,
     pub loop_handle: LoopHandle<'static, State>,
     pub loop_signal: LoopSignal,
     pub socket_name: String,
@@ -212,6 +219,17 @@ impl State {
         let relative_pointer_state = RelativePointerManagerState::new::<Self>(&dh);
         let viewporter_state = ViewporterState::new::<Self>(&dh);
         let single_pixel_buffer_state = SinglePixelBufferState::new::<Self>(&dh);
+        // Apps announce focused text fields (`text-input-v3`); the shell is the input method and
+        // the only client that may bind it (it would see everything typed otherwise).
+        let text_input_state = TextInputManagerState::new::<Self>(&dh);
+        let shell_pid = Arc::new(AtomicU32::new(0));
+        let input_method_state = InputMethodManagerState::new::<Self, _>(&dh, {
+            let (dh, shell_pid) = (dh.clone(), shell_pid.clone());
+            move |client| {
+                let pid = shell_pid.load(Ordering::Relaxed);
+                pid != 0 && client.get_credentials(&dh).is_ok_and(|credentials| credentials.pid as u32 == pid)
+            }
+        });
 
         let mut seat_state = SeatState::new();
         let mut seat = seat_state.new_wl_seat(&dh, backend.seat_name());
@@ -260,7 +278,10 @@ impl State {
                 relative_pointer_state,
                 viewporter_state,
                 single_pixel_buffer_state,
+                text_input_state,
+                input_method_state,
             },
+            shell_pid,
             seat,
             pointer,
             cursor_status: CursorImageStatus::default_named(),
@@ -527,7 +548,9 @@ impl State {
                 if version != protocol::VERSION {
                     warn!("shell speaks protocol {version}, compositor {}", protocol::VERSION);
                 }
+                self.shell_pid.store(pid, Ordering::Relaxed);
                 let mut features = vec![
+                    protocol::FEATURE_TEXT_INPUT.to_owned(),
                     protocol::FEATURE_OVERLAYS.to_owned(),
                     protocol::FEATURE_GUIDE_KEY.to_owned(),
                     protocol::FEATURE_TRANSITIONS.to_owned(),
@@ -985,6 +1008,21 @@ impl PointerConstraintsHandler for State {
         }
     }
 }
+
+impl InputMethodHandler for State {
+    // The shell draws its own keyboard; it never needs popup surfaces.
+    fn new_popup(&mut self, _surface: InputPopupSurface) {}
+
+    fn dismiss_popup(&mut self, _surface: InputPopupSurface) {}
+
+    fn popup_repositioned(&mut self, _surface: InputPopupSurface) {}
+
+    fn parent_geometry(&self, _parent: &WlSurface) -> Rectangle<i32, Logical> {
+        Rectangle::default()
+    }
+}
+
+impl TextInputActivation for State {}
 
 smithay::delegate_dispatch2!(State);
 

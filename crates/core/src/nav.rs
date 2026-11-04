@@ -17,6 +17,8 @@ pub enum Action {
     NextTab,
     /// PS/Guide button: quick menu, also while a game is running
     Guide,
+    /// R3 (right stick press): grab the on-screen keyboard to move it, and let go of it again
+    Reposition,
 }
 
 /// Focus within a horizontal tile row. Does not wrap around at the edge (like on the PS5).

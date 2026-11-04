@@ -14,6 +14,7 @@ pub enum HintButton {
     Guide,
     L1,
     R1,
+    R3,
     Quit,
 }
 
@@ -57,6 +58,7 @@ impl Hints {
         menu => Menu,
         l1 => L1,
         r1 => R1,
+        r3 => R3,
     }
 
     pub fn into_vec(self) -> Vec<Hint> {

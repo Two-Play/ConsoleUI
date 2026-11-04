@@ -18,6 +18,9 @@ libc = "0.2"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 serde = "1"
 zbus = "5.19"
+wayland-client = "0.31"
+wayland-protocols = { version = "0.32", features = ["client"] }
+wayland-protocols-misc = { version = "0.3", features = ["client"] }
 
 [build-dependencies]
 consoleui-ui = { workspace = true, features = ["build"] }

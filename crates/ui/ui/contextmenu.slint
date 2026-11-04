@@ -1,6 +1,8 @@
 import { Theme } from "theme.slint";
 import { ContextItem } from "types.slint";
 import { GlassPanel } from "glass.slint";
+import { FocusFill } from "focusfill.slint";
+import { FocusRing } from "focusring.slint";
 
 // Context menu for the focused entry: a small card in the centre like the quit confirmation,
 // with rows like the cards of the quick menu. The button hints are in the hint bar.
@@ -48,15 +50,27 @@ export component ContextMenu inherits Rectangle {
             width: parent.width - 2 * root.pad;
             height: root.row-height;
             border-radius: 16px * root.s;
-            background: self.is-focused ? Theme.accent : Theme.surface.with-alpha(0.06);
-            animate background { duration: Theme.focus-duration; easing: ease-out-quart; }
+            background: Theme.surface.with-alpha(0.06);
+
+            fill := FocusFill {
+                width: 100%;
+                height: 100%;
+                border-radius: parent.border-radius;
+                focused: parent.is-focused;
+            }
+
+            FocusRing {
+                border-radius: parent.border-radius;
+                focused: parent.is-focused;
+                s: root.s;
+            }
 
             Text {
                 x: 22px * root.s;
                 width: 32px * root.s;
                 height: 100%;
                 text: item.symbol;
-                color: parent.is-focused ? Theme.base : Theme.text;
+                color: Theme.text;
                 font-size: 24px * root.s;
                 horizontal-alignment: center;
                 vertical-alignment: center;
@@ -67,7 +81,7 @@ export component ContextMenu inherits Rectangle {
                 width: parent.width - 90px * root.s;
                 height: 100%;
                 text: item.label;
-                color: parent.is-focused ? Theme.base : Theme.text;
+                color: Theme.text;
                 font-size: 22px * root.s;
                 font-weight: 700;
                 vertical-alignment: center;

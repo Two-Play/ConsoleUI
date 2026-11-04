@@ -2,10 +2,10 @@
 // input to them).
 
 // Input-agnostic actions; Rust maps them to `consoleui_core::Action`.
-export enum NavAction { up, down, left, right, confirm, back, menu, search, secondary, prev-tab, next-tab, guide }
+export enum NavAction { up, down, left, right, confirm, back, menu, search, secondary, prev-tab, next-tab, guide, reposition }
 
 // Which button a hint shows; the glyph depends on the ControllerStyle.
-export enum GlyphButton { dpad, updown, confirm, back, north, west, menu, guide, l1, r1, quit }
+export enum GlyphButton { dpad, updown, confirm, back, north, west, menu, guide, l1, r1, r3, quit }
 
 export enum NetworkState { offline, ethernet, wifi }
 

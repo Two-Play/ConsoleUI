@@ -1,6 +1,5 @@
 import { KeyCap, NetRow, NetView } from "types.slint";
 import { Theme } from "@consoleui/theme.slint";
-import { OnScreenKeyboard, TextField } from "@consoleui/keyboard.slint";
 
 // Wi-Fi signal as four bars
 component SignalBars inherits Rectangle {
@@ -46,15 +45,12 @@ component LockIcon inherits Rectangle {
     }
 }
 
-// Password entry with the on-screen keyboard (same style as the search)
+// Password entry page: the heading; the text field and the keyboard are the floating `KeyboardPanel` of the main window
 component PasswordEntry inherits Rectangle {
     in property <NetView> view;
     in property <float> s;
 
     property <length> margin: 110px * root.s;
-    property <length> unit: 62px * root.s;
-    property <length> key-gap: 8px * root.s;
-    property <length> keyboard-y: 330px * root.s;
 
     Text {
         x: root.margin;
@@ -73,27 +69,9 @@ component PasswordEntry inherits Rectangle {
         font-size: 22px * root.s;
     }
 
-    TextField {
-        x: root.margin;
-        y: 230px * root.s;
-        width: 11 * root.unit - root.key-gap;
-        text: root.view.password-text;
-        placeholder: @tr("Enter the Wi-Fi password");
-        s: root.s;
-    }
-
-    OnScreenKeyboard {
-        x: root.margin;
-        y: root.keyboard-y;
-        keys: root.view.keys;
-        focused: root.view.key-focused;
-        unit: root.unit;
-        s: root.s;
-    }
-
     Text {
         x: root.margin;
-        y: root.keyboard-y + 5 * root.unit + 20px * root.s;
+        y: 232px * root.s;
         text: @tr("⇧ switches to upper case and symbols. “Done” connects.");
         color: Theme.text-dim;
         font-size: 18px * root.s;

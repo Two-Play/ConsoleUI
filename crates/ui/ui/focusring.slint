@@ -1,0 +1,73 @@
+import { Theme } from "theme.slint";
+
+// The outline of a list entry, card or button. While the entry has the focus the outline takes the
+// accent color and two bright highlights with long fading tails travel around it, opposite each other, slowly and calmly. Put it
+// last in the rounded entry and give it the entry's `border-radius`; it fills its parent.
+// The highlight stands still when animations are off (all durations 0).
+export component FocusRing inherits Rectangle {
+    in property <bool> focused;
+    in property <float> s: 1;
+    in property <color> highlight: Theme.accent;
+    // Dots per tail and the distance between them (a tail is about 200 px long)
+    property <int> dots: 44;
+    property <float> gap: 4.6 * root.s;
+    // Speed in pixels per second
+    property <float> speed: 120 * root.s;
+
+    property <float> bw: (root.focused ? 3 : 2) * root.s;
+    // The path of the highlight runs along the middle of the outline
+    property <float> w: root.width / 1px - root.bw;
+    property <float> h: root.height / 1px - root.bw;
+    property <float> r: max(1, min(root.border-radius / 1px - root.bw / 2, min(root.w, root.h) / 2));
+    property <float> a: root.w - 2 * root.r;
+    property <float> b: root.h - 2 * root.r;
+    property <float> q: root.r * 1.5708;
+    property <float> total: 2 * root.a + 2 * root.b + 4 * root.q;
+    // Distance travelled along the outline; stays at 0 unless the entry is focused with animations on
+    property <float> head: (root.focused && Theme.focus-duration > 0ms) ? animation-tick() / 1s * root.speed : 0;
+
+    // Point on the outline at distance `d` from the start (top edge, after the corner), measured
+    // clockwise
+    pure function at-x(d: float, a: float, b: float, q: float, r: float, w: float, total: float) -> float {
+        let t = Math.mod(Math.mod(d, total) + total, total);
+        return t < a ? r + t
+            : t < a + q ? (w - r) + r * Math.sin((t - a) / r * 1rad)
+            : t < a + q + b ? w
+            : t < a + 2 * q + b ? (w - r) + r * Math.cos((t - a - q - b) / r * 1rad)
+            : t < 2 * a + 2 * q + b ? (w - r) - (t - a - 2 * q - b)
+            : t < 2 * a + 3 * q + b ? r - r * Math.sin((t - 2 * a - 2 * q - b) / r * 1rad)
+            : t < 2 * a + 3 * q + 2 * b ? 0
+            : r - r * Math.cos((t - 2 * a - 3 * q - 2 * b) / r * 1rad);
+    }
+
+    pure function at-y(d: float, a: float, b: float, q: float, r: float, h: float, total: float) -> float {
+        let t = Math.mod(Math.mod(d, total) + total, total);
+        return t < a ? 0
+            : t < a + q ? r - r * Math.cos((t - a) / r * 1rad)
+            : t < a + q + b ? r + (t - a - q)
+            : t < a + 2 * q + b ? (h - r) + r * Math.sin((t - a - q - b) / r * 1rad)
+            : t < 2 * a + 2 * q + b ? h
+            : t < 2 * a + 3 * q + b ? (h - r) + r * Math.cos((t - 2 * a - 2 * q - b) / r * 1rad)
+            : t < 2 * a + 3 * q + 2 * b ? (h - r) - (t - 2 * a - 3 * q - b)
+            : r - r * Math.sin((t - 2 * a - 3 * q - 2 * b) / r * 1rad);
+    }
+
+    border-width: root.bw * 1px;
+    border-color: root.focused ? root.highlight.with-alpha(0.45) : #ffffff33;
+    animate border-color, border-width { duration: Theme.focus-duration * 0.4; easing: ease-out-quint; }
+
+    if root.focused: Rectangle {
+        // Two heads half the outline apart, each with its tail behind it
+        for k in root.dots * 2: Rectangle {
+            property <int> tail: Math.mod(k, root.dots);
+            property <float> d: root.head - self.tail * root.gap + (k >= root.dots ? root.total / 2 : 0);
+            width: 4.4px * root.s;
+            height: self.width;
+            border-radius: self.width / 2;
+            x: (root.bw / 2 + root.at-x(self.d, root.a, root.b, root.q, root.r, root.w, root.total)) * 1px - self.width / 2;
+            y: (root.bw / 2 + root.at-y(self.d, root.a, root.b, root.q, root.r, root.h, root.total)) * 1px - self.height / 2;
+            background: root.highlight;
+            opacity: pow(1 - self.tail / root.dots, 2.2);
+        }
+    }
+}

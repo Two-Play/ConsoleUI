@@ -117,6 +117,11 @@ impl Compositor {
         self.output
     }
 
+    /// The compositor passes `text-input` of apps on to the shell as its input method.
+    pub fn text_input(&self) -> bool {
+        self.features.iter().any(|f| f == protocol::FEATURE_TEXT_INPUT)
+    }
+
     /// The compositor places the overlay and notification windows above the app (Story 7.6).
     pub fn overlays(&self) -> bool {
         self.features.iter().any(|f| f == protocol::FEATURE_OVERLAYS)

@@ -59,6 +59,7 @@ export component ButtonGlyph inherits Rectangle {
         : root.button == GlyphButton.l1 ? "Q"
         : root.button == GlyphButton.r1 ? "E"
         : root.button == GlyphButton.guide ? "F1"
+        : root.button == GlyphButton.r3 ? "F2"
         : @tr("Ctrl+Q");
     property <string> second-key: root.button == GlyphButton.dpad ? "→" : "↓";
     property <string> symbol:
@@ -72,6 +73,7 @@ export component ButtonGlyph inherits Rectangle {
         : root.button == GlyphButton.menu ? "≡"
         : root.button == GlyphButton.l1 ? (root.ps ? "L1" : "LB")
         : root.button == GlyphButton.r1 ? (root.ps ? "R1" : "RB")
+        : root.button == GlyphButton.r3 ? "R3"
         : "";
     // Colors as on the controllers
     property <color> tint:

@@ -141,7 +141,7 @@ fn mapping_known(gamepad: &Gamepad) -> bool {
 }
 
 /// Cross/A confirms, Circle/B goes back, Triangle/Y searches, Square/X filters, L1/R1 switch
-/// tabs, Options/Start opens the menu, PS/Guide the control center.
+/// tabs, Options/Start opens the menu, PS/Guide the control center, R3 moves the on-screen keyboard.
 fn button_action(button: Button) -> Option<Action> {
     Some(match button {
         Button::DPadUp => Action::Up,
@@ -156,6 +156,7 @@ fn button_action(button: Button) -> Option<Action> {
         Button::RightTrigger => Action::NextTab,
         Button::Start => Action::Menu,
         Button::Mode => Action::Guide,
+        Button::RightThumb => Action::Reposition,
         _ => return None,
     })
 }

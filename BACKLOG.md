@@ -152,6 +152,7 @@ are updated after the spike.
 | 7.11 | Multiple monitors/hotplug (choose the output, switch to the remaining one on unplug). **Partly done:** unplug → remaining monitor and mode changes worked before; now `--output NAME`/`CONSOLEUI_OUTPUT` and external-before-built-in choose the monitor. Open: switch live when a preferred monitor is plugged in while another is in use, several monitors at once | 5 |
 | 7.12 | **Done.** Screenshot with the Print key (compositor renders the output into `~/Pictures/ConsoleUI/screenshot-<date>-<time>.png`, toast with the file name; a gamepad combination stays open) | 3 |
 | 7.13 | **Done.** Real backdrop blur behind the quick menu and toasts above a game (dual Kawase pass in the compositor, panels announced over the control socket) | 3 |
+| 7.14 | **Done.** Typing into apps: with a text field of the app in front focused, ✕ opens the floating on-screen keyboard above the app (`text-input-v3` for apps, `input-method-v2` only for the shell). Not for X11/XWayland apps, they do not announce text fields | 5 |
 
 Idea (not scheduled): the compositor could own the gamepads and give games a virtual (uinput) controller that it mutes while the quick menu is open; unlike `EVIOCGRAB` this would also cover games that read controllers via hidraw.
 
@@ -806,6 +807,30 @@ Branch `agent/compositor-blur`, on top of the UI feedback round (6.10).
 - **Profile picker:** the name no longer touches the avatar ring. **Quick menu:** no invisible menu
   after a quick reopen (generation counter for the open/close timers), the card focus animates, colors
   switch at once (no pale "ghost" card).
+
+### Typing into apps (done: 7.14), floating keyboard, focus look
+
+- **Typing into apps (7.14):** the compositor offers `text-input-v3` to apps and `input-method-v2`
+  only to the shell's process (PID from `Hello`), because an input method sees everything typed;
+  `Welcome` announces this as the feature `text_input`. `inputmethod.rs` is the shell's input method
+  on its own Wayland connection and thread, `shell/typing.rs` the keyboard above the app. It opens
+  with ✕ while a text field of the app in front is active and shows in the overlay window; the app
+  keeps the keyboard focus (no `Overlay` message), the shell reads the controllers exclusively and
+  types with `commit_string`. ○ closes it. Its panel gets the compositor's backdrop blur.
+- **Floating keyboard:** `KeyboardPanel` (crate `ui`) replaces the keyboards built into the search,
+  the Wi-Fi password and the profile name entry. R3 (F2 on the keyboard, `Action::Reposition`, new
+  hint glyph) grabs it, the directions move it, R3, ✕ or ○ let go;
+  `consoleui_core::placement::KeyboardPlacement` (tested) keeps it fully on the screen.
+- **Focus look:** list entries, cards and buttons no longer fill with the accent color. `FocusRing`
+  draws an accent outline with two highlights travelling around it (animated only while focused
+  and with animations on), `FocusFill` a light accent wash that trails the focus; the text keeps its
+  color. A liquid "sloshing" fill was tried and dropped.
+- **Gallery:** shows the floating keyboard (`--move` grabs and moves it).
+- **Test:** `--dummy-launch foot` in the VM with
+  `--actions "wait:2000,confirm,wait:5000,confirm,wait:1200,confirm,right,confirm"` (foot implements
+  `text-input-v3`).
+- **Known gaps:** `inputmethod.rs` and `shell/typing.rs` have no unit tests, only that manual run
+  covers them. X11/XWayland apps get no automatic keyboard, which matters for most games and Steam (7.4).
 
 ## Risiken / offene Fragen
 

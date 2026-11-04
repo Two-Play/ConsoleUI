@@ -57,6 +57,7 @@ macro_rules! slint_bridge {
                 NavAction::PrevTab => $crate::Action::PrevTab,
                 NavAction::NextTab => $crate::Action::NextTab,
                 NavAction::Guide => $crate::Action::Guide,
+                NavAction::Reposition => $crate::Action::Reposition,
             }
         }
 
@@ -80,6 +81,7 @@ macro_rules! slint_bridge {
                             HintButton::Guide => GlyphButton::Guide,
                             HintButton::L1 => GlyphButton::L1,
                             HintButton::R1 => GlyphButton::R1,
+                            HintButton::R3 => GlyphButton::R3,
                             HintButton::Quit => GlyphButton::Quit,
                         },
                         label: hint.label.into(),

@@ -18,6 +18,7 @@ use consoleui_core::netpages::Page;
 use consoleui_core::notification::Incoming;
 use consoleui_core::osk::{KeyboardEvent, OnScreenKeyboard};
 use consoleui_core::ownership::{self, FIRST_DESKTOP_APP_ID, Owner, SHELL_APP_ID};
+use consoleui_core::placement::KeyboardPlacement;
 use consoleui_core::profile_picker::{PickerOutcome, ProfilePicker};
 use consoleui_core::profiles::{self, ProfilePaths, Profiles};
 use consoleui_core::protocol::{BlurRegion, CompositorMessage, Rect, ShellMessage, Transition, WindowRole};
@@ -31,8 +32,9 @@ use consoleui_core::{
 };
 use slint::{ComponentHandle, Image, Model, ModelRc, VecModel};
 
-use consoleui_app::audio::Audio;
 use crate::backdrop::{Backdrop, Look};
+mod typing;
+
 use crate::compositor::Compositor;
 use crate::context::{ContextAction, ContextMenu, ContextOutcome, EntryState};
 use crate::downloads::{self, DownloadNews};
@@ -48,6 +50,7 @@ use crate::{
     AppTile, AppWindow, ControllerStyle, Glass, GlyphButton, Hint, KeyCap, NotificationWindow, OverlayWindow,
     QuickItem, Screen, SettingRow, Theme, tiles,
 };
+use consoleui_app::audio::Audio;
 
 /// Number of entries the home row shows before the library tile (pinned ones always all).
 const HOME_COUNT: usize = 12;
@@ -159,6 +162,16 @@ pub struct Shell {
     results: Vec<usize>,
     result_row: Carousel,
     keyboard: OnScreenKeyboard,
+    /// Where the floating keyboard sits and whether R3 has grabbed it
+    keyboard_place: KeyboardPlacement,
+    /// The shell as the compositor's input method, once it offers one (typing into apps)
+    input_method: Option<crate::inputmethod::InputMethod>,
+    input_method_tried: bool,
+    /// The text field of the app in front that has the focus, if the app tells
+    text_field: Option<crate::inputmethod::TextField>,
+    /// The keyboard over an app
+    typing: Option<typing::Typing>,
+    typing_generation: Rc<Cell<u64>>,
     search_area: SearchArea,
     /// Where "Back" from the search leads
     search_origin: Screen,
@@ -341,6 +354,12 @@ impl Shell {
             results: Vec::new(),
             result_row: Carousel::new(0),
             keyboard,
+            keyboard_place: KeyboardPlacement::default(),
+            input_method: None,
+            input_method_tried: false,
+            text_field: None,
+            typing: None,
+            typing_generation: typing::new_generation(),
             search_area: SearchArea::Keyboard,
             search_origin: Screen::Home,
             history: History::default(),
@@ -619,6 +638,16 @@ impl Shell {
                 overlay.get_dialog_radius(),
             ));
         }
+        // The floating keyboard over an app
+        if overlay.get_keyboard_open() && overlay.window().is_visible() {
+            menu.push(region(
+                overlay.get_keyboard_panel_x(),
+                overlay.get_keyboard_panel_y(),
+                overlay.get_keyboard_panel_width(),
+                overlay.get_keyboard_panel_height(),
+                overlay.get_keyboard_panel_radius(),
+            ));
+        }
         let notification = &windows.notification;
         let mut toast = Vec::new();
         if notification.get_shown() && notification.window().is_visible() {
@@ -682,7 +711,7 @@ impl Shell {
 
     /// While the control center is open, the shell reads the controllers exclusively.
     pub fn wants_exclusive_input(&self) -> bool {
-        self.quick.is_some()
+        self.quick.is_some() || self.typing.is_some()
     }
 
     /// Whether a controller input goes to the shell. gilrs reads the devices directly, so the shell
@@ -690,7 +719,11 @@ impl Shell {
     /// counts, the PS button always. In gamescope it depends on whether the shell is in front (the X11
     /// focus is unreliable there after the overlay), on the desktop on the window focus.
     pub fn accepts_gamepad(&self, ui: &AppWindow, action: Action) -> bool {
-        if self.quick.is_some() {
+        if self.quick.is_some() || self.typing.is_some() {
+            return true;
+        }
+        // A text field of the app in front has the focus: ✕ opens the keyboard
+        if action == Action::Confirm && self.wants_typing_keyboard(ui) {
             return true;
         }
         if self.gamescope.is_none() && self.compositor.is_none() {
@@ -835,9 +868,23 @@ impl Shell {
             return;
         }
         if action == Action::Guide {
+            self.close_typing(ui);
             self.close_context(ui);
             self.close_game_options(ui);
             self.open_quick(ui);
+            return;
+        }
+        if self.typing.is_some() {
+            self.apply_typing(ui, action);
+            return;
+        }
+        if action == Action::Confirm && self.wants_typing_keyboard(ui) {
+            self.open_typing(ui);
+            return;
+        }
+        // R3 grabs the floating keyboard; while it is grabbed the directions move it
+        if self.text_entry_active(ui) && self.keyboard_place.apply(action) {
+            self.sync(ui);
             return;
         }
         if self.picker.is_some() {
@@ -1363,7 +1410,31 @@ impl Shell {
     }
 
     /// Pushes screen, focus, background and hints to the UI.
+    /// A text entry is open that uses the floating keyboard: the search, the Wi-Fi password or the
+    /// name of a profile.
+    fn text_entry_active(&self, ui: &AppWindow) -> bool {
+        if self.dialog.is_some() || self.quick.is_some() || ui.get_launching() {
+            return false;
+        }
+        match &self.picker {
+            Some(picker) => picker.is_typing(),
+            None => {
+                self.context.is_none()
+                    && self.game_options_panel.is_none()
+                    && (self.screen == Screen::Search
+                        || (self.screen == Screen::Settings && self.network.pages.password_open()))
+            }
+        }
+    }
+
     fn sync(&mut self, ui: &AppWindow) {
+        if !self.text_entry_active(ui) {
+            self.keyboard_place.reset_mode();
+        }
+        let place = self.keyboard_place.placement();
+        ui.set_keyboard_x(place.x);
+        ui.set_keyboard_y(place.y);
+        ui.set_keyboard_moving(self.keyboard_place.moving());
         // The tabs can be focused on the three tab screens; the buttons only on home.
         let allowed = match self.screen {
             Screen::Home => true,
@@ -2154,6 +2225,7 @@ impl Shell {
     }
 
     pub fn poll_compositor(&mut self, ui: &AppWindow) {
+        self.poll_input_method(ui);
         // The next poll after the open launch screen was drawn (it has reached the screen by
         // then); without frame notifications a little later.
         if self.front_due.is_some_and(|due| self.launch_shown || Instant::now() >= due + FRONT_FALLBACK) {
@@ -2498,7 +2570,7 @@ fn close_overlay(overlay: &OverlayWindow, generation: Rc<Cell<u64>>) {
     let weak = overlay.as_weak();
     let closed = generation.get();
     slint::Timer::single_shot(Duration::from_millis(450), move || {
-        if let Some(overlay) = weak.upgrade().filter(|o| !o.get_open())
+        if let Some(overlay) = weak.upgrade().filter(|o| !o.get_open() && !o.get_keyboard_open())
             && generation.get() == closed
         {
             let _ = overlay.hide();

@@ -1,4 +1,4 @@
-import { InputScope, Theme, GlassPanel, Button, HintBar, TabBar, StatusBar, Shelf, SettingList, TextField, OnScreenKeyboard, Toggle, Slider, ProgressBar, SegmentedControl, Badge, Spinner, Avatar, EmptyState, Toast, Dialog, AppTile, KeyCap, SettingRow, ControllerStyle, GlyphButton, Hint, NetworkState, NavAction } from "@consoleui/std.slint";
+import { InputScope, KeyboardPanel, Theme, GlassPanel, Button, HintBar, TabBar, StatusBar, Shelf, SettingList, TextField, OnScreenKeyboard, Toggle, Slider, ProgressBar, SegmentedControl, Badge, Spinner, Avatar, EmptyState, Toast, Dialog, AppTile, KeyCap, SettingRow, ControllerStyle, GlyphButton, Hint, NetworkState, NavAction } from "@consoleui/std.slint";
 
 // The design system on one page: tiles, buttons, hints, toast, dialog and context menu.
 export { Theme }
@@ -10,6 +10,10 @@ export component GalleryWindow inherits Window {
     in-out property <int> focused;
     in-out property <int> row-focus: 1;
     in property <bool> dialog-open;
+    in property <bool> keyboard-open;
+    in property <bool> keyboard-moving;
+    in property <float> keyboard-x: 0.5;
+    in property <float> keyboard-y: 0.94;
     in property <[Hint]> hints;
     in property <ControllerStyle> style: ControllerStyle.keyboard;
     out property <bool> active: scope.active;
@@ -122,6 +126,23 @@ export component GalleryWindow inherits Window {
         symbol: "🎮";
         title: "Controller connected";
         text: "DualSense Wireless Controller";
+        s: root.s;
+    }
+
+    KeyboardPanel {
+        width: 100%;
+        height: 100%;
+        open: root.keyboard-open;
+        title: "Floating keyboard";
+        text: "ConsoleUI";
+        placeholder: "Type here";
+        keys: root.keys;
+        focused: 2;
+        place-x: root.keyboard-x;
+        place-y: root.keyboard-y;
+        moving: root.keyboard-moving;
+        hints: root.hints;
+        style: root.style;
         s: root.s;
     }
 
