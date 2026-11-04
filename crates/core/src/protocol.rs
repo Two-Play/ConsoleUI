@@ -142,6 +142,15 @@ pub enum ShellMessage {
     },
     /// Save the composed output as PNG (development, basis for Story 7.12).
     Screenshot { path: String },
+    /// Save the composed output into the Pictures folder like the Print key does (Story 7.12);
+    /// every shell gets a [`CompositorMessage::ScreenshotDone`].
+    SaveScreenshot,
+    /// Output size from the settings row "Resolution" (Story 5.5), `None` for the monitor's
+    /// preferred mode. The shell sends it after [`CompositorMessage::Modes`] and on every change.
+    Resolution {
+        #[serde(default)]
+        size: Option<(u32, u32)>,
+    },
     /// Layout of the physical keyboard (settings row "Keyboard layout"): an xkb layout name such
     /// as `de`, or `None` for the system layout the compositor detected. The shell sends it after
     /// `Hello` and on every change; the compositor answers with [`CompositorMessage::Keymap`].
@@ -176,6 +185,9 @@ pub enum CompositorMessage {
     FocusChanged { target: Target },
     /// The Guide key combination was pressed (Story 7.5); the focused window does not get it.
     Guide,
+    /// The sizes the output can switch to, largest first (sent on connect and when they change;
+    /// never when nested, a window has no modes).
+    Modes { sizes: Vec<(u32, u32)> },
     /// Result of [`ShellMessage::Screenshot`]
     ScreenshotDone {
         path: String,

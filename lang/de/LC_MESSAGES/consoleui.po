@@ -963,3 +963,106 @@ msgstr "In die App tippen"
 
 msgid "Text field"
 msgstr "Textfeld"
+
+msgid "Brightness"
+msgstr "Helligkeit"
+
+msgid "Output resolution of the screen"
+msgstr "Ausgabeauflösung des Bildschirms"
+
+msgid "Firmware"
+msgstr "Firmware"
+
+msgid "System image"
+msgstr "System-Image"
+
+msgid "System package"
+msgstr "Systempaket"
+
+msgid "App"
+msgstr "App"
+
+msgid "No description of the changes available."
+msgstr "Keine Beschreibung der Änderungen verfügbar."
+
+msgid "Installing …"
+msgstr "Wird installiert …"
+
+msgid "Restart needed"
+msgstr "Neustart nötig"
+
+msgid "{n} available"
+msgid_plural "{n} available"
+msgstr[0] "{n} verfügbar"
+msgstr[1] "{n} verfügbar"
+
+msgid "Up to date"
+msgstr "Aktuell"
+
+msgid "{n} update available"
+msgid_plural "{n} updates available"
+msgstr[0] "{n} Update verfügbar"
+msgstr[1] "{n} Updates verfügbar"
+
+msgid "Settings → Updates"
+msgstr "Einstellungen → Updates"
+
+msgid "Restart to finish"
+msgstr "Zum Abschließen neu starten"
+
+msgid "Everything is up to date"
+msgstr "Alles ist aktuell"
+
+msgid "Updates installed"
+msgstr "Updates installiert"
+
+msgid "Updating failed"
+msgstr "Aktualisieren fehlgeschlagen"
+
+msgid "System updates take effect at the next restart"
+msgstr "System-Updates werden beim nächsten Neustart wirksam"
+
+msgid "Not everything could be checked: {}"
+msgstr "Nicht alles konnte geprüft werden: {}"
+
+msgid "Operating system"
+msgstr "Betriebssystem"
+
+msgid "Installing {}"
+msgstr "{} wird installiert"
+
+msgid "Downloading {}"
+msgstr "{} wird heruntergeladen"
+
+msgid "Updates"
+msgstr "Updates"
+
+msgid "Search for and install system updates"
+msgstr "System-Updates suchen und installieren"
+
+msgid "Updates have to wait"
+msgstr "Updates müssen warten"
+
+msgid "Quit the running apps first"
+msgstr "Beende zuerst die laufenden Apps"
+
+msgid "Install"
+msgstr "Installieren"
+
+msgid "Apps update right away, the system at the next restart."
+msgstr "Apps werden sofort aktualisiert, das System beim nächsten Neustart."
+
+msgid "Install all updates?"
+msgstr "Alle Updates installieren?"
+
+msgid "Changes"
+msgstr "Änderungen"
+
+msgid "Install all"
+msgstr "Alle installieren"
+
+msgid "Security"
+msgstr "Sicherheit"
+
+msgid "New versions show up here."
+msgstr "Neue Versionen erscheinen hier."

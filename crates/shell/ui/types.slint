@@ -10,8 +10,10 @@ export struct QuickItem {
     value: string,
     // Symbol as text (monochrome), e.g. "⏻"
     symbol: string,
-    // Volume: up/down adjusts
+    // Volume, brightness: up/down adjusts
     adjustable: bool,
+    // Volume: confirm mutes
+    can-mute: bool,
     // 0-100 for the bar, otherwise -1
     level: int,
 }

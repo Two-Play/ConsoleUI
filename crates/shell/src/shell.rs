@@ -34,6 +34,7 @@ use slint::{ComponentHandle, Image, Model, ModelRc, VecModel};
 
 use crate::backdrop::{Backdrop, Look};
 mod typing;
+mod updates;
 
 use crate::compositor::Compositor;
 use crate::context::{ContextAction, ContextMenu, ContextOutcome, EntryState};
@@ -75,6 +76,8 @@ enum DialogTag {
     QuitApp(String),
     /// A confirmed action of the quick menu
     Quick(QuickAction),
+    /// Install everything on the update page
+    InstallUpdates,
     Close,
 }
 
@@ -250,6 +253,7 @@ pub struct Shell {
     battery_warned: bool,
     /// Wi-Fi and Bluetooth sub-pages of the settings
     network: Network,
+    updates: updates::Updates,
 
     /// All profiles (Story 5.7); history, collection, game options and settings belong to the
     /// active one
@@ -286,6 +290,7 @@ struct Feedback {
     query_len: usize,
     settings: Settings,
     network: [usize; 5],
+    updates: usize,
     /// Profile screen open, and its focus
     profiles: Option<[usize; 4]>,
 }
@@ -402,6 +407,7 @@ impl Shell {
             quick_shown: false,
             battery_warned: false,
             network: Network::default(),
+            updates: updates::Updates::default(),
             profiles: start.profiles,
             profiles_root: start.root,
             profile: start.active,
@@ -523,6 +529,7 @@ impl Shell {
         self.apply_artwork(ui);
         self.apply_language(ui);
         self.send_keyboard_layout();
+        self.send_resolution();
         if let Some(profile) = self.profiles.get(&self.profile) {
             let title = trf("Hello, {}!", &[&profile.name]);
             self.toast(ui, "☺", &title, tr("Your games and settings are loaded."));
@@ -729,7 +736,7 @@ impl Shell {
         if self.gamescope.is_none() && self.compositor.is_none() {
             return ui.get_window_active();
         }
-        action == Action::Guide || self.shell_in_front(ui)
+        matches!(action, Action::Guide | Action::Screenshot) || self.shell_in_front(ui)
     }
 
     /// In gamescope: the shell is visible while no app is in front, the launch screen is running
@@ -769,6 +776,7 @@ impl Shell {
             query_len: self.query.len(),
             settings: self.settings.clone(),
             network: self.network.pages.feedback(),
+            updates: self.updates.page.focused(),
             profiles: self.picker.as_ref().map(ProfilePicker::feedback),
         }
     }
@@ -825,7 +833,8 @@ impl Shell {
             || self.picker.is_some()
             || self.context.is_some()
             || self.game_options_panel.is_some()
-            || self.network.pages.is_open();
+            || self.network.pages.is_open()
+            || self.updates.page.is_open();
         if busy {
             return;
         }
@@ -859,6 +868,12 @@ impl Shell {
     }
 
     fn apply_action(&mut self, ui: &AppWindow, action: Action) {
+        if action == Action::Screenshot {
+            if let Some(compositor) = &mut self.compositor {
+                compositor.send(&ShellMessage::SaveScreenshot);
+            }
+            return;
+        }
         if self.dialog.is_some() {
             self.apply_dialog(ui, action);
             return;
@@ -911,6 +926,7 @@ impl Shell {
         }
         match (self.screen, action) {
             (Screen::Settings, _) if self.network.pages.is_open() => self.apply_network(ui, action),
+            (Screen::Settings, _) if self.updates.page.is_open() => self.apply_updates(ui, action),
             (Screen::Home, Action::NextTab) => self.screen = Screen::Library,
             (Screen::Library, Action::PrevTab) => self.screen = Screen::Home,
             (Screen::Library, Action::NextTab) => self.screen = Screen::Settings,
@@ -990,6 +1006,7 @@ impl Shell {
             Action::Up if self.settings_row == 0 => self.home_area = HomeArea::Tabs(2),
             Action::Up => self.settings_row -= 1,
             Action::Down => self.settings_row = (self.settings_row + 1).min(rows.len() - 1),
+            Action::Confirm if setting == Setting::Updates => self.open_updates(ui),
             Action::Confirm if setting.opens_page() => {
                 let page = if setting == Setting::Wifi { Page::Wifi } else { Page::Bluetooth };
                 let requests = self.network.pages.open(page);
@@ -1005,6 +1022,15 @@ impl Shell {
                         self.settings.music_track.as_deref(),
                         action != Action::Left,
                     );
+                }
+                if setting == Setting::Resolution {
+                    let sizes = self.compositor.as_ref().map(Compositor::modes).unwrap_or_default();
+                    self.settings.resolution = consoleui_core::settings::cycle_resolution(
+                        sizes,
+                        self.settings.resolution,
+                        action != Action::Left,
+                    );
+                    self.send_resolution();
                 }
                 self.settings.change(setting, action != Action::Left);
                 if setting == Setting::Artwork {
@@ -1081,7 +1107,8 @@ impl Shell {
 
     /// Rows of the settings page; the keyboard layout only in our compositor.
     fn settings_list(&self) -> Vec<Setting> {
-        self.settings.rows(self.compositor.is_some())
+        let modes = self.compositor.as_ref().is_some_and(|compositor| !compositor.modes().is_empty());
+        self.settings.rows(self.compositor.is_some(), modes)
     }
 
     /// Names of the files in the music folder
@@ -1207,8 +1234,19 @@ impl Shell {
         }
     }
 
+    /// Tells our compositor the resolution from the settings (`None`: the monitor's preferred mode).
+    /// Waits for the output's modes, which also come after a new monitor was plugged in.
+    fn send_resolution(&mut self) {
+        let size = self.settings.resolution;
+        if let Some(compositor) = self.compositor.as_mut().filter(|compositor| !compositor.modes().is_empty()) {
+            compositor.send(&ShellMessage::Resolution { size });
+        }
+    }
+
     fn update_settings_rows(&self, ui: &AppWindow) {
         let keymap = self.compositor.as_ref().and_then(Compositor::keymap);
+        let output = self.compositor.as_ref().and_then(Compositor::output_size);
+        let size_label = |(width, height): (u32, u32)| format!("{width} × {height}");
         let rows: Vec<SettingRow> = self
             .settings_list()
             .into_iter()
@@ -1218,10 +1256,16 @@ impl Shell {
                 value: match setting {
                     Setting::Wifi => self.network.pages.summary(Page::Wifi).into(),
                     Setting::Bluetooth => self.network.pages.summary(Page::Bluetooth).into(),
+                    Setting::Updates => self.updates.page.summary().into(),
                     // Shows what "Automatic" resolved to, e.g. "Automatic: de (nodeadkeys)"
                     Setting::KeyboardLayout if self.settings.keyboard_layout == KeyboardLayout::Auto => match &keymap {
                         Some(keymap) => trf("Automatic: {}", &[&keymap]).into(),
                         None => self.settings.value_label(setting).into(),
+                    },
+                    Setting::Resolution => match (self.settings.resolution, output) {
+                        (Some(size), _) => size_label(size).into(),
+                        (None, Some(size)) => trf("Automatic: {}", &[&size_label(size)]).into(),
+                        (None, None) => tr("Automatic").into(),
                     },
                     Setting::MusicTrack => match &self.settings.music_track {
                         Some(name) => name.as_str().into(),
@@ -1649,6 +1693,9 @@ impl Shell {
             Screen::Settings if self.network.pages.is_open() => {
                 hints.extend(self.network.hints().into_iter().map(|(button, label)| hint(button, label)));
             }
+            Screen::Settings if self.updates.page.is_open() => {
+                hints.extend(self.updates_hints().into_iter().map(|(button, label)| hint(button, label)));
+            }
             Screen::Settings if self.settings_list().get(self.settings_row).is_some_and(|s| s.opens_page()) => {
                 hints.push(hint(GlyphButton::Updown, tr("Select")));
                 hints.push(hint(GlyphButton::Confirm, tr("Open")));
@@ -1921,7 +1968,7 @@ impl Shell {
                         self.open_profiles(ui, false);
                     }
                     QuickAction::Quit(entry_id) => self.quit_running(&entry_id),
-                    QuickAction::Volume => {}
+                    QuickAction::Volume | QuickAction::Brightness => {}
                     QuickAction::Power(power) => {
                         if let Err(err) = system::power(power) {
                             eprintln!("Power action failed: {err}");
@@ -2242,7 +2289,8 @@ impl Shell {
         }
         let Some(compositor) = &mut self.compositor else { return };
         let mut guide = false;
-        let mut keymap_changed = false;
+        let mut rows_changed = false;
+        let mut modes_changed = false;
         let mut screenshot = None;
         for message in compositor.poll() {
             match message {
@@ -2269,13 +2317,20 @@ impl Shell {
                 }
                 // The keyboard's Guide key, reserved by the compositor (Story 7.5)
                 CompositorMessage::Guide => guide = true,
-                CompositorMessage::Keymap { .. } => keymap_changed = true,
-                // The Print key (Story 7.12)
+                CompositorMessage::Keymap { .. } | CompositorMessage::Output { .. } => rows_changed = true,
+                CompositorMessage::Modes { .. } => {
+                    rows_changed = true;
+                    modes_changed = true;
+                }
+                // The Print key or Guide + R1 (Story 7.12)
                 CompositorMessage::ScreenshotDone { path, error } => screenshot = Some((path, error)),
                 _ => {}
             }
         }
-        if keymap_changed {
+        if modes_changed {
+            self.send_resolution();
+        }
+        if rows_changed {
             self.update_settings_rows(ui);
         }
         if let Some((path, error)) = screenshot {
@@ -2445,6 +2500,7 @@ impl Shell {
                         self.close_quick(ui);
                         self.run_quick(ui, action);
                     }
+                    DialogTag::InstallUpdates => self.install_updates(ui),
                     DialogTag::Close => {}
                 }
             }

@@ -24,7 +24,7 @@ const STATUS_EVERY: Duration = Duration::from_secs(1);
 
 #[derive(Debug)]
 pub enum Event {
-    /// A controller press (or repeat) for the focused window; never `Guide`
+    /// A controller press (or repeat) for the focused window; never `Guide` or `Screenshot`
     Action(Action),
     /// A controller was plugged in or removed, e.g. for a toast
     Controller(Connection),
@@ -91,8 +91,8 @@ impl Input {
                 (state.handler)(Event::Controller(connection));
             }
             for action in actions {
-                // The Guide button belongs to the shell (quick menu)
-                if active && action != Action::Guide {
+                // The Guide button belongs to the shell (quick menu, screenshot)
+                if active && !matches!(action, Action::Guide | Action::Screenshot) {
                     state.last = InputDevice::Gamepad;
                     (state.handler)(Event::Action(action));
                 }

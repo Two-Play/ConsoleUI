@@ -158,7 +158,8 @@ Cargo workspace (edition 2024, `default-members` = the shell):
     sorting); `library_view` applies the library filter (incl. `Hidden`) and sort, `home_view` builds the
     home row (pinned first, then recents); hidden entries are left out of home, library and search.
   - `input.rs` has the device-free gamepad logic
-    (`DirectionRepeat` for hold-to-repeat, `Stick` with hysteresis, `glyph_style` by device name).
+    (`DirectionRepeat` for hold-to-repeat, `Stick` with hysteresis, `glyph_style` by device name, `GuideChord`:
+    Guide counts on release, Guide + R1 is `Action::Screenshot`).
   - `running::RunningApp` decides when the launch overlay closes: process exit for commands,
     `steam::running_games()` for Steam games (scans `/proc` for processes with `SteamAppId=<id>`;
     `RunningAppID` in `~/.steam/registry.vdf` is updated by Steam only minutes later), with a minimum hold
@@ -173,7 +174,7 @@ Cargo workspace (edition 2024, `default-members` = the shell):
     simulated backend (`--fake-network`); `netpages.rs` holds the WLAN/Bluetooth sub-page state (focus,
     password entry via `OnScreenKeyboard::password()` with a Shift layer, remove confirmation, busy
     requests) and builds plain view rows.
-  - `status.rs` reads network/battery from sysfs; `system.rs` wraps `wpctl` (volume) and
+  - `status.rs` reads network/battery from sysfs; `system.rs` wraps `wpctl` (volume), the backlight (sysfs, set through logind with `busctl`) and
     `systemctl suspend|reboot|poweroff`; `accent::from_rgba` derives tile colors from covers.
   - `game_options.rs` (Story 7.10): per-entry nested gamescope options (`GameOptions`: resolution,
     upscaler, FPS limit, HDR, fullscreen); `wrap()` puts `gamescope <args> --` in front of
@@ -203,6 +204,8 @@ Cargo workspace (edition 2024, `default-members` = the shell):
   window, cached while nothing below changes; `backdrop.rs` is its Smithay-free part (regions, fades,
   captured area). Smithay makes render targets current lazily, so offscreen passes may run while the
   output is bound.
+  `modes.rs` is the Smithay-free choice of the output mode for the "Resolution" setting (`ShellMessage::Resolution`;
+  `drm.rs` reports the sizes with `CompositorMessage::Modes`, so the row exists only on a real display).
   `policy.rs` is the Smithay-free, unit-tested window policy (owner shell/app/unknown, front, stacking,
   keyboard focus; every toplevel is fullscreen, an app comes to the front once its window shows
   content). `xwayland.rs` runs `X11Wm` and maps windows to apps via `_NET_WM_PID` or the X-Resource
@@ -253,7 +256,7 @@ Cargo workspace (edition 2024, `default-members` = the shell):
   with `--dummy-launch foot` in the VM (foot implements text-input-v3).
 - `crates/shell` (binary `consoleui`): Slint UI plus glue.
   - `src/compositor.rs`: counterpart of `gamescope.rs`, active when `CONSOLEUI_COMPOSITOR` is set (takes
-    precedence over gamescope). Sends `Hello`/`Launched`/`Exited`/`Focus`/`Overlay`/`KeyboardLayout`;
+    precedence over gamescope). Sends `Hello`/`Launched`/`Exited`/`Focus`/`Overlay`/`KeyboardLayout`/`Resolution`/`SaveScreenshot`;
     `Shell::poll_compositor` (50 ms timer) turns `WindowMapped`/`AppGone` into `has_window` and `Guide`
     into `Action::Guide`. In compositor mode the quick menu and toasts are separate shell toplevels
     (`OverlayWindow`, `NotificationWindow`), announced by title with `WindowRole` (constants
@@ -344,7 +347,7 @@ Cargo workspace (edition 2024, `default-members` = the shell):
     `appmanifest_*.acf` (`steam::download_states`/`download_changes`) for download toasts and adds finished
     games to the lists. Both are switched by the "Notifications" setting.
   - Pointer: tabs, tiles, settings rows, dialog buttons and quick menu cards are clickable (`TouchArea`s →
-    `Shell::click(Click)`); `--actions` has `click-tab:N`, `click-tile:N`, `click-library:N`, `click-row:N`,
+    `Shell::click(Click)`); `--actions` also has `screenshot`, `click-tab:N`, `click-tile:N`, `click-library:N`, `click-row:N`,
     `click-dialog:N`, `click-quick:N`.
   - `src/perf.rs`: frame stats from Slint's rendering notifier. `src/cover.rs`: procedural
     placeholder covers. `src/options.rs`: hand-rolled CLI parsing.

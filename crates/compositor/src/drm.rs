@@ -30,7 +30,7 @@ use smithay::output::{Mode as WlMode, Output, PhysicalProperties};
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{EventLoop, RegistrationToken};
 use smithay::reexports::drm::Device as _;
-use smithay::reexports::drm::control::{Mode as DrmMode, ModeTypeFlags, connector, crtc};
+use smithay::reexports::drm::control::{Mode as DrmMode, ModeFlags, ModeTypeFlags, connector, crtc};
 use smithay::reexports::input::{DeviceCapability, Libinput};
 use smithay::reexports::rustix::fs::OFlags;
 use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
@@ -44,7 +44,10 @@ use smithay_drm_extras::display_info;
 use smithay_drm_extras::drm_scanner::{DrmScanEvent, DrmScanner};
 use tracing::{error, info, warn};
 
+use consoleui_core::protocol::CompositorMessage;
+
 use crate::backend::Backend;
+use crate::modes::{self, ModeInfo};
 use crate::options::Options;
 use crate::render::{self, OutputElement};
 use crate::state::State;
@@ -73,6 +76,8 @@ pub struct DrmData {
     keyboards: Vec<smithay::reexports::input::Device>,
     /// A render is already scheduled (avoids piling up timers)
     render_scheduled: bool,
+    /// Size from the "Resolution" setting; `None` is the monitor's preferred mode (Story 5.5)
+    wanted_size: Option<(u32, u32)>,
 }
 
 struct Gpu {
@@ -87,8 +92,10 @@ struct Gpu {
 struct Surface {
     crtc: crtc::Handle,
     connector: connector::Handle,
-    /// The mode set on the CRTC (the connector's preferred one)
+    /// The mode set on the CRTC
     mode: DrmMode,
+    /// All modes of the connector
+    modes: Vec<DrmMode>,
     output: Output,
     drm_output: GbmDrmOutput,
     global: GlobalId,
@@ -128,8 +135,14 @@ pub fn run(options: &Options) -> Result<i32, Box<dyn std::error::Error>> {
     info!("seat {seat}, GPU {}", gpu_path.display());
 
     let udev = UdevBackend::new(&seat)?;
-    let data =
-        DrmData { session: session.clone(), gpu_path, device: None, keyboards: Vec::new(), render_scheduled: false };
+    let data = DrmData {
+        session: session.clone(),
+        gpu_path,
+        device: None,
+        keyboards: Vec::new(),
+        render_scheduled: false,
+        wanted_size: None,
+    };
     let mut state = State::new(display, event_loop.handle(), event_loop.get_signal(), Backend::Drm(Box::new(data)))?;
     state.preferred_output = options.output.clone();
 
@@ -357,11 +370,42 @@ impl State {
         }
     }
 
-    /// Switches our output to the connector's new preferred mode, if it has another one.
+    /// The connector has other modes now: the shell learns them, and the output follows.
     fn drm_connector_modes_changed(&mut self, connector: &connector::Info) {
+        let Some(data) = self.drm() else { return };
+        let wanted = data.wanted_size;
+        let Some(surface) = data.device.as_mut().and_then(|gpu| gpu.surface.as_mut()) else { return };
+        surface.modes = connector.modes().to_vec();
+        if let Some(mode) = pick_mode(connector.modes(), wanted) {
+            self.switch_mode(mode);
+        }
+        self.announce_modes();
+    }
+
+    /// The "Resolution" setting of the shell (Story 5.5); also holds for monitors plugged in later.
+    /// Nested there are no modes.
+    pub fn set_output_resolution(&mut self, size: Option<(u32, u32)>) {
+        let Some(data) = self.drm() else { return };
+        data.wanted_size = size;
+        let Some(surface) = data.device.as_ref().and_then(|gpu| gpu.surface.as_ref()) else { return };
+        if let Some(mode) = pick_mode(&surface.modes, size) {
+            self.switch_mode(mode);
+        }
+    }
+
+    fn announce_modes(&mut self) {
+        let Some(surface) = self.drm().and_then(|d| d.device.as_ref()).and_then(|gpu| gpu.surface.as_ref()) else {
+            return;
+        };
+        let message = CompositorMessage::Modes { sizes: modes::sizes(&mode_infos(&surface.modes)) };
+        self.control.set_greeting(message.clone());
+        self.control.broadcast(&message);
+    }
+
+    /// Switches our output to `mode`, if it is not the current one.
+    fn switch_mode(&mut self, mode: DrmMode) {
         let Some(gpu) = self.drm().and_then(|d| d.device.as_mut()) else { return };
-        let Some(surface) = gpu.surface.as_mut() else { return };
-        let Some(mode) = preferred_mode(connector).filter(|mode| *mode != surface.mode) else { return };
+        let Some(surface) = gpu.surface.as_mut().filter(|surface| surface.mode != mode) else { return };
         let wl_mode = WlMode::from(mode);
         if let Err(err) = surface.drm_output.use_mode::<_, OutputElement>(
             mode,
@@ -383,9 +427,11 @@ impl State {
 
     fn drm_connector_connected(&mut self, connector: connector::Info, crtc: crtc::Handle) {
         let dh = self.display_handle.clone();
-        let Some(gpu) = self.drm().and_then(|d| d.device.as_mut()) else { return };
+        let Some(data) = self.drm() else { return };
+        let wanted = data.wanted_size;
+        let Some(gpu) = data.device.as_mut() else { return };
         let name = connector_name(&connector);
-        let Some(drm_mode) = preferred_mode(&connector) else {
+        let Some(drm_mode) = pick_mode(connector.modes(), wanted) else {
             warn!("connector {name} has no modes");
             return;
         };
@@ -442,12 +488,14 @@ impl State {
             crtc,
             connector: connector.handle(),
             mode: drm_mode,
+            modes: connector.modes().to_vec(),
             output: output.clone(),
             drm_output,
             global,
             queued: false,
         });
         self.set_output(output);
+        self.announce_modes();
         self.schedule_drm_render(Duration::ZERO);
     }
 
@@ -581,14 +629,20 @@ fn pick_output(names: &[String], preferred: Option<&str>) -> Option<usize> {
         .or(if names.is_empty() { None } else { Some(0) })
 }
 
-/// The connector's preferred mode, else its first one.
-fn preferred_mode(connector: &connector::Info) -> Option<DrmMode> {
-    connector
-        .modes()
+fn mode_infos(modes: &[DrmMode]) -> Vec<ModeInfo> {
+    modes
         .iter()
-        .find(|mode| mode.mode_type().contains(ModeTypeFlags::PREFERRED))
-        .or_else(|| connector.modes().first())
-        .copied()
+        .map(|mode| ModeInfo {
+            size: (mode.size().0 as u32, mode.size().1 as u32),
+            refresh: mode.vrefresh(),
+            preferred: mode.mode_type().contains(ModeTypeFlags::PREFERRED),
+            interlaced: mode.flags().contains(ModeFlags::INTERLACE),
+        })
+        .collect()
+}
+
+fn pick_mode(modes: &[DrmMode], wanted: Option<(u32, u32)>) -> Option<DrmMode> {
+    modes::pick(&mode_infos(modes), wanted).map(|index| modes[index])
 }
 
 #[cfg(test)]

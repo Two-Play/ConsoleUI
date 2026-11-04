@@ -144,7 +144,8 @@ export component QuickMenu inherits Rectangle {
             height: 28px * root.s;
             style: root.style;
             s: root.s;
-            hints: root.current.adjustable ? [{ button: GlyphButton.dpad, label: @tr("Select") }, { button: GlyphButton.updown, label: @tr("Volume") }, { button: GlyphButton.confirm, label: @tr("Mute") }, { button: GlyphButton.back, label: @tr("Close") }]
+            hints: root.current.can-mute ? [{ button: GlyphButton.dpad, label: @tr("Select") }, { button: GlyphButton.updown, label: @tr("Volume") }, { button: GlyphButton.confirm, label: @tr("Mute") }, { button: GlyphButton.back, label: @tr("Close") }]
+                : root.current.adjustable ? [{ button: GlyphButton.dpad, label: @tr("Select") }, { button: GlyphButton.updown, label: @tr("Brightness") }, { button: GlyphButton.back, label: @tr("Close") }]
                 : [{ button: GlyphButton.dpad, label: @tr("Select") }, { button: GlyphButton.confirm, label: @tr("OK") }, { button: GlyphButton.back, label: @tr("Close") }];
         }
     }

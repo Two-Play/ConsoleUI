@@ -81,16 +81,16 @@ Schätzung in Story Points (SP): 1, 2, 3, 5, 8, 13. Ein Sprint dauert 2 Wochen.
 | 3.3 | Glyphen der Buttons passen sich an den Controller-Typ an (Xbox/PlayStation) | 3 |
 | 3.4 | Die Guide-/PS-Taste öffnet von überall die Shell bzw. das Quick-Menü | 3 (hängt von 0.3 ab) |
 
-## Epic 4 – App-Lebenszyklus & gamescope-Integration
+## Epic 4 – App lifecycle & gamescope integration
 
-| ID | User Story | SP |
+| ID | User story | SP |
 |---|---|---|
-| 4.1 | Session-Skript: gamescope im Embedded-Modus (DRM) mit der Shell als Haupt-Client starten | 3 |
-| 4.2 | Session-Datei unter `/usr/share/wayland-sessions/consoleui.desktop`, damit man die Session in SDDM/GDM auswählen kann | 2 |
-| 4.3 | Gestartete Apps bekommen den Fokus, beim Beenden kehrt die Shell mit Animation zurück | 5 |
-| 4.4 | Laufende Apps werden in der Shell angezeigt („Läuft gerade“), man kann zurückwechseln oder sie beenden | 5 |
-| 4.5 | Prozesse laufen als eigener systemd-Scope (`systemd-run --user --scope`), damit Absturz und Beenden sauber gehen | 3 |
-| 4.6 | Quick-Menü als Overlay über laufenden Spielen (Lautstärke, Helligkeit, zurück zur Shell, Spiel beenden) | 8 (Spike 0.3) |
+| 4.1 | Session script: gamescope in embedded mode (DRM) with the shell as the main client | 3 |
+| 4.2 | Session file in `/usr/share/wayland-sessions/consoleui.desktop`, so the session can be chosen in SDDM/GDM | 2 |
+| 4.3 | Launched apps get the focus; when they exit, the shell returns with an animation | 5 |
+| 4.4 | Running apps are shown in the shell ("Running now"); you can switch back to them or quit them | 5 |
+| 4.5 | Processes run in their own systemd scope (`systemd-run --user --scope`), so crashes and quitting work cleanly | 3 |
+| 4.6 | Quick menu as an overlay above running games (volume, brightness, back to the shell, quit the game). Brightness only on screens with a backlight, the card is hidden otherwise | 8 (spike 0.3) |
 
 ## Epic 5 – System & settings
 
@@ -100,7 +100,7 @@ Schätzung in Story Points (SP): 1, 2, 3, 5, 8, 13. Ein Sprint dauert 2 Wochen.
 | 5.2 | Set the volume (PipeWire) | 3 |
 | 5.3 | Wi-Fi list and connecting (NetworkManager via D-Bus) | 8 |
 | 5.4 | Pair Bluetooth controllers (BlueZ via D-Bus) | 8 |
-| 5.5 | Settings page: theme/accent color, sounds, resolution | 5 |
+| 5.5 | Settings page: theme/accent color, sounds, resolution (on a real display under our compositor) | 5 |
 | 5.6 | Notifications as toasts (download finished, controller connected) | 3 |
 | 5.7 | **Done.** As a player in a household I pick my profile at the start ("Who's playing?", like the users of a PS5): several profiles within one Linux user, each with its own history, pinned/hidden entries, game options and settings in `$XDG_DATA_HOME/consoleui/profiles/<id>/`. Profiles can be added, renamed, recolored and deleted with the gamepad (name entry with the on-screen keyboard); "Switch profile" in the control center; the first profile takes over the existing files. Not a login manager: no passwords, no separate Linux users | 5 |
 
@@ -150,7 +150,7 @@ are updated after the spike.
 | 7.9 | VRR (adaptive sync) and tearing for games, simple frame pacing (Smithay has VRR, but no tearing-control/async page flip yet) | 13 |
 | 7.10 | Nested gamescope per entry (resolution, FSR/NIS/integer, FPS limit, HDR, fullscreen) from the context menu — **done (Sprint 8)**, not for Steam games | 5 |
 | 7.11 | Multiple monitors/hotplug (choose the output, switch to the remaining one on unplug). **Partly done:** unplug → remaining monitor and mode changes worked before; now `--output NAME`/`CONSOLEUI_OUTPUT` and external-before-built-in choose the monitor. Open: switch live when a preferred monitor is plugged in while another is in use, several monitors at once | 5 |
-| 7.12 | **Done.** Screenshot with the Print key (compositor renders the output into `~/Pictures/ConsoleUI/screenshot-<date>-<time>.png`, toast with the file name; a gamepad combination stays open) | 3 |
+| 7.12 | **Done.** Screenshot with the Print key (compositor renders the output into `~/Pictures/ConsoleUI/screenshot-<date>-<time>.png`, toast with the file name; Guide + R1 on the gamepad does the same under our compositor) | 3 |
 | 7.13 | **Done.** Real backdrop blur behind the quick menu and toasts above a game (dual Kawase pass in the compositor, panels announced over the control socket) | 3 |
 | 7.14 | **Done.** Typing into apps: with a text field of the app in front focused, ✕ opens the floating on-screen keyboard above the app (`text-input-v3` for apps, `input-method-v2` only for the shell). Not for X11/XWayland apps, they do not announce text fields | 5 |
 
@@ -831,6 +831,32 @@ Branch `agent/compositor-blur`, on top of the UI feedback round (6.10).
   `text-input-v3`).
 - **Known gaps:** `inputmethod.rs` and `shell/typing.rs` have no unit tests, only that manual run
   covers them. X11/XWayland apps get no automatic keyboard, which matters for most games and Steam (7.4).
+
+### Brightness, resolution, gamepad screenshot (rest of 4.6, 5.5, 7.12)
+
+- **Brightness (4.6):** `consoleui_core::system` reads the backlight from `/sys/class/backlight`
+  (firmware before platform before raw) and sets it through logind's `SetBrightness` (`busctl`), which
+  needs no root. Up/down on a new quick menu card, steps of 5 %, never below 5 %, because some panels
+  go dark at 0. Without a backlight the card is not shown.
+- **Resolution (5.5):** new settings row, only when the compositor reports modes (DRM, never nested).
+  `CompositorMessage::Modes` lists the output's sizes, `ShellMessage::Resolution` chooses one or
+  `None` for the preferred mode; the shell sends it again after every `Modes`, so the choice also holds
+  after a restart, a profile switch and a replug. `modes.rs` (Smithay-free, tested) picks the mode:
+  the preferred one if it has that size, else the fastest progressive one; a size the monitor does
+  not have falls back to the preferred mode.
+- **Gamepad screenshot (7.12):** Guide + R1 like in Steam, through `ShellMessage::SaveScreenshot` to
+  the same path as the Print key. `GuideChord` therefore makes the Guide button count on release, so the
+  quick menu opens when the button is let go, not when it is pressed. New `--actions` step `screenshot`.
+- **Checked in the VM** (`--drm`, llvmpipe): 1280×800 → 5120×2160 → 4096×2160 → back to automatic, the
+  shell refits each time and nothing crashes; a screenshot at 5120×2160 is complete; a saved 1024×768
+  is applied at start (about 0.4 s after the preferred mode) and survives a new preferred mode from the
+  monitor. Brightness only with a forced fake backlight in a snapshot (card, bar, hints).
+- **Not tested:** a real gamepad (`GuideChord` has unit tests, the chord itself never ran), `SetBrightness`
+  on a real panel, a real TV.
+- **Known gaps:** the gamepad screenshot works only under our compositor, not in gamescope or on the
+  desktop. The game also sees R1 during the chord. There is no "keep this resolution?" dialog with a
+  revert: a mode the TV cannot show stays saved in the profile. No brightness for external monitors
+  (DDC/CI).
 
 ## Risiken / offene Fragen
 

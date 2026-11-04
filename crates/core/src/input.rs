@@ -5,6 +5,33 @@ use std::time::{Duration, Instant};
 use crate::nav::Action;
 use crate::settings::GlyphChoice;
 
+/// The Guide button alone opens the quick menu, Guide + R1 takes a screenshot (Story 7.12, like
+/// Steam's chord). So Guide counts on release, when it is clear that it was pressed alone.
+#[derive(Debug, Default)]
+pub struct GuideChord {
+    held: bool,
+    used: bool,
+}
+
+impl GuideChord {
+    pub fn press(&mut self) {
+        *self = Self { held: true, used: false };
+    }
+
+    /// R1 was pressed: whether that completes the chord.
+    pub fn second_button(&mut self) -> bool {
+        self.used |= self.held;
+        self.held
+    }
+
+    /// `Action::Guide` if the button was pressed alone.
+    pub fn release(&mut self) -> Option<Action> {
+        let alone = self.held && !self.used;
+        self.held = false;
+        alone.then_some(Action::Guide)
+    }
+}
+
 /// Delay until the first repeat.
 const INITIAL_DELAY: Duration = Duration::from_millis(350);
 /// Interval of the first repeats; after that it gets faster.
@@ -195,6 +222,20 @@ pub mod evdev {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn guide_alone_opens_on_release_and_the_chord_swallows_it() {
+        let mut guide = GuideChord::default();
+        assert!(!guide.second_button());
+        assert_eq!(guide.release(), None);
+        guide.press();
+        assert_eq!(guide.release(), Some(Action::Guide));
+        guide.press();
+        assert!(guide.second_button());
+        assert!(guide.second_button());
+        assert_eq!(guide.release(), None);
+        assert!(!guide.second_button());
+    }
 
     fn ms(n: u64) -> Duration {
         Duration::from_millis(n)

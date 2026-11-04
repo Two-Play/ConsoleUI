@@ -3,7 +3,7 @@
 use std::time::Instant;
 
 use consoleui_core::Action;
-use consoleui_core::input::{DirectionRepeat, GlyphStyle, Stick, StickChange, glyph_style, is_direction};
+use consoleui_core::input::{DirectionRepeat, GlyphStyle, GuideChord, Stick, StickChange, glyph_style, is_direction};
 use gilrs::{Axis, Button, Event, EventType, Gamepad, Gilrs, MappingSource, PowerInfo};
 
 pub struct ControllerStatus {
@@ -26,6 +26,7 @@ pub struct Gamepads {
     left_stick: Stick,
     /// Some drivers report the D-pad as axes instead of buttons.
     dpad_axes: Stick,
+    guide: GuideChord,
 }
 
 impl Gamepads {
@@ -37,6 +38,7 @@ impl Gamepads {
                 repeat: DirectionRepeat::default(),
                 left_stick: Stick::default(),
                 dpad_axes: Stick::default(),
+                guide: GuideChord::default(),
             }),
             Err(err) => {
                 eprintln!("Gamepads not available: {err}");
@@ -63,6 +65,11 @@ impl Gamepads {
                 continue;
             }
             match event {
+                EventType::ButtonPressed(Button::Mode, _) => self.guide.press(),
+                EventType::ButtonReleased(Button::Mode, _) => actions.extend(self.guide.release()),
+                EventType::ButtonPressed(Button::RightTrigger, _) if self.guide.second_button() => {
+                    actions.push(Action::Screenshot);
+                }
                 EventType::ButtonPressed(button, _) => {
                     if let Some(action) = button_action(button) {
                         actions.push(if is_direction(action) { self.repeat.press(action, now) } else { action });
@@ -105,6 +112,7 @@ impl Gamepads {
         self.repeat = DirectionRepeat::default();
         self.left_stick = Stick::default();
         self.dpad_axes = Stick::default();
+        self.guide = GuideChord::default();
         while self.gilrs.next_event().is_some() {}
     }
 
@@ -141,7 +149,8 @@ fn mapping_known(gamepad: &Gamepad) -> bool {
 }
 
 /// Cross/A confirms, Circle/B goes back, Triangle/Y searches, Square/X filters, L1/R1 switch
-/// tabs, Options/Start opens the menu, PS/Guide the control center, R3 moves the on-screen keyboard.
+/// tabs, Options/Start opens the menu, R3 moves the on-screen keyboard. PS/Guide (control center,
+/// screenshot with R1) is handled in `poll`.
 fn button_action(button: Button) -> Option<Action> {
     Some(match button {
         Button::DPadUp => Action::Up,
@@ -155,7 +164,6 @@ fn button_action(button: Button) -> Option<Action> {
         Button::LeftTrigger => Action::PrevTab,
         Button::RightTrigger => Action::NextTab,
         Button::Start => Action::Menu,
-        Button::Mode => Action::Guide,
         Button::RightThumb => Action::Reposition,
         _ => return None,
     })

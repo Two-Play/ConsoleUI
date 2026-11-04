@@ -588,6 +588,14 @@ impl State {
                 self.screenshots.push(ScreenshotRequest { path: path.into(), reply: Some(client), notify: false });
                 Vec::new()
             }
+            ShellMessage::SaveScreenshot => {
+                self.screenshot_to_pictures();
+                Vec::new()
+            }
+            ShellMessage::Resolution { size } => {
+                self.set_output_resolution(size);
+                Vec::new()
+            }
             ShellMessage::KeyboardLayout { layout } => {
                 self.set_keyboard_layout(layout.as_deref());
                 Vec::new()
@@ -644,7 +652,7 @@ impl State {
         }
     }
 
-    /// The Print key (Story 7.12): saves the composed output as
+    /// The Print key or Guide + R1 (Story 7.12): saves the composed output as
     /// `<Pictures>/ConsoleUI/screenshot-<date>-<time>.png`; the shells get a `ScreenshotDone`.
     pub fn screenshot_to_pictures(&mut self) {
         let pictures = std::env::var_os("XDG_PICTURES_DIR")

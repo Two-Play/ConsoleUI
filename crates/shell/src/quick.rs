@@ -1,7 +1,7 @@
 //! Content and state of the quick menu (PS/Guide button).
 
 use consoleui_core::i18n::{tr, trf};
-use consoleui_core::system::{self, PowerAction, Volume};
+use consoleui_core::system::{self, Backlight, PowerAction, Volume};
 
 use crate::QuickItem;
 
@@ -15,6 +15,8 @@ pub enum QuickAction {
     /// Open the profile screen (Story 5.7)
     SwitchProfile,
     Volume,
+    /// Only on screens with a backlight (Story 4.6)
+    Brightness,
     Power(PowerAction),
     Logout,
 }
@@ -40,6 +42,7 @@ pub struct QuickMenu {
     actions: Vec<QuickAction>,
     focused: usize,
     volume: Option<Volume>,
+    brightness: Option<Backlight>,
     app_title: Option<String>,
     app_in_front: bool,
     /// Name of the active profile
@@ -66,15 +69,16 @@ impl QuickMenu {
             actions.push(if app.in_front { QuickAction::Home } else { QuickAction::Resume(app.app_id) });
             actions.push(QuickAction::Quit(app.entry_id));
         }
+        let brightness = system::backlight();
+        actions.extend([QuickAction::SwitchProfile, QuickAction::Volume]);
+        actions.extend(brightness.is_some().then_some(QuickAction::Brightness));
         actions.extend([
-            QuickAction::SwitchProfile,
-            QuickAction::Volume,
             QuickAction::Power(PowerAction::Suspend),
             QuickAction::Power(PowerAction::Reboot),
             QuickAction::Power(PowerAction::PowerOff),
             QuickAction::Logout,
         ]);
-        Self { actions, focused: 0, volume: system::volume(), app_title, app_in_front, profile }
+        Self { actions, focused: 0, volume: system::volume(), brightness, app_title, app_in_front, profile }
     }
 
     pub fn focused(&self) -> usize {
@@ -115,6 +119,12 @@ impl QuickMenu {
                 self.volume = system::volume();
                 QuickOutcome::Stay
             }
+            Action::Up | Action::Down if current == QuickAction::Brightness => {
+                report(system::change_brightness(action == Action::Up));
+                self.brightness = system::backlight();
+                QuickOutcome::Stay
+            }
+            Action::Confirm if current == QuickAction::Brightness => QuickOutcome::Stay,
             Action::Confirm if current == QuickAction::Volume => {
                 report(system::toggle_mute());
                 self.volume = system::volume();
@@ -137,6 +147,7 @@ impl QuickMenu {
                     QuickAction::Quit(_) => ("■", tr("Quit"), self.app_title.clone().unwrap_or_default()),
                     QuickAction::SwitchProfile => ("☺", tr("Switch profile"), self.profile.clone()),
                     QuickAction::Volume => ("♪", tr("Volume"), self.volume_text()),
+                    QuickAction::Brightness => ("☀", tr("Brightness"), self.brightness_text()),
                     QuickAction::Power(PowerAction::Suspend) => ("☾", tr("Sleep"), String::new()),
                     QuickAction::Power(PowerAction::Reboot) => ("↻", tr("Restart"), String::new()),
                     QuickAction::Power(PowerAction::PowerOff) => ("⏻", tr("Power off"), String::new()),
@@ -145,13 +156,17 @@ impl QuickMenu {
                 let level = match (action, self.volume) {
                     (QuickAction::Volume, Some(volume)) if !volume.muted => volume.percent.into(),
                     (QuickAction::Volume, Some(_)) => 0,
+                    _ if *action == QuickAction::Brightness => {
+                        self.brightness.as_ref().map_or(-1, |light| light.percent().into())
+                    }
                     _ => -1,
                 };
                 QuickItem {
                     symbol: symbol.into(),
                     label: label.into(),
                     value: value.into(),
-                    adjustable: *action == QuickAction::Volume,
+                    adjustable: matches!(action, QuickAction::Volume | QuickAction::Brightness),
+                    can_mute: *action == QuickAction::Volume,
                     level,
                 }
             })
@@ -162,6 +177,13 @@ impl QuickMenu {
         match self.volume {
             Some(Volume { muted: true, .. }) => tr("Muted").into(),
             Some(volume) => format!("{} %", volume.percent),
+            None => tr("not available").into(),
+        }
+    }
+
+    fn brightness_text(&self) -> String {
+        match &self.brightness {
+            Some(light) => format!("{} %", light.percent()),
             None => tr("not available").into(),
         }
     }

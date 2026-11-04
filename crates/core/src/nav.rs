@@ -19,6 +19,8 @@ pub enum Action {
     Guide,
     /// R3 (right stick press): grab the on-screen keyboard to move it, and let go of it again
     Reposition,
+    /// Guide + R1: save a screenshot, also while a game is running (Story 7.12)
+    Screenshot,
 }
 
 /// Focus within a horizontal tile row. Does not wrap around at the edge (like on the PS5).

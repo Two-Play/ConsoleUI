@@ -61,6 +61,8 @@ pub struct Options {
     pub actions: Vec<ScriptStep>,
     pub dummy_launch: Option<String>,
     pub fake_network: bool,
+    /// Simulated updates instead of the system's sources (Story 5.8)
+    pub fake_updates: bool,
     pub profile: Option<String>,
 }
 
@@ -79,6 +81,7 @@ impl Default for Options {
             actions: Vec::new(),
             dummy_launch: None,
             fake_network: false,
+            fake_updates: false,
             profile: None,
         }
     }
@@ -95,6 +98,7 @@ impl Options {
                 "--fps" => options.show_fps = true,
                 "--bench" => options.bench = true,
                 "--fake-network" => options.fake_network = true,
+                "--fake-updates" => options.fake_updates = true,
                 "-h" | "--help" => options.help = true,
                 "--tiles" => {
                     let value = value(&mut args, "--tiles")?;
@@ -160,6 +164,7 @@ fn parse_script(list: &str) -> Result<Vec<ScriptStep>, String> {
                 "next-tab" => Action::NextTab,
                 "guide" => Action::Guide,
                 "reposition" | "r3" => Action::Reposition,
+                "screenshot" => Action::Screenshot,
                 other => return Err(format!("Unknown action: {other}")),
             };
             Ok(ScriptStep::Action(action))

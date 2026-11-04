@@ -14,6 +14,7 @@ mod control;
 mod drm;
 mod focus;
 mod input;
+mod modes;
 mod options;
 mod policy;
 mod render;

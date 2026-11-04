@@ -31,6 +31,8 @@ pub struct Compositor {
     overlay: bool,
     /// Optional features from the compositor's `Welcome`
     features: Vec<String>,
+    /// Sizes the output can switch to; empty when nested
+    modes: Vec<(u32, u32)>,
     /// Keymap the compositor reports for the seat keyboard, e.g. `de (nodeadkeys)`
     keymap: Option<String>,
     /// Blur regions last sent per window role (Story 7.13)
@@ -60,6 +62,7 @@ impl Compositor {
             output: None,
             overlay: false,
             features: Vec::new(),
+            modes: Vec::new(),
             keymap: None,
             blur: Vec::new(),
         };
@@ -132,6 +135,10 @@ impl Compositor {
         self.features.iter().any(|f| f == protocol::FEATURE_TRANSITIONS)
     }
 
+    pub fn modes(&self) -> &[(u32, u32)] {
+        &self.modes
+    }
+
     pub fn keymap(&self) -> Option<String> {
         self.keymap.clone()
     }
@@ -153,6 +160,7 @@ impl Compositor {
         while let Some(message) = self.reader.next_message::<CompositorMessage>() {
             match &message {
                 CompositorMessage::Output { width, height } => self.output = Some((*width, *height)),
+                CompositorMessage::Modes { sizes } => self.modes = sizes.clone(),
                 CompositorMessage::Keymap { layout, variant } => {
                     let keymap = consoleui_core::keymap::Keymap {
                         layout: layout.clone(),
