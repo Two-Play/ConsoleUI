@@ -155,6 +155,7 @@ are updated after the spike.
 | 7.12 | **Done.** Screenshot with the Print key (compositor renders the output into `~/Pictures/ConsoleUI/screenshot-<date>-<time>.png`, toast with the file name; Guide + R1 on the gamepad does the same under our compositor) | 3 |
 | 7.13 | **Done.** Real backdrop blur behind the quick menu and toasts above a game (dual Kawase pass in the compositor, panels announced over the control socket) | 3 |
 | 7.14 | **Done.** Typing into apps: with a text field of the app in front focused, ✕ opens the floating on-screen keyboard above the app (`text-input-v3` for apps, `input-method-v2` only for the shell). Not for X11/XWayland apps, they do not announce text fields | 5 |
+| 7.15 | **Done.** Gamepad mouse for windows made for a mouse: starts with "Show Steam" and from the quick menu card over an app. Left stick moves the pointer, ✕ clicks, □ right-clicks, L1/R1 scroll, ○ ends. Ends by itself when the app leaves the front or the Steam game starts | 3 |
 
 Idea (not scheduled): the compositor could own the gamepads and give games a virtual (uinput) controller that it mutes while the quick menu is open; unlike `EVIOCGRAB` this would also cover games that read controllers via hidraw.
 
@@ -906,8 +907,7 @@ Branch `agent/compositor-blur`, on top of the UI feedback round (6.10).
   stand-in's splash is shown after 12 s, now it stays hidden, "Show Steam" appears and the game comes to the
   front by itself. Switcher with two apps of two windows each: previews, switching and raising work.
 - **Not tested:** the real Steam client (window names and process tree of its dialogs), a real game, the
-  gamescope path, DRM in the VM. Steam's dialogs cannot be used with a gamepad yet, "Show Steam" needs a
-  keyboard or mouse, or Steam Input's desktop layout.
+  gamescope path, DRM in the VM. Steam's dialogs are used with the gamepad mouse (Story 7.15).
 - **Open observation:** in 2 of 3 runs with a second glxgears window it was first drawn only 300 px wide
   (llvmpipe, nested); not seen in 2 runs of the old code, in another run of the same test it was complete.
   The sizing code did not change. Four later runs with 12 screenshots did not show it, the cause is unknown.
@@ -929,3 +929,17 @@ Branch `agent/compositor-blur`, on top of the UI feedback round (6.10).
   buffers, and `--drm` must not run on the host. `use_vrr` and the frame pacing under VRR never ran either,
   QEMU has no VRR. On real hardware, look for `direct scanout on` and `VRR on` in
   `journalctl --user -t consoleui`. If a game flickers or stalls, try `CONSOLEUI_NO_SCANOUT=1`.
+
+### Gamepad mouse (done: 7.15), buttons while grabbed
+
+- **Gamepad mouse:** `consoleui_core::pointer` (stick → pixels, buttons → commands), `src/shell/mouse.rs`, the
+  `Pointer*` messages (feature `virtual_pointer`). The shell reads the controller exclusively like in the quick
+  menu; the compositor moves its seat pointer. The pointer starts in the middle of the screen.
+- **Fixed on the way:** `evdev::key_action` only knew ✕, ○, Start, Guide and the D-pad, so while grabbed □, △, L1,
+  R1 and R3 did nothing: in the quick menu (L1/R1 to the switcher, □ to quit there) and on the keyboard over apps.
+  It now matches the gilrs mapping; Xbox controllers report X and Y the wrong way round and are swapped.
+- **Tested:** VM on the seat with a virtual Xbox pad (uinput) and foot with mouse reporting: the stick moves the
+  pointer, ✕, □ and R1 reach the app as left click, right click and wheel, after ○ a press of ✕ clicks nothing.
+- **Not tested:** the start through "Show Steam" and the end when a Steam game starts, the real Steam client,
+  a real DualSense. Steam Input reads the controller too (hidraw), so its desktop layout may act at the same
+  time. A Wayland app that sets no cursor of its own shows no pointer (foot and XWayland apps do).

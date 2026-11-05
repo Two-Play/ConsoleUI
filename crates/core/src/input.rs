@@ -184,8 +184,13 @@ pub mod evdev {
     pub const ABS_HAT0Y: u16 = 0x11;
     const BTN_SOUTH: u16 = 0x130;
     const BTN_EAST: u16 = 0x131;
+    const BTN_NORTH: u16 = 0x133;
+    const BTN_WEST: u16 = 0x134;
+    const BTN_TL: u16 = 0x136;
+    const BTN_TR: u16 = 0x137;
     const BTN_START: u16 = 0x13b;
     const BTN_MODE: u16 = 0x13c;
+    const BTN_THUMBR: u16 = 0x13e;
     const BTN_DPAD_UP: u16 = 0x220;
     const BTN_DPAD_DOWN: u16 = 0x221;
     const BTN_DPAD_LEFT: u16 = 0x222;
@@ -194,10 +199,20 @@ pub mod evdev {
     use crate::nav::Action;
 
     /// Only D-pad, confirm, back, menu and PS/Guide; the control center needs nothing more.
-    pub fn key_action(code: u16) -> Option<Action> {
+    /// The same buttons as gilrs with an SDL mapping. The kernel's Xbox driver reports X and Y as
+    /// `BTN_X` and `BTN_Y`, which are the codes of north and west: the wrong way round.
+    pub fn key_action(code: u16, style: super::GlyphStyle) -> Option<Action> {
+        let xbox = style == super::GlyphStyle::Xbox;
         Some(match code {
             BTN_SOUTH => Action::Confirm,
             BTN_EAST => Action::Back,
+            BTN_NORTH if xbox => Action::Secondary,
+            BTN_WEST if xbox => Action::Search,
+            BTN_NORTH => Action::Search,
+            BTN_WEST => Action::Secondary,
+            BTN_TL => Action::PrevTab,
+            BTN_TR => Action::NextTab,
+            BTN_THUMBR => Action::Reposition,
             BTN_START => Action::Menu,
             BTN_MODE => Action::Guide,
             BTN_DPAD_UP => Action::Up,
@@ -300,10 +315,17 @@ mod tests {
 
     #[test]
     fn evdev_mapping_and_axes() {
-        assert_eq!(evdev::key_action(0x130), Some(Action::Confirm));
-        assert_eq!(evdev::key_action(0x13c), Some(Action::Guide));
-        assert_eq!(evdev::key_action(0x222), Some(Action::Left));
-        assert_eq!(evdev::key_action(0x133), None);
+        let ps = GlyphStyle::PlayStation;
+        assert_eq!(evdev::key_action(0x130, ps), Some(Action::Confirm));
+        assert_eq!(evdev::key_action(0x13c, ps), Some(Action::Guide));
+        assert_eq!(evdev::key_action(0x222, ps), Some(Action::Left));
+        assert_eq!(evdev::key_action(0x133, ps), Some(Action::Search));
+        assert_eq!(evdev::key_action(0x134, ps), Some(Action::Secondary));
+        assert_eq!(evdev::key_action(0x133, GlyphStyle::Xbox), Some(Action::Secondary));
+        assert_eq!(evdev::key_action(0x134, GlyphStyle::Xbox), Some(Action::Search));
+        assert_eq!(evdev::key_action(0x137, ps), Some(Action::NextTab));
+        assert_eq!(evdev::key_action(0x13e, ps), Some(Action::Reposition));
+        assert_eq!(evdev::key_action(0x13a, ps), None);
         // DualSense sticks: 0…255, Xbox: −32768…32767
         assert_eq!(evdev::normalize(255, 0, 255), 1.0);
         assert!(evdev::normalize(128, 0, 255).abs() < 0.01);

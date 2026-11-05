@@ -19,7 +19,7 @@ use std::time::Instant;
 
 use consoleui_core::Action;
 use consoleui_core::input::evdev::{self, ABS_HAT0X, ABS_HAT0Y, ABS_X, ABS_Y, EV_ABS, EV_KEY};
-use consoleui_core::input::{DirectionRepeat, Stick, StickChange, is_direction};
+use consoleui_core::input::{DirectionRepeat, GlyphStyle, Stick, StickChange, glyph_style, is_direction};
 
 /// `_IOW('E', 0x90, int)`
 const EVIOCGRAB: libc::c_ulong = 0x4004_4590;
@@ -41,6 +41,7 @@ struct AbsInfo {
 
 struct Device {
     file: File,
+    style: GlyphStyle,
     /// (min, max) for ABS_X and ABS_Y
     range: [(i32, i32); 2],
     axes: [f32; 2],
@@ -67,15 +68,27 @@ impl Grab {
                     return None;
                 }
                 let name = fs::read_to_string(entry.path().join("device/name")).ok()?;
-                names.iter().any(|n| n == name.trim()).then(|| format!("/dev/input/{node}"))
+                let name = name.trim();
+                names.iter().any(|n| n == name).then(|| (format!("/dev/input/{node}"), glyph_style(name)))
             })
-            .filter_map(|path| open(&path).map_err(|err| eprintln!("Controller {path} not exclusive: {err}")).ok())
+            .filter_map(|(path, style)| {
+                open(&path, style).map_err(|err| eprintln!("Controller {path} not exclusive: {err}")).ok()
+            })
             .collect();
         Self { devices, repeat: DirectionRepeat::default() }
     }
 
     pub fn is_empty(&self) -> bool {
         self.devices.is_empty()
+    }
+
+    /// The left stick that is pushed furthest; x to the right, y downwards.
+    pub fn stick(&self) -> (f32, f32) {
+        let travel = |device: &&Device| device.axes[0].hypot(device.axes[1]);
+        self.devices
+            .iter()
+            .max_by(|a, b| travel(a).total_cmp(&travel(b)))
+            .map_or((0.0, 0.0), |d| (d.axes[0], d.axes[1]))
     }
 
     pub fn poll(&mut self, now: Instant) -> Vec<Action> {
@@ -119,7 +132,7 @@ fn handle(
     };
     match (kind, code) {
         (EV_KEY, _) => {
-            let Some(action) = evdev::key_action(code) else { return };
+            let Some(action) = evdev::key_action(code, device.style) else { return };
             match (value, is_direction(action)) {
                 (1, true) => actions.push(repeat.press(action, now)),
                 (1, false) => actions.push(action),
@@ -144,7 +157,7 @@ fn handle(
     }
 }
 
-fn open(path: &str) -> std::io::Result<Device> {
+fn open(path: &str, style: GlyphStyle) -> std::io::Result<Device> {
     let file = OpenOptions::new().read(true).custom_flags(libc::O_NONBLOCK).open(path)?;
     let fd = file.as_raw_fd();
     // SAFETY: valid descriptor, EVIOCGRAB expects an int value (1 = grab).
@@ -157,5 +170,13 @@ fn open(path: &str) -> std::io::Result<Device> {
         let ok = unsafe { libc::ioctl(fd, EVIOCGABS_BASE + libc::c_ulong::from(axis), &mut info) } == 0;
         if ok { (info.minimum, info.maximum) } else { (0, 0) }
     });
-    Ok(Device { file, range, axes: [0.0; 2], hat: [0.0; 2], stick: Stick::default(), hat_stick: Stick::default() })
+    Ok(Device {
+        file,
+        style,
+        range,
+        axes: [0.0; 2],
+        hat: [0.0; 2],
+        stick: Stick::default(),
+        hat_stick: Stick::default(),
+    })
 }

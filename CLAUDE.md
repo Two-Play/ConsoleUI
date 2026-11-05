@@ -152,6 +152,8 @@ Cargo workspace (edition 2024, `default-members` = the shell):
     copies the files from before profiles into it. `profile_picker.rs` is the "Who's playing?" state
     (tile row with "Add profile", menu: rename/color/delete, name entry with the on-screen keyboard,
     delete confirmation) and returns `PickerOutcome`s; the shell saves and switches.
+  - `pointer.rs` (Story 7.15): the gamepad as a mouse (stick → pixels, buttons → `PointerCommand`); the shell side is
+    `src/shell/mouse.rs`, it reads the controller exclusively and sends `PointerMotion`/`PointerClick`/`PointerScroll`.
   - `switcher.rs` (Story 4.7): the window switcher's row (running apps, most recently used first, one card
     per window once the compositor reported them); `Switcher::apply` returns `SwitcherOutcome`s, the shell's
     `QuickMenu` holds it.
@@ -360,7 +362,7 @@ Cargo workspace (edition 2024, `default-members` = the shell):
     `appmanifest_*.acf` (`steam::download_states`/`download_changes`) for download toasts and adds finished
     games to the lists. Both are switched by the "Notifications" setting.
   - Pointer: tabs, tiles, settings rows, dialog buttons and quick menu cards are clickable (`TouchArea`s →
-    `Shell::click(Click)`); `--actions` also has `screenshot`, `click-tab:N`, `click-tile:N`, `click-library:N`, `click-row:N`,
+    `Shell::click(Click)`); `--actions` also has `screenshot`, `pointer:DX:DY` (moves the gamepad mouse), `click-tab:N`, `click-tile:N`, `click-library:N`, `click-row:N`,
     `click-dialog:N`, `click-quick:N`, `click-switcher:N`.
   - `src/perf.rs`: frame stats from Slint's rendering notifier. `src/cover.rs`: procedural
     placeholder covers. `src/options.rs`: hand-rolled CLI parsing.

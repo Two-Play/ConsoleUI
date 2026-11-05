@@ -10,8 +10,8 @@
 //! Copyright (c) 2017 Victor Berger).
 
 use smithay::backend::input::{
-    AbsolutePositionEvent, Axis, AxisSource, Event, InputBackend, InputEvent, InputTime, KeyState, KeyboardKeyEvent,
-    PointerAxisEvent, PointerButtonEvent, PointerMotionEvent,
+    AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputBackend, InputEvent, InputTime, KeyState,
+    KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, PointerMotionEvent,
 };
 use smithay::desktop::WindowSurfaceType;
 use smithay::input::keyboard::{FilterResult, Keysym, ModifiersState, keysyms};
@@ -165,6 +165,41 @@ impl State {
     fn clamp_to_output(&self, position: Point<f64, Logical>) -> Point<f64, Logical> {
         let Some(size) = self.output_size() else { return position };
         (position.x.clamp(0.0, size.w as f64 - 1.0), position.y.clamp(0.0, size.h as f64 - 1.0)).into()
+    }
+
+    /// The gamepad as a mouse (Story 7.15): starts in the middle, where dialogs are.
+    pub fn center_pointer(&mut self) {
+        if let Some(size) = self.output_size() {
+            self.move_pointer_to((size.w as f64 / 2.0, size.h as f64 / 2.0).into());
+        }
+    }
+
+    pub fn move_pointer_to(&mut self, location: Point<f64, Logical>) {
+        let location = self.clamp_to_output(location);
+        let under = self.surface_under(location);
+        let pointer = self.pointer.clone();
+        let event = MotionEvent { location, serial: SERIAL_COUNTER.next_serial(), time: InputTime::now() };
+        pointer.motion(self, under, &event);
+        pointer.frame(self);
+    }
+
+    pub fn click_pointer(&mut self, button: u32) {
+        let pointer = self.pointer.clone();
+        for state in [ButtonState::Pressed, ButtonState::Released] {
+            let event = ButtonEvent { button, state, serial: SERIAL_COUNTER.next_serial(), time: InputTime::now() };
+            pointer.button(self, &event);
+            pointer.frame(self);
+        }
+    }
+
+    pub fn scroll_pointer(&mut self, steps: i32) {
+        let frame = AxisFrame::new(InputTime::now())
+            .source(AxisSource::Wheel)
+            .value(Axis::Vertical, steps as f64 * 15.0)
+            .v120(Axis::Vertical, steps * 120);
+        let pointer = self.pointer.clone();
+        pointer.axis(self, frame);
+        pointer.frame(self);
     }
 
     fn on_pointer_move_absolute<B: InputBackend>(&mut self, event: B::PointerMotionAbsoluteEvent) {

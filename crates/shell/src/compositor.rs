@@ -139,6 +139,10 @@ impl Compositor {
     }
 
     /// The compositor keeps the Steam client's windows hidden until the shell asks for them.
+    pub fn virtual_pointer(&self) -> bool {
+        self.features.iter().any(|f| f == protocol::FEATURE_VIRTUAL_POINTER)
+    }
+
     pub fn show_steam(&self) -> bool {
         self.features.iter().any(|f| f == protocol::FEATURE_SHOW_STEAM)
     }

@@ -45,6 +45,8 @@ pub const FEATURE_SHOW_STEAM: &str = "show_steam";
 /// The compositor answers [`ShellMessage::ListWindows`] and understands
 /// [`ShellMessage::RaiseWindow`] (the window switcher in the quick menu).
 pub const FEATURE_WINDOW_LIST: &str = "window_list";
+/// The compositor moves its pointer on the shell's request: the gamepad as a mouse (Story 7.15).
+pub const FEATURE_VIRTUAL_POINTER: &str = "virtual_pointer";
 
 /// A rectangle in output pixels (logical, origin top left).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -177,6 +179,15 @@ pub enum ShellMessage {
         #[serde(default)]
         size: Option<(u32, u32)>,
     },
+    /// The gamepad acts as a mouse from now on, or not any more (with [`FEATURE_VIRTUAL_POINTER`]);
+    /// at the start the pointer goes to the middle of the screen.
+    PointerMode { active: bool },
+    /// Moves the pointer by this many pixels.
+    PointerMotion { dx: i32, dy: i32 },
+    /// Presses and releases a button (a `BTN_*` code).
+    PointerClick { button: u32 },
+    /// Wheel steps, positive is down.
+    PointerScroll { steps: i32 },
     /// Settings row "Variable refresh rate" (Story 7.9): the compositor uses VRR while a game is in
     /// front. The shell sends it after [`CompositorMessage::Modes`] and on every change.
     Vrr { enabled: bool },

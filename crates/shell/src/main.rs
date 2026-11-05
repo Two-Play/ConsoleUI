@@ -283,6 +283,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                     Some(grab) => grab.poll(now),
                     None => gamepads.borrow_mut().poll(now),
                 };
+                if let Some(grab) = &grab {
+                    shell.borrow_mut().mouse_mode_stick(grab.stick(), now);
+                }
                 for connection in gamepads.borrow_mut().take_connections() {
                     let (title, name) = match connection {
                         Connection::Connected(name) => (tr("Controller connected"), name),
@@ -509,6 +512,7 @@ fn run_script(ui: &AppWindow, shell: Rc<RefCell<Shell>>, steps: Vec<ScriptStep>)
             Some(ScriptStep::Wait(ms)) => due = Instant::now() + Duration::from_millis(*ms),
             Some(ScriptStep::Action(action)) => shell.borrow_mut().apply(&ui, *action),
             Some(ScriptStep::Click(click)) => shell.borrow_mut().click(&ui, *click),
+            Some(ScriptStep::Pointer(dx, dy)) => shell.borrow_mut().move_pointer(*dx, *dy),
             // Development aid for testing toasts (also over running apps)
             Some(ScriptStep::Toast) => {
                 shell.borrow_mut().toast(&ui, "◆", "Test notice", "From --actions (development)")

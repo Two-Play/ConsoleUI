@@ -19,6 +19,8 @@ pub enum QuickAction {
     Home,
     /// Quit the running app (entry ID)
     Quit(String),
+    /// The gamepad as a mouse for the app in front (Story 7.15)
+    Mouse(u32),
     /// Open the profile screen (Story 5.7)
     SwitchProfile,
     Volume,
@@ -70,7 +72,7 @@ pub enum QuickOutcome {
 }
 
 impl QuickMenu {
-    pub fn new(foreground: Option<ForegroundApp>, profile: String, switcher: Switcher) -> Self {
+    pub fn new(foreground: Option<ForegroundApp>, profile: String, switcher: Switcher, mouse: bool) -> Self {
         let mut actions = Vec::new();
         let app_title = foreground.as_ref().map(|app| app.title.clone());
         let app_in_front = foreground.as_ref().is_some_and(|app| app.in_front);
@@ -79,6 +81,7 @@ impl QuickMenu {
         if let Some(app) = foreground {
             actions.push(if app.in_front { QuickAction::Home } else { QuickAction::Resume(app.app_id) });
             actions.push(QuickAction::Quit(app.entry_id));
+            actions.extend((mouse && app.in_front).then_some(QuickAction::Mouse(app.app_id)));
         }
         let brightness = system::backlight();
         actions.extend([QuickAction::SwitchProfile, QuickAction::Volume]);
@@ -225,6 +228,7 @@ impl QuickMenu {
                     QuickAction::Switch { .. } => ("▶", tr("Resume"), String::new()),
                     QuickAction::Home => ("⌂", tr("Home"), tr("Go to Home").to_string()),
                     QuickAction::Quit(_) => ("■", tr("Quit"), self.app_title.clone().unwrap_or_default()),
+                    QuickAction::Mouse(_) => ("◉", tr("Gamepad mouse"), tr("Use the app with the stick").to_string()),
                     QuickAction::SwitchProfile => ("☺", tr("Switch profile"), self.profile.clone()),
                     QuickAction::Volume => ("♪", tr("Volume"), self.volume_text()),
                     QuickAction::Brightness => ("☀", tr("Brightness"), self.brightness_text()),

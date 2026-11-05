@@ -563,6 +563,7 @@ impl State {
                     protocol::FEATURE_TRANSITIONS.to_owned(),
                     protocol::FEATURE_SHOW_STEAM.to_owned(),
                     protocol::FEATURE_WINDOW_LIST.to_owned(),
+                    protocol::FEATURE_VIRTUAL_POINTER.to_owned(),
                 ];
                 if self.blur {
                     features.push(protocol::FEATURE_BLUR.to_owned());
@@ -612,6 +613,26 @@ impl State {
             }
             ShellMessage::Resolution { size } => {
                 self.set_output_resolution(size);
+                Vec::new()
+            }
+            ShellMessage::PointerMode { active } => {
+                info!("gamepad mouse {}", if active { "on" } else { "off" });
+                if active {
+                    self.center_pointer();
+                }
+                Vec::new()
+            }
+            ShellMessage::PointerMotion { dx, dy } => {
+                let location = self.pointer.current_location() + Point::from((dx as f64, dy as f64));
+                self.move_pointer_to(location);
+                Vec::new()
+            }
+            ShellMessage::PointerClick { button } => {
+                self.click_pointer(button);
+                Vec::new()
+            }
+            ShellMessage::PointerScroll { steps } => {
+                self.scroll_pointer(steps);
                 Vec::new()
             }
             ShellMessage::Vrr { enabled } => {

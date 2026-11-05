@@ -43,6 +43,8 @@ pub enum ScriptStep {
     Wait(u64),
     /// A pointer click, e.g. `click-tab:1`, `click-tile:3`, `click-library:2`, `click-row:4`
     Click(Click),
+    /// Moves the pointer of the gamepad mouse, `pointer:DX:DY`
+    Pointer(i32, i32),
     /// Development aid: shows a test notice (e.g. to check toasts over games)
     Toast,
 }
@@ -147,6 +149,10 @@ fn parse_script(list: &str) -> Result<Vec<ScriptStep>, String> {
                     _ => Err(format!("Unknown click: {step}")),
                 }
                 .map(ScriptStep::Click);
+            }
+            if let Some((dx, dy)) = step.strip_prefix("pointer:").and_then(|rest| rest.split_once(':')) {
+                let parse = |value: &str| value.parse().map_err(|_| format!("Invalid pointer step: {step}"));
+                return Ok(ScriptStep::Pointer(parse(dx)?, parse(dy)?));
             }
             if step == "toast" {
                 return Ok(ScriptStep::Toast);

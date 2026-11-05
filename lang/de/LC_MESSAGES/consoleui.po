@@ -1090,3 +1090,12 @@ msgstr "Wechseln"
 
 msgid "Running apps"
 msgstr "Laufende Apps"
+
+msgid "Gamepad mouse"
+msgstr "Gamepad-Maus"
+
+msgid "Use the app with the stick"
+msgstr "Die App mit dem Stick bedienen"
+
+msgid "Stick moves, ✕ clicks, □ right-clicks, ○ ends"
+msgstr "Stick bewegt, ✕ klickt, □ für Rechtsklick, ○ beendet"

@@ -34,6 +34,7 @@ use consoleui_core::{
 use slint::{ComponentHandle, Image, Model, ModelRc, SharedPixelBuffer, VecModel};
 
 use crate::backdrop::{Backdrop, Look};
+mod mouse;
 mod typing;
 mod updates;
 
@@ -208,6 +209,8 @@ pub struct Shell {
     front_changes: u64,
     /// The launch screen offers to show Steam for this app
     steam_help: Option<u32>,
+    /// The gamepad acts as a mouse (Story 7.15)
+    mouse_mode: Option<mouse::MouseMode>,
     /// Decoded previews of the open window switcher, by file
     previews: HashMap<String, Image>,
     /// Time of a failed launch; the launch screen shows the error briefly.
@@ -394,6 +397,7 @@ impl Shell {
             foreground: None,
             front_changes: 0,
             steam_help: None,
+            mouse_mode: None,
             previews: HashMap::new(),
             failed_launch: None,
             close_launch_at: None,
@@ -735,7 +739,7 @@ impl Shell {
 
     /// While the control center is open, the shell reads the controllers exclusively.
     pub fn wants_exclusive_input(&self) -> bool {
-        self.quick.is_some() || self.typing.is_some()
+        self.quick.is_some() || self.typing.is_some() || self.mouse_mode.is_some()
     }
 
     /// Whether a controller input goes to the shell. gilrs reads the devices directly, so the shell
@@ -743,7 +747,7 @@ impl Shell {
     /// counts, the PS button always. In gamescope it depends on whether the shell is in front (the X11
     /// focus is unreliable there after the overlay), on the desktop on the window focus.
     pub fn accepts_gamepad(&self, ui: &AppWindow, action: Action) -> bool {
-        if self.quick.is_some() || self.typing.is_some() {
+        if self.quick.is_some() || self.typing.is_some() || self.mouse_mode.is_some() {
             return true;
         }
         // A text field of the app in front has the focus: ✕ opens the keyboard
@@ -915,6 +919,10 @@ impl Shell {
         }
         if self.typing.is_some() {
             self.apply_typing(ui, action);
+            return;
+        }
+        if self.mouse_mode.is_some() {
+            self.apply_mouse_mode(action);
             return;
         }
         if action == Action::Confirm && self.wants_typing_keyboard(ui) {
@@ -1939,7 +1947,8 @@ impl Shell {
         });
         let profile = self.profiles.get(&self.profile).map(|p| p.name.clone()).unwrap_or_default();
         let switcher = self.switcher(in_front);
-        self.quick = Some(QuickMenu::new(foreground, profile, switcher));
+        let mouse = self.offers_mouse_mode() && self.mouse_mode.is_none();
+        self.quick = Some(QuickMenu::new(foreground, profile, switcher, mouse));
         self.previews.clear();
         // The previews follow with the next frame of the compositor; until then the row shows covers.
         if let Some(compositor) = self.compositor.as_mut().filter(|compositor| compositor.window_list()) {
@@ -2049,6 +2058,7 @@ impl Shell {
                         self.open_profiles(ui, false);
                     }
                     QuickAction::Quit(entry_id) => self.quit_running(&entry_id),
+                    QuickAction::Mouse(app_id) => self.start_mouse_mode(ui, app_id),
                     QuickAction::Volume | QuickAction::Brightness => {}
                     QuickAction::Power(power) => {
                         if let Err(err) = system::power(power) {
@@ -2358,10 +2368,15 @@ impl Shell {
         let steam_games =
             if self.running.iter().any(|r| r.app.is_steam()) { steam::running_games() } else { Default::default() };
         let mut finished = Vec::new();
+        let mut game_started = false;
         for running in &mut self.running {
             match running.app.phase(now, &steam_games) {
                 Phase::Starting => {}
                 Phase::Running => {
+                    // Steam's dialogs are done, the game wants the controller. Ending too early only
+                    // costs a trip to the quick menu, ending too late leaves the game without input.
+                    game_started |= running.show_steam
+                        && self.mouse_mode.as_ref().is_some_and(|mode| mode.app_id == running.app_id);
                     if ui.get_launching() && self.foreground == Some(running.app_id) {
                         ui.set_launch_status(tr("Running").into());
                         ui.set_launch_busy(false);
@@ -2371,6 +2386,10 @@ impl Shell {
             }
         }
         self.update_steam_help(ui, now);
+        if game_started {
+            self.stop_mouse_mode();
+        }
+        self.check_mouse_mode();
         if finished.is_empty() {
             return;
         }
@@ -2421,6 +2440,7 @@ impl Shell {
         }
         ui.set_launch_help(false);
         ui.set_launch_status(tr("Looking for Steam's windows …").into());
+        self.start_mouse_mode(ui, app_id);
     }
 
     /// Messages from our compositor: which launched apps show a window (the launch screen closes
