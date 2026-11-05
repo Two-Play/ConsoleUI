@@ -12,11 +12,12 @@ use std::time::Duration;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::element::surface::{WaylandSurfaceRenderElement, render_elements_from_surface_tree};
+use smithay::backend::renderer::element::utils::select_dmabuf_feedback;
 use smithay::backend::renderer::element::utils::{
     CropRenderElement, Relocate, RelocateRenderElement, RescaleRenderElement,
 };
 use smithay::backend::renderer::element::{
-    AsRenderElements, Kind, RenderElementStates, default_primary_scanout_output_compare,
+    AsRenderElements, Kind, RenderElementPresentationState, RenderElementStates, default_primary_scanout_output_compare,
 };
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::backend::renderer::{Bind, ExportMem, Offscreen, TextureMapping};
@@ -29,6 +30,8 @@ use smithay::input::pointer::{CursorImageAttributes, CursorImageStatus};
 use smithay::output::Output;
 use smithay::utils::{IsAlive, Logical, Physical, Point, Rectangle, Scale, Size, Transform};
 use smithay::wayland::compositor::with_states;
+use smithay::wayland::dmabuf::DmabufFeedback;
+use smithay::wayland::seat::WaylandFocus;
 
 use consoleui_core::protocol::{BlurRegion, WindowRole};
 
@@ -203,6 +206,36 @@ pub fn take_presentation_feedback(
         }
     }
     feedback
+}
+
+/// The two dmabuf feedbacks of an output: for surfaces that are composited and for those whose
+/// buffer could reach a plane (Story 7.8).
+pub struct ScanoutFeedback {
+    pub render: DmabufFeedback,
+    pub scanout: DmabufFeedback,
+}
+
+/// Tells clients which feedback applies to their surfaces now; it is only sent when it changed.
+pub fn send_dmabuf_feedback(
+    space: &Space<Window>,
+    output: &Output,
+    states: &RenderElementStates,
+    feedback: &ScanoutFeedback,
+) {
+    for window in space.elements() {
+        window.send_dmabuf_feedback(output, surface_primary_scanout_output, |surface, _| {
+            select_dmabuf_feedback(surface, states, &feedback.render, &feedback.scanout)
+        });
+    }
+}
+
+/// Whether a window's buffer went straight to a plane in this frame.
+pub fn any_zero_copy(windows: &[Drawn], states: &RenderElementStates) -> bool {
+    windows.iter().filter_map(|drawn| drawn.window.wl_surface()).any(|surface| {
+        states
+            .element_render_state(&*surface)
+            .is_some_and(|state| matches!(state.presentation_state, RenderElementPresentationState::ZeroCopy))
+    })
 }
 
 /// Frame callbacks after a frame. Windows hidden behind the one in front get theirs at most once

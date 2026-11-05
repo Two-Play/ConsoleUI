@@ -148,10 +148,10 @@ are updated after the spike.
 | 7.5 | **Done (Sprint 10).** Focus and input in the compositor: Guide button always goes to the shell, the game gets no input while the quick menu is open (replaces `grab.rs`), keyboard focus returns cleanly | 5 |
 | 7.6 | **Done (Sprint 10).** Shell as overlay above running apps: quick menu and toasts as shell toplevels placed on top by the compositor (Slint has no layer-shell), replaces the `OverlayWindow`/`NotificationWindow` tricks | 5 |
 | 7.7 | **Done (Sprint 11).** Animated transitions between shell and app in the compositor (tile zooms into the real game image, animated return) | 8 |
-| 7.8 | Direct scanout for the game in front (zero-copy, low latency), falling back to composition while an overlay is open | 5 |
-| 7.9 | VRR (adaptive sync) and tearing for games, simple frame pacing (Smithay has VRR, but no tearing-control/async page flip yet) | 13 |
+| 7.8 | **Done, not yet seen on a real GPU.** Direct scanout for the game in front (zero-copy, low latency), falling back to composition while an overlay is open. Clients get dmabuf feedback with a scanout tranche; `--no-scanout`/`CONSOLEUI_NO_SCANOUT=1` turn it off, the log says `direct scanout on/off` | 5 |
+| 7.9 | VRR (adaptive sync) and tearing for games, simple frame pacing. **Partly done:** VRR as the setting "Variable refresh rate" (off by default, row only when the monitor can do it), on only while a game is in front, commits go out at once. Open: tearing (Smithay has no tearing-control/async page flip yet), a test on a VRR monitor | 13 |
 | 7.10 | Nested gamescope per entry (resolution, FSR/NIS/integer, FPS limit, HDR, fullscreen) from the context menu — **done (Sprint 8)**, not for Steam games | 5 |
-| 7.11 | Multiple monitors/hotplug (choose the output, switch to the remaining one on unplug). **Partly done:** unplug → remaining monitor and mode changes worked before; now `--output NAME`/`CONSOLEUI_OUTPUT` and external-before-built-in choose the monitor. Open: switch live when a preferred monitor is plugged in while another is in use, several monitors at once | 5 |
+| 7.11 | Multiple monitors/hotplug (choose the output, switch to the remaining one on unplug). **Partly done:** unplug → remaining monitor and mode changes worked before; now `--output NAME`/`CONSOLEUI_OUTPUT` and external-before-built-in choose the monitor. A preferred monitor plugged in while another is in use now takes over live. Open: several monitors at once | 5 |
 | 7.12 | **Done.** Screenshot with the Print key (compositor renders the output into `~/Pictures/ConsoleUI/screenshot-<date>-<time>.png`, toast with the file name; Guide + R1 on the gamepad does the same under our compositor) | 3 |
 | 7.13 | **Done.** Real backdrop blur behind the quick menu and toasts above a game (dual Kawase pass in the compositor, panels announced over the control socket) | 3 |
 | 7.14 | **Done.** Typing into apps: with a text field of the app in front focused, ✕ opens the floating on-screen keyboard above the app (`text-input-v3` for apps, `input-method-v2` only for the shell). Not for X11/XWayland apps, they do not announce text fields | 5 |
@@ -911,3 +911,20 @@ Branch `agent/compositor-blur`, on top of the UI feedback round (6.10).
 - **Open observation:** in 2 of 3 runs with a second glxgears window it was first drawn only 300 px wide
   (llvmpipe, nested); not seen in 2 runs of the old code, in another run of the same test it was complete.
   The sizing code did not change. Check with a real game.
+
+### Direct scanout, VRR, monitor switch (done: 7.8, part of 7.9, rest of 7.11 except several monitors)
+
+- **Direct scanout (7.8):** `FrameFlags::DEFAULT` already allowed planes, what was missing is telling clients
+  which formats reach one: `drm.rs` builds per-output dmabuf feedback with a scanout tranche (primary and
+  overlay planes, limited to formats we can sample), `render::send_dmabuf_feedback` sends it after each frame.
+  Transitions and the blur stay composited (`RoundedSurface` and the backdrop have no underlying storage).
+- **VRR (7.9):** `Policy::wants_vrr` (a game in front, no quick menu), `ShellMessage::Vrr`, `vrr` in
+  `CompositorMessage::Modes`. Only monitors that switch without a modeset. Under VRR there is no vblank to
+  aim at: a commit cancels the render timer and goes out at once, presentation feedback says `Variable`.
+- **Monitor switch (7.11):** a plugged-in monitor that `pick_output` prefers takes over; unplugging it goes back.
+- **Tested:** unit tests; VM with two heads (`--output Virtual-2`: plugging it in switches, unplugging switches
+  back, the game keeps running and fills the output); VRR row and messages against a stand-in control socket.
+- **Not tested:** direct scanout never happened in a test: the VM's clients (llvmpipe, lavapipe) use shm
+  buffers, and `--drm` must not run on the host. `use_vrr` and the frame pacing under VRR never ran either,
+  QEMU has no VRR. On real hardware, look for `direct scanout on` and `VRR on` in
+  `journalctl --user -t consoleui`. If a game flickers or stalls, try `CONSOLEUI_NO_SCANOUT=1`.

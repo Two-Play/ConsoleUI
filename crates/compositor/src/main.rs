@@ -79,6 +79,9 @@ fn main() {
     if std::env::var_os("CONSOLEUI_NO_BLUR").is_some_and(|value| value != "0") {
         options.blur = false;
     }
+    if std::env::var_os("CONSOLEUI_NO_SCANOUT").is_some_and(|value| value != "0") {
+        options.scanout = false;
+    }
     install_signal_handlers();
     let result = match options.backend {
         BackendChoice::Winit => winit::run(&options),

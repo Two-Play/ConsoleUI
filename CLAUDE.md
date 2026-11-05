@@ -69,7 +69,7 @@ session/consoleui-nested --compositor --dummy      # nested session on our compo
 ```
 
 Compositor options: `--winit`/`--drm` (default: winit when `WAYLAND_DISPLAY`/`DISPLAY` is set),
-`--size WxH`, `--no-xwayland`, `--no-shell`, `--no-blur` (or `CONSOLEUI_NO_BLUR=1`), `--screenshot-after MS PNG` (repeatable), the shell command
+`--size WxH`, `--no-xwayland`, `--no-shell`, `--no-blur` (or `CONSOLEUI_NO_BLUR=1`), `--no-scanout` (or `CONSOLEUI_NO_SCANOUT=1`), `--output NAME`, `--screenshot-after MS PNG` (repeatable), the shell command
 after `--` or `--shell`. **Never run `--drm` on the host** (it takes over the display); test it in the VM.
 
 Test VM for the DRM backend and the login session (`docs/dev-vm.md`): `dev/vm.sh create` once, then
@@ -208,6 +208,9 @@ Cargo workspace (edition 2024, `default-members` = the shell):
   window, cached while nothing below changes; `backdrop.rs` is its Smithay-free part (regions, fades,
   captured area). Smithay makes render targets current lazily, so offscreen passes may run while the
   output is bound.
+  `drm.rs` also sends clients dmabuf feedback with a scanout tranche (Story 7.8; the log says `direct scanout on/off`),
+  turns VRR on while `Policy::wants_vrr` holds and the shell's setting allows it (Story 7.9; `ShellMessage::Vrr`, then a
+  commit goes out at once instead of at the next timer) and moves to a preferred monitor when it is plugged in (Story 7.11).
   `modes.rs` is the Smithay-free choice of the output mode for the "Resolution" setting (`ShellMessage::Resolution`;
   `drm.rs` reports the sizes with `CompositorMessage::Modes`, so the row exists only on a real display).
   `policy.rs` is the Smithay-free, unit-tested window policy (owner shell/app/unknown, front, stacking,

@@ -546,7 +546,7 @@ impl Shell {
         self.apply_artwork(ui);
         self.apply_language(ui);
         self.send_keyboard_layout();
-        self.send_resolution();
+        self.send_output_settings();
         if let Some(profile) = self.profiles.get(&self.profile) {
             let title = trf("Hello, {}!", &[&profile.name]);
             self.toast(ui, "☺", &title, tr("Your games and settings are loaded."));
@@ -1056,9 +1056,12 @@ impl Shell {
                         self.settings.resolution,
                         action != Action::Left,
                     );
-                    self.send_resolution();
+                    self.send_output_settings();
                 }
                 self.settings.change(setting, action != Action::Left);
+                if setting == Setting::Vrr {
+                    self.send_output_settings();
+                }
                 if setting == Setting::Artwork {
                     self.apply_artwork(ui);
                 }
@@ -1134,7 +1137,8 @@ impl Shell {
     /// Rows of the settings page; the keyboard layout only in our compositor.
     fn settings_list(&self) -> Vec<Setting> {
         let modes = self.compositor.as_ref().is_some_and(|compositor| !compositor.modes().is_empty());
-        self.settings.rows(self.compositor.is_some(), modes)
+        let vrr = self.compositor.as_ref().is_some_and(Compositor::vrr);
+        self.settings.rows(self.compositor.is_some(), modes, vrr)
     }
 
     /// Names of the files in the music folder
@@ -1260,12 +1264,14 @@ impl Shell {
         }
     }
 
-    /// Tells our compositor the resolution from the settings (`None`: the monitor's preferred mode).
+    /// Tells our compositor the resolution (`None`: the monitor's preferred mode) and whether to use
+    /// variable refresh rate.
     /// Waits for the output's modes, which also come after a new monitor was plugged in.
-    fn send_resolution(&mut self) {
-        let size = self.settings.resolution;
+    fn send_output_settings(&mut self) {
+        let (size, enabled) = (self.settings.resolution, self.settings.vrr);
         if let Some(compositor) = self.compositor.as_mut().filter(|compositor| !compositor.modes().is_empty()) {
             compositor.send(&ShellMessage::Resolution { size });
+            compositor.send(&ShellMessage::Vrr { enabled });
         }
     }
 
@@ -2489,7 +2495,7 @@ impl Shell {
             self.show_quick(ui, true);
         }
         if modes_changed {
-            self.send_resolution();
+            self.send_output_settings();
         }
         if rows_changed {
             self.update_settings_rows(ui);

@@ -970,6 +970,12 @@ msgstr "Helligkeit"
 msgid "Output resolution of the screen"
 msgstr "Ausgabeauflösung des Bildschirms"
 
+msgid "Variable refresh rate"
+msgstr "Variable Bildwiederholrate"
+
+msgid "The screen follows the frame rate of the game (VRR)"
+msgstr "Der Bildschirm folgt der Bildrate des Spiels (VRR)"
+
 msgid "Firmware"
 msgstr "Firmware"
 

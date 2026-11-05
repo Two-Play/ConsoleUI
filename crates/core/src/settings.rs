@@ -154,6 +154,8 @@ pub struct Settings {
     pub keyboard_layout: KeyboardLayout,
     /// Output size in our compositor; `None` is the monitor's preferred mode
     pub resolution: Option<(u32, u32)>,
+    /// Variable refresh rate while a game is in front, in our compositor
+    pub vrr: bool,
 }
 
 impl Default for Settings {
@@ -173,6 +175,7 @@ impl Default for Settings {
             language: LanguageChoice::default(),
             keyboard_layout: KeyboardLayout::default(),
             resolution: None,
+            vrr: false,
         }
     }
 }
@@ -204,6 +207,8 @@ pub enum Setting {
     KeyboardLayout,
     /// Only on a real display under our compositor, which switches the mode (Story 5.5)
     Resolution,
+    /// Only when the monitor can do it under our compositor (Story 7.9)
+    Vrr,
     /// Opens the update page (Story 5.8)
     Updates,
     /// Opens the Wi-Fi page (Story 5.3)
@@ -213,7 +218,7 @@ pub enum Setting {
 }
 
 impl Setting {
-    pub const ALL: [Setting; 17] = [
+    pub const ALL: [Setting; 18] = [
         Self::Accent,
         Self::Animations,
         Self::Background,
@@ -228,6 +233,7 @@ impl Setting {
         Self::Language,
         Self::KeyboardLayout,
         Self::Resolution,
+        Self::Vrr,
         Self::Wifi,
         Self::Bluetooth,
         Self::Updates,
@@ -254,6 +260,7 @@ impl Setting {
             Self::Language => tr("Language"),
             Self::KeyboardLayout => tr("Keyboard layout"),
             Self::Resolution => tr("Resolution"),
+            Self::Vrr => tr("Variable refresh rate"),
             Self::Wifi => tr("Wi-Fi"),
             Self::Bluetooth => tr("Bluetooth"),
             Self::Updates => tr("Updates"),
@@ -276,6 +283,7 @@ impl Setting {
             Self::Language => tr("Language of the interface"),
             Self::KeyboardLayout => tr("Layout of the connected keyboard"),
             Self::Resolution => tr("Output resolution of the screen"),
+            Self::Vrr => tr("The screen follows the frame rate of the game (VRR)"),
             Self::Wifi => tr("Show and join networks"),
             Self::Bluetooth => tr("Pair controllers and other devices"),
             Self::Updates => tr("Search for and install system updates"),
@@ -303,13 +311,15 @@ pub fn cycle_resolution(sizes: &[(u32, u32)], current: Option<(u32, u32)>, forwa
 impl Settings {
     /// The rows of the settings page: the keyboard layout only where it has an effect (in our
     /// compositor; gamescope and the desktop use the layout of their own session), the resolution
-    /// only when the compositor reports modes, the animation style unless the background is classic, the track only for "My music".
-    pub fn rows(&self, keyboard_layout: bool, resolution: bool) -> Vec<Setting> {
+    /// only when the compositor reports modes, variable refresh rate only when the monitor can do it,
+    /// the animation style unless the background is classic, the track only for "My music".
+    pub fn rows(&self, keyboard_layout: bool, resolution: bool, vrr: bool) -> Vec<Setting> {
         Setting::ALL
             .into_iter()
             .filter(|&row| match row {
                 Setting::KeyboardLayout => keyboard_layout,
                 Setting::Resolution => resolution,
+                Setting::Vrr => vrr,
                 Setting::AnimationStyle | Setting::AnimationColors => self.background != BackgroundChoice::Classic,
                 Setting::MusicTrack => self.music == MusicChoice::Folder,
                 _ => true,
@@ -356,6 +366,7 @@ impl Settings {
             Setting::Music => self.music.label(),
             // Names a file or a mode: the shell has the list
             Setting::MusicTrack | Setting::Resolution => "",
+            Setting::Vrr => on_off(self.vrr),
             Setting::Glyphs => self.glyphs.label(),
             Setting::Language => self.language.label(),
             Setting::KeyboardLayout => self.keyboard_layout.label(),
@@ -374,6 +385,7 @@ impl Settings {
             Setting::Artwork => self.artwork = !self.artwork,
             Setting::Notifications => self.notifications = !self.notifications,
             Setting::Sounds => self.sounds = !self.sounds,
+            Setting::Vrr => self.vrr = !self.vrr,
             Setting::Music => self.music = cycle(&MusicChoice::ALL, self.music, forward),
             Setting::Glyphs => self.glyphs = cycle(&GlyphChoice::ALL, self.glyphs, forward),
             Setting::Language => self.language = cycle(&LanguageChoice::ALL, self.language, forward),
@@ -431,8 +443,10 @@ mod tests {
     #[test]
     fn resolution_row_and_cycle() {
         let settings = Settings::default();
-        assert!(!settings.rows(true, false).contains(&Setting::Resolution));
-        assert!(settings.rows(false, true).contains(&Setting::Resolution));
+        assert!(!settings.rows(true, false, false).contains(&Setting::Resolution));
+        assert!(!settings.rows(true, true, false).contains(&Setting::Vrr));
+        assert!(settings.rows(true, true, true).contains(&Setting::Vrr));
+        assert!(settings.rows(false, true, false).contains(&Setting::Resolution));
         let sizes = [(1920, 1080), (1280, 720)];
         assert_eq!(cycle_resolution(&sizes, None, true), Some((1920, 1080)));
         assert_eq!(cycle_resolution(&sizes, Some((1280, 720)), true), None);
@@ -444,20 +458,20 @@ mod tests {
     #[test]
     fn keyboard_layout_row_only_in_our_compositor() {
         let settings = Settings::default();
-        assert!(!settings.rows(false, false).contains(&Setting::KeyboardLayout));
-        assert_eq!(settings.rows(false, false).len(), Setting::ALL.len() - 3);
-        assert!(settings.rows(true, false).contains(&Setting::KeyboardLayout));
+        assert!(!settings.rows(false, false, false).contains(&Setting::KeyboardLayout));
+        assert_eq!(settings.rows(false, false, false).len(), Setting::ALL.len() - 4);
+        assert!(settings.rows(true, false, false).contains(&Setting::KeyboardLayout));
     }
 
     #[test]
     fn track_and_style_rows_depend_on_their_parent() {
         let mut settings = Settings::default();
-        assert!(!settings.rows(false, false).contains(&Setting::MusicTrack));
+        assert!(!settings.rows(false, false, false).contains(&Setting::MusicTrack));
         settings.music = MusicChoice::Folder;
-        assert!(settings.rows(false, false).contains(&Setting::MusicTrack));
-        assert!(settings.rows(false, false).contains(&Setting::AnimationStyle));
+        assert!(settings.rows(false, false, false).contains(&Setting::MusicTrack));
+        assert!(settings.rows(false, false, false).contains(&Setting::AnimationStyle));
         settings.background = BackgroundChoice::Classic;
-        assert!(!settings.rows(false, false).contains(&Setting::AnimationStyle));
+        assert!(!settings.rows(false, false, false).contains(&Setting::AnimationStyle));
         settings.change(Setting::AnimationStyle, true);
         assert_eq!(settings.shader, Style::Plasma);
         settings.change(Setting::AnimationColors, false);

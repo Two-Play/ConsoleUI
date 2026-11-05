@@ -177,6 +177,9 @@ pub enum ShellMessage {
         #[serde(default)]
         size: Option<(u32, u32)>,
     },
+    /// Settings row "Variable refresh rate" (Story 7.9): the compositor uses VRR while a game is in
+    /// front. The shell sends it after [`CompositorMessage::Modes`] and on every change.
+    Vrr { enabled: bool },
     /// Layout of the physical keyboard (settings row "Keyboard layout"): an xkb layout name such
     /// as `de`, or `None` for the system layout the compositor detected. The shell sends it after
     /// `Hello` and on every change; the compositor answers with [`CompositorMessage::Keymap`].
@@ -215,7 +218,12 @@ pub enum CompositorMessage {
     WindowList { windows: Vec<WindowInfo> },
     /// The sizes the output can switch to, largest first (sent on connect and when they change;
     /// never when nested, a window has no modes).
-    Modes { sizes: Vec<(u32, u32)> },
+    Modes {
+        sizes: Vec<(u32, u32)>,
+        /// The monitor can do variable refresh rate (Story 7.9)
+        #[serde(default)]
+        vrr: bool,
+    },
     /// Result of [`ShellMessage::Screenshot`]
     ScreenshotDone {
         path: String,

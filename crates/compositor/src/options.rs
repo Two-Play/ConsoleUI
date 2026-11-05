@@ -18,6 +18,8 @@ Options:
   --no-xwayland                do not start XWayland (no DISPLAY for the shell and its apps)
   --no-blur                    no backdrop blur under the quick menu and toasts (also with
                                CONSOLEUI_NO_BLUR=1 in the environment)
+  --no-scanout                 always composite, no client buffers on planes (also with
+                               CONSOLEUI_NO_SCANOUT=1 in the environment)
   --output NAME                the monitor to use with --drm, e.g. HDMI-A-1 (also CONSOLEUI_OUTPUT;
                                default: an external monitor, else the built-in one)
   --screenshot-after MS PNG    save the composed output as PNG MS milliseconds after the start
@@ -39,6 +41,8 @@ pub struct Options {
     pub xwayland: bool,
     /// Blur behind the shell's overlay and notification panels (Story 7.13)
     pub blur: bool,
+    /// Client buffers may go straight to a plane with `--drm` (Story 7.8)
+    pub scanout: bool,
     /// Name of the monitor to use with `--drm` (Story 7.11)
     pub output: Option<String>,
     pub screenshots: Vec<(Duration, PathBuf)>,
@@ -54,6 +58,7 @@ impl Options {
             shell: Some(vec!["consoleui".into()]),
             xwayland: true,
             blur: true,
+            scanout: true,
             output: std::env::var("CONSOLEUI_OUTPUT").ok().filter(|name| !name.is_empty()),
             screenshots: Vec::new(),
             help: false,
@@ -70,6 +75,7 @@ impl Options {
                 "--no-shell" => options.shell = None,
                 "--no-xwayland" => options.xwayland = false,
                 "--no-blur" => options.blur = false,
+                "--no-scanout" => options.scanout = false,
                 "--output" => options.output = Some(args.next().ok_or("--output needs a connector name")?),
                 "--screenshot-after" => {
                     let ms = args.next().ok_or("--screenshot-after needs MS and PNG")?;
@@ -136,6 +142,8 @@ mod tests {
         assert_eq!(parse(&["--no-shell"]).unwrap().shell, None);
         assert!(parse(&[]).unwrap().blur);
         assert!(!parse(&["--no-blur"]).unwrap().blur);
+        assert!(parse(&[]).unwrap().scanout);
+        assert!(!parse(&["--no-scanout"]).unwrap().scanout);
         assert_eq!(parse(&["--output", "DP-2"]).unwrap().output.as_deref(), Some("DP-2"));
         assert!(parse(&["--output"]).is_err());
     }

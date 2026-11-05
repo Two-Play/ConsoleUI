@@ -1,6 +1,6 @@
 //! Session backend: DRM/KMS on the primary GPU, libinput for keyboard and mouse, libseat (logind)
-//! for device access and VT switching. Single GPU, single output (the first connected
-//! connector; another one takes over when it is unplugged).
+//! for device access and VT switching. Single GPU, single output (see `pick_output`; another one
+//! takes over when it is unplugged, and a preferred one when it is plugged in).
 //!
 //! Modelled on anvil's `udev.rs` (MIT, Copyright (c) 2017 Victor Berger), without multi-GPU,
 //! DRM leasing and the debug overlays.
@@ -14,7 +14,9 @@ use smithay::backend::allocator::{Fourcc, Modifier};
 use smithay::backend::drm::compositor::FrameFlags;
 use smithay::backend::drm::exporter::gbm::GbmFramebufferExporter;
 use smithay::backend::drm::output::{DrmOutput, DrmOutputManager, DrmOutputRenderElements};
-use smithay::backend::drm::{DrmDevice, DrmDeviceFd, DrmEvent, DrmEventMetadata, DrmEventTime, DrmNode, NodeType};
+use smithay::backend::drm::{
+    DrmDevice, DrmDeviceFd, DrmEvent, DrmEventMetadata, DrmEventTime, DrmNode, NodeType, Planes, VrrSupport,
+};
 use smithay::backend::egl::context::ContextPriority;
 use smithay::backend::egl::{EGLContext, EGLDevice, EGLDisplay};
 use smithay::backend::input::InputEvent;
@@ -33,6 +35,7 @@ use smithay::reexports::drm::Device as _;
 use smithay::reexports::drm::control::{Mode as DrmMode, ModeFlags, ModeTypeFlags, connector, crtc};
 use smithay::reexports::input::{DeviceCapability, Libinput};
 use smithay::reexports::rustix::fs::OFlags;
+use smithay::reexports::wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_feedback_v1::TrancheFlags;
 use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 use smithay::reexports::wayland_server::Display;
 use smithay::reexports::wayland_server::backend::GlobalId;
@@ -49,7 +52,7 @@ use consoleui_core::protocol::CompositorMessage;
 use crate::backend::Backend;
 use crate::modes::{self, ModeInfo};
 use crate::options::Options;
-use crate::render::{self, OutputElement};
+use crate::render::{self, OutputElement, ScanoutFeedback};
 use crate::state::State;
 
 /// 8-bit formats only: widely supported, and the screenshot read-back stays simple.
@@ -74,10 +77,14 @@ pub struct DrmData {
     gpu_path: PathBuf,
     device: Option<Gpu>,
     keyboards: Vec<smithay::reexports::input::Device>,
-    /// A render is already scheduled (avoids piling up timers)
-    render_scheduled: bool,
+    /// The scheduled render (avoids piling up timers; a commit under VRR replaces it)
+    render_timer: Option<RegistrationToken>,
     /// Size from the "Resolution" setting; `None` is the monitor's preferred mode (Story 5.5)
     wanted_size: Option<(u32, u32)>,
+    /// Client buffers may go straight to a plane (Story 7.8; `--no-scanout` turns it off)
+    scanout: bool,
+    /// The "Variable refresh rate" setting of the shell (Story 7.9)
+    vrr_wanted: bool,
 }
 
 struct Gpu {
@@ -101,6 +108,14 @@ struct Surface {
     global: GlobalId,
     /// A frame was queued and its vblank has not arrived yet
     queued: bool,
+    /// What clients are told to allocate, by whether their buffers can reach a plane (Story 7.8)
+    feedback: Option<ScanoutFeedback>,
+    /// A window's buffer went straight to a plane in the last frame (only logged)
+    zero_copy: bool,
+    /// The monitor and driver can switch VRR without a modeset (Story 7.9)
+    vrr_supported: bool,
+    /// VRR is on right now: a game is in front and the setting allows it
+    vrr_active: bool,
 }
 
 impl DrmData {
@@ -140,8 +155,10 @@ pub fn run(options: &Options) -> Result<i32, Box<dyn std::error::Error>> {
         gpu_path,
         device: None,
         keyboards: Vec::new(),
-        render_scheduled: false,
+        render_timer: None,
         wanted_size: None,
+        scanout: options.scanout,
+        vrr_wanted: false,
     };
     let mut state = State::new(display, event_loop.handle(), event_loop.get_signal(), Backend::Drm(Box::new(data)))?;
     state.preferred_output = options.output.clone();
@@ -334,8 +351,10 @@ impl State {
         };
         let mut lost = false;
         let mut changed = None;
+        let mut plugged = false;
         for event in events {
             match event {
+                DrmScanEvent::Connected { .. } => plugged = true,
                 DrmScanEvent::Disconnected { connector, .. }
                     if gpu.surface.as_ref().is_some_and(|s| s.connector == connector.handle()) =>
                 {
@@ -351,23 +370,40 @@ impl State {
                 _ => {}
             }
         }
-        if lost && let Some(surface) = gpu.surface.take() {
-            self.space.unmap_output(&surface.output);
-            self.display_handle.remove_global::<State>(surface.global);
-            self.output = None;
+        if lost {
+            self.drop_drm_surface();
         }
         if !lost && let Some(connector) = changed {
             self.drm_connector_modes_changed(&connector);
         }
+        let preferred = self.preferred_output.clone();
         let Some(gpu) = self.drm().and_then(|d| d.device.as_mut()) else { return };
-        if gpu.surface.is_none() {
-            let candidates: Vec<_> = gpu.scanner.crtcs().map(|(info, crtc)| (info.clone(), crtc)).collect();
-            let names: Vec<String> = candidates.iter().map(|(info, _)| connector_name(info)).collect();
-            let pick = pick_output(&names, self.preferred_output.as_deref());
-            if let Some((connector, crtc)) = pick.and_then(|index| candidates.into_iter().nth(index)) {
-                self.drm_connector_connected(connector, crtc);
-            }
+        let candidates: Vec<_> = gpu.scanner.crtcs().map(|(info, crtc)| (info.clone(), crtc)).collect();
+        let names: Vec<String> = candidates.iter().map(|(info, _)| connector_name(info)).collect();
+        let Some((connector, crtc)) =
+            pick_output(&names, preferred.as_deref()).and_then(|index| candidates.into_iter().nth(index))
+        else {
+            return;
+        };
+        // A monitor we prefer was plugged in while another one is in use (Story 7.11)
+        let current = gpu.surface.as_ref().map(|surface| surface.connector);
+        if plugged && current.is_some_and(|current| current != connector.handle()) {
+            info!("switching to the output {}", connector_name(&connector));
+            self.drop_drm_surface();
+        } else if current.is_some() {
+            return;
         }
+        self.drm_connector_connected(connector, crtc);
+    }
+
+    /// Gives up our output; dropping the DRM output turns its CRTC off.
+    fn drop_drm_surface(&mut self) {
+        let Some(surface) = self.drm().and_then(|d| d.device.as_mut()).and_then(|gpu| gpu.surface.take()) else {
+            return;
+        };
+        self.space.unmap_output(&surface.output);
+        self.display_handle.remove_global::<State>(surface.global);
+        self.output = None;
     }
 
     /// The connector has other modes now: the shell learns them, and the output follows.
@@ -393,11 +429,58 @@ impl State {
         }
     }
 
+    /// The "Variable refresh rate" setting of the shell (Story 7.9). It takes effect with the next
+    /// frame that shows a game, see [`Self::update_vrr`].
+    pub fn set_vrr(&mut self, enabled: bool) {
+        let Some(data) = self.drm() else { return };
+        data.vrr_wanted = enabled;
+        self.schedule_drm_render(Duration::ZERO);
+    }
+
+    /// VRR is on only while a game is in front: the shell's animations and overlays run at the
+    /// monitor's fixed rate, and some panels flicker with them otherwise. Changing it needs no
+    /// modeset (`vrr_supported`), the next commit carries it.
+    fn update_vrr(&mut self) {
+        let wanted = self.policy.wants_vrr();
+        let Backend::Drm(drm) = &mut self.backend else { return };
+        let wanted = wanted && drm.vrr_wanted;
+        let Some(surface) = drm.device.as_mut().and_then(|gpu| gpu.surface.as_mut()) else { return };
+        if !surface.vrr_supported || surface.vrr_active == wanted {
+            return;
+        }
+        match surface.drm_output.with_compositor(|compositor| compositor.use_vrr(wanted)) {
+            Ok(()) => {
+                info!("output {}: VRR {}", surface.output.name(), if wanted { "on" } else { "off" });
+                surface.vrr_active = wanted;
+            }
+            Err(err) => {
+                warn!("cannot change VRR on {}: {err}", surface.output.name());
+                surface.vrr_supported = false;
+            }
+        }
+    }
+
+    /// Under VRR the monitor waits for us, so a commit of the game goes out at once instead of at
+    /// the next timer (Story 7.9).
+    pub fn drm_surface_committed(&mut self) {
+        let Some(data) = self.drm() else { return };
+        let active =
+            data.device.as_ref().and_then(|gpu| gpu.surface.as_ref()).is_some_and(|s| s.vrr_active && !s.queued);
+        if !active {
+            return;
+        }
+        if let Some(token) = data.render_timer.take() {
+            self.loop_handle.remove(token);
+        }
+        self.schedule_drm_render(Duration::ZERO);
+    }
+
     fn announce_modes(&mut self) {
         let Some(surface) = self.drm().and_then(|d| d.device.as_ref()).and_then(|gpu| gpu.surface.as_ref()) else {
             return;
         };
-        let message = CompositorMessage::Modes { sizes: modes::sizes(&mode_infos(&surface.modes)) };
+        let message =
+            CompositorMessage::Modes { sizes: modes::sizes(&mode_infos(&surface.modes)), vrr: surface.vrr_supported };
         self.control.set_greeting(message.clone());
         self.control.broadcast(&message);
     }
@@ -467,6 +550,8 @@ impl State {
             planes.overlay = vec![];
         }
 
+        let feedback = scanout_feedback(gpu.node, &gpu.renderer, &planes);
+
         let drm_output = match gpu.manager.lock().initialize_output::<_, OutputElement>(
             crtc,
             drm_mode,
@@ -484,6 +569,11 @@ impl State {
         };
         let global = output.create_global::<State>(&dh);
         info!("output {name}: {}x{}@{}", wl_mode.size.w, wl_mode.size.h, wl_mode.refresh);
+        let vrr = drm_output.with_compositor(|compositor| compositor.vrr_supported(connector.handle()));
+        let vrr_supported = matches!(vrr, Ok(VrrSupport::Supported));
+        if matches!(vrr, Ok(VrrSupport::RequiresModeset)) {
+            info!("output {name}: VRR would need a modeset, not used");
+        }
         gpu.surface = Some(Surface {
             crtc,
             connector: connector.handle(),
@@ -493,6 +583,10 @@ impl State {
             drm_output,
             global,
             queued: false,
+            feedback,
+            zero_copy: false,
+            vrr_supported,
+            vrr_active: false,
         });
         self.set_output(output);
         self.announce_modes();
@@ -519,24 +613,28 @@ impl State {
     }
 
     fn schedule_drm_render(&mut self, delay: Duration) {
-        let Some(drm) = self.drm() else { return };
-        if drm.render_scheduled {
+        if self.drm().is_none_or(|drm| drm.render_timer.is_some()) {
             return;
         }
-        drm.render_scheduled = true;
         let result = self.loop_handle.insert_source(Timer::from_duration(delay), |_, _, state| {
             if let Some(drm) = state.drm() {
-                drm.render_scheduled = false;
+                drm.render_timer = None;
             }
             state.render_drm();
             TimeoutAction::Drop
         });
-        if let Err(err) = result {
-            warn!("cannot schedule a frame: {err}");
+        match result {
+            Ok(token) => {
+                if let Some(drm) = self.drm() {
+                    drm.render_timer = Some(token);
+                }
+            }
+            Err(err) => warn!("cannot schedule a frame: {err}"),
         }
     }
 
     fn render_drm(&mut self) {
+        self.update_vrr();
         let pointer = self.pointer.current_location();
         let windows = self.frame_windows();
         let Backend::Drm(drm) = &mut self.backend else { return };
@@ -554,15 +652,23 @@ impl State {
             pointer,
             &mut self.blur_cache,
         );
-        let result =
-            surface.drm_output.render_frame(&mut gpu.renderer, &elements, render::CLEAR_COLOR, FrameFlags::DEFAULT);
+        let flags = if drm.scanout { FrameFlags::DEFAULT } else { FrameFlags::empty() };
+        let result = surface.drm_output.render_frame(&mut gpu.renderer, &elements, render::CLEAR_COLOR, flags);
         let mut rendered = false;
         match result {
             Ok(result) => {
                 rendered = !result.is_empty;
                 let states = result.states;
                 render::update_primary_scanout_output(&self.space, &output, &states);
+                if let Some(feedback) = &surface.feedback {
+                    render::send_dmabuf_feedback(&self.space, &output, &states, feedback);
+                }
                 if rendered {
+                    let zero_copy = render::any_zero_copy(&windows, &states);
+                    if zero_copy != surface.zero_copy {
+                        info!("direct scanout {}", if zero_copy { "on" } else { "off" });
+                        surface.zero_copy = zero_copy;
+                    }
                     let feedback = render::take_presentation_feedback(&output, &self.space, &states);
                     match surface.drm_output.queue_frame(Some(feedback)) {
                         Ok(()) => surface.queued = true,
@@ -590,6 +696,8 @@ impl State {
         let Some(surface) = gpu.surface.as_mut().filter(|s| s.crtc == crtc) else { return };
         surface.queued = false;
         let frame_duration = Self::frame_duration(&surface.output);
+        let vrr = surface.vrr_active;
+        let refresh = if vrr { Refresh::Variable(frame_duration) } else { Refresh::fixed(frame_duration) };
         let (time, flags) = match metadata.as_ref().map(|m| m.time) {
             Some(DrmEventTime::Monotonic(time)) if !time.is_zero() => (
                 time.into(),
@@ -603,14 +711,36 @@ impl State {
         match surface.drm_output.frame_submitted() {
             Ok(user_data) => {
                 if let Some(mut feedback) = user_data.flatten() {
-                    feedback.presented(time, Refresh::fixed(frame_duration), sequence as u64, flags);
+                    feedback.presented(time, refresh, sequence as u64, flags);
                 }
             }
             Err(err) => warn!("frame submission failed: {err}"),
         }
-        // Render a bit after the vblank, so clients have time for their next frame (anvil).
-        self.schedule_drm_render(frame_duration.mul_f64(0.6));
+        // Render a bit after the vblank, so clients have time for their next frame (anvil). Under
+        // VRR there is no next vblank to meet, a frame that is already waiting goes out at once.
+        self.schedule_drm_render(if vrr { Duration::ZERO } else { frame_duration.mul_f64(0.6) });
     }
+}
+
+/// What clients should allocate on this output (Story 7.8). A surface whose buffer can reach a
+/// plane is offered the planes' formats first, so it can be shown without a copy. Limited to formats
+/// we can sample too: an open overlay needs the buffer as a texture.
+fn scanout_feedback(node: DrmNode, renderer: &GlesRenderer, planes: &Planes) -> Option<ScanoutFeedback> {
+    let formats = renderer.dmabuf_formats();
+    let render_dev = node.node_with_type(NodeType::Render).and_then(Result::ok).unwrap_or(node).dev_id();
+    let plane_formats: FormatSet = planes
+        .primary
+        .iter()
+        .chain(&planes.overlay)
+        .flat_map(|plane| plane.formats.iter().copied())
+        .filter(|format| formats.contains(format))
+        .collect();
+    let builder = DmabufFeedbackBuilder::new(render_dev, formats);
+    let result = builder.clone().build().and_then(|render| {
+        let scanout = builder.add_preference_tranche(node.dev_id(), TrancheFlags::Scanout, plane_formats, 4u32..=6);
+        Ok(ScanoutFeedback { render, scanout: scanout.build()? })
+    });
+    result.map_err(|err| warn!("no scanout feedback: {err}")).ok()
 }
 
 /// The connector's name as the kernel and `--output` spell it, e.g. `HDMI-A-1`.

@@ -614,6 +614,10 @@ impl State {
                 self.set_output_resolution(size);
                 Vec::new()
             }
+            ShellMessage::Vrr { enabled } => {
+                self.set_vrr(enabled);
+                Vec::new()
+            }
             ShellMessage::KeyboardLayout { layout } => {
                 self.set_keyboard_layout(layout.as_deref());
                 Vec::new()
@@ -779,6 +783,7 @@ impl CompositorHandler for State {
                     }
                 }
                 self.window_committed(&window);
+                self.drm_surface_committed();
             }
         }
         self.popups.commit(surface);

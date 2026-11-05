@@ -249,6 +249,12 @@ impl Policy {
         self.overlay
     }
 
+    /// A game fills the screen with nothing of the shell above it, so the output may follow its
+    /// frame rate (Story 7.9).
+    pub fn wants_vrr(&self) -> bool {
+        !self.overlay && matches!(self.front(), Target::App { .. })
+    }
+
     /// Whether a normal window of the app shows content.
     pub fn app_has_content(&self, app_id: u32) -> bool {
         self.has_content(Role::App(app_id))
@@ -538,6 +544,25 @@ mod tests {
             vec![CompositorMessage::AppGone { app_id: 7 }, CompositorMessage::FocusChanged { target: Target::Shell }]
         );
         assert_eq!(policy.keyboard_focus(), Some(1));
+    }
+
+    #[test]
+    fn vrr_only_with_a_game_in_front() {
+        let lookup = processes();
+        let mut policy = policy();
+        assert!(!policy.wants_vrr());
+        policy.launched(7, Some(Owner::Process(200)), &lookup);
+        policy.set_target(Target::App { app_id: 7 });
+        assert!(!policy.wants_vrr(), "the launch screen is still in front");
+        policy.add_window(2, Some(200), false, "game", &lookup);
+        policy.show(2);
+        assert!(policy.wants_vrr());
+        policy.set_overlay(true);
+        assert!(!policy.wants_vrr());
+        policy.set_overlay(false);
+        assert!(policy.wants_vrr());
+        policy.set_target(Target::Shell);
+        assert!(!policy.wants_vrr());
     }
 
     #[test]
