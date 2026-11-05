@@ -940,6 +940,8 @@ Branch `agent/compositor-blur`, on top of the UI feedback round (6.10).
   It now matches the gilrs mapping; Xbox controllers report X and Y the wrong way round and are swapped.
 - **Tested:** VM on the seat with a virtual Xbox pad (uinput) and foot with mouse reporting: the stick moves the
   pointer, ✕, □ and R1 reach the app as left click, right click and wheel, after ○ a press of ✕ clicks nothing.
-- **Not tested:** the start through "Show Steam" and the end when a Steam game starts, the real Steam client,
-  a real DualSense. Steam Input reads the controller too (hidraw), so its desktop layout may act at the same
-  time. A Wayland app that sets no cursor of its own shows no pointer (foot and XWayland apps do).
+- **Tested with a stand-in `steam` script (nested):** "Show Steam" starts the gamepad mouse, the process with
+  `SteamAppId` ends it.
+- **Not tested:** the real Steam client, a real DualSense. Steam Input reads the controller too (hidraw), so its
+  desktop layout may act at the same time. A Wayland app that sets no cursor of its own shows no pointer (foot and
+  XWayland apps do).

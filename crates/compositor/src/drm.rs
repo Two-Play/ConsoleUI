@@ -209,6 +209,8 @@ pub fn run(options: &Options) -> Result<i32, Box<dyn std::error::Error>> {
                 }
                 if let Some(surface) = gpu.surface.as_mut() {
                     surface.queued = false;
+                    // Whoever had the VT may have changed it
+                    surface.vrr_active = surface.drm_output.with_compositor(|compositor| compositor.vrr_enabled());
                 }
             }
             state.schedule_drm_render(Duration::ZERO);
@@ -443,6 +445,10 @@ impl State {
     fn update_vrr(&mut self) {
         let wanted = self.policy.wants_vrr();
         let Backend::Drm(drm) = &mut self.backend else { return };
+        // On another VT the CRTC is not ours: a failure here would say nothing about the monitor.
+        if !drm.session.is_active() {
+            return;
+        }
         let wanted = wanted && drm.vrr_wanted;
         let Some(surface) = drm.device.as_mut().and_then(|gpu| gpu.surface.as_mut()) else { return };
         if !surface.vrr_supported || surface.vrr_active == wanted {
