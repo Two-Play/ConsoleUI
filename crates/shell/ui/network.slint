@@ -31,7 +31,7 @@ component LockIcon inherits Rectangle {
         y: 0;
         width: 12px * root.s;
         height: 14px * root.s;
-        border-radius: 6px * root.s;
+        border-radius: Theme.radius-small * root.s;
         border-width: 2.5px * root.s;
         border-color: root.tint;
     }
@@ -136,11 +136,11 @@ export component NetworkPage inherits Rectangle {
                 }
                 width: root.card-width;
                 height: root.row-height;
-                border-radius: 18px * root.s;
-                background: self.is-focused ? (row.armed ? #ff6b6b : Theme.accent) : Theme.surface;
+                border-radius: Theme.radius-card * root.s;
+                background: self.is-focused ? (row.armed ? Theme.danger : Theme.accent) : Theme.surface;
                 animate background { duration: Theme.focus-duration; }
                 border-width: !self.is-focused && (row.gamepad || row.armed) ? 2px : 0;
-                border-color: row.armed ? #ff6b6b : Theme.accent.with-alpha(0.6);
+                border-color: row.armed ? Theme.danger : Theme.accent.with-alpha(0.6);
 
                 // Symbol on the left: Wi-Fi bars, controller graphic or text symbol
                 Rectangle {

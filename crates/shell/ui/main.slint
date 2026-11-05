@@ -605,7 +605,7 @@ export component AppWindow inherits Window {
                     height: 4px * s;
                     width: 360px * s;
                     border-radius: self.height / 2;
-                    background: #ffffff1f;
+                    background: Theme.surface;
                     clip: true;
                     opacity: root.launch-busy ? 1 : 0;
                     animate opacity { duration: Theme.page-duration; }
@@ -708,14 +708,14 @@ export component AppWindow inherits Window {
             y: 12px;
             width: fps-label.preferred-width + 16px;
             height: 26px;
-            border-radius: 6px;
-            background: #000000b3;
+            border-radius: Theme.radius-small;
+            background: Theme.scrim;
 
             fps-label := Text {
                 x: 8px;
                 height: 100%;
                 text: root.fps-text;
-                color: #7cffb2;
+                color: Theme.charging;
                 font-size: 13px;
                 vertical-alignment: center;
             }

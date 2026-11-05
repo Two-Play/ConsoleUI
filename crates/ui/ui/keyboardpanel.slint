@@ -43,7 +43,7 @@ export component KeyboardPanel inherits Rectangle {
         height: root.pad + 42px * root.s + 56px * root.s + 16px * root.s + 5 * root.unit + 6px * root.s + 36px * root.s + root.pad / 2;
         x: (root.width - self.width) * clamp(root.place-x, 0, 1);
         y: (root.height - self.height) * clamp(root.place-y, 0, 1);
-        border-radius: 24px * root.s;
+        border-radius: Theme.radius-panel * root.s;
         opacity: root.open ? 1 : 0;
         visible: self.opacity > 0.01;
         animate x, y { duration: Theme.focus-duration * 0.8; easing: ease-out-quint; }

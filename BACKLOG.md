@@ -111,9 +111,9 @@ Schätzung in Story Points (SP): 1, 2, 3, 5, 8, 13. Ein Sprint dauert 2 Wochen.
 | ID | User Story | SP |
 |---|---|---|
 | 6.1 | Animated boot/start screen with logo | 2 |
-| 6.2 | Transitions between pages (Home ↔ Library ↔ Settings) with slide/fade | 3 |
+| 6.2 | **Done.** Transitions between pages (Home ↔ Library ↔ Settings) with slide/fade | 3 |
 | 6.3 | Parallax or subtle motion in the background artwork | 3 |
-| 6.4 | Theme system with central design tokens (colors, radii, timings) | 3 |
+| 6.4 | **Done.** Theme system with central design tokens (colors, radii, timings). Controller button colors and one-off effect colors (gradients, sheen, shadows) stay where they are used | 3 |
 | 6.5 | Performance pass: load images asynchronously, thumbnail cache, frame-time overlay for debugging | 5 |
 | 6.6 | i18n: UI strings in English as the source language, German translation (e.g. Slint's `@tr()` with gettext catalogs), language follows `LANG` and can be changed on the settings page; remaining German strings in the code are moved to English | 5 |
 | 6.7 | **Done (Sprint 11).** Optional background music on the home screen like on the PS5: a generated ambient loop or the user's own files, fades out while an app is in front | 3 |
@@ -910,7 +910,8 @@ Branch `agent/compositor-blur`, on top of the UI feedback round (6.10).
   keyboard or mouse, or Steam Input's desktop layout.
 - **Open observation:** in 2 of 3 runs with a second glxgears window it was first drawn only 300 px wide
   (llvmpipe, nested); not seen in 2 runs of the old code, in another run of the same test it was complete.
-  The sizing code did not change. Check with a real game.
+  The sizing code did not change. Four later runs with 12 screenshots did not show it, the cause is unknown.
+  Check with a real game.
 
 ### Direct scanout, VRR, monitor switch (done: 7.8, part of 7.9, rest of 7.11 except several monitors)
 

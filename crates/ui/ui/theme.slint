@@ -1,4 +1,4 @@
-// Central design tokens (colors, timings). All components read from here. Rust sets the accent
+// Central design tokens (colors, radii, timings). All components read from here. Rust sets the accent
 // color and durations from the settings (animations off = all durations 0).
 export global Theme {
     out property <color> base: #06070c;
@@ -6,8 +6,29 @@ export global Theme {
     out property <color> text-dim: #f4f6fb99;
     out property <color> surface: #ffffff1f;
     out property <color> charging: #7cffb2;
+    // Low battery, destructive actions
+    out property <color> danger: #ff6b6b;
+    // Darkens the page behind a dialog or menu
+    out property <color> scrim: #000000b3;
+    // Background of small labels on tiles
+    out property <color> badge: #000000c0;
+    // Opaque base of panels
+    out property <color> panel: #191b24;
+    out property <color> panel-deep: #12141c;
+    // Borders and tracks, from faint to clear
+    out property <color> line-soft: #ffffff22;
+    out property <color> line: #ffffff26;
+    out property <color> line-strong: #ffffff33;
+    // Avatar before a profile has its own color
+    out property <color> profile-default: #7c5cff;
     // Focus ring, buttons, selected cards and keys
     in-out property <color> accent: #f4f6fb;
+
+    // At the 1920×1080 reference size: multiply by the scale factor `s`
+    out property <length> radius-small: 6px;
+    out property <length> radius-button: 16px;
+    out property <length> radius-card: 18px;
+    out property <length> radius-panel: 24px;
 
     in-out property <duration> focus-duration: 220ms;
     in-out property <duration> background-duration: 500ms;

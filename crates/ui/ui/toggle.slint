@@ -10,7 +10,7 @@ export component Toggle inherits Rectangle {
     width: 60px * root.s;
     height: 34px * root.s;
     border-radius: self.height / 2;
-    background: root.checked ? (root.focused ? Theme.base : Theme.accent) : (root.focused ? Theme.base.with-alpha(0.3) : #ffffff33);
+    background: root.checked ? (root.focused ? Theme.base : Theme.accent) : (root.focused ? Theme.base.with-alpha(0.3) : Theme.line-strong);
     animate background { duration: Theme.focus-duration; }
 
     Rectangle {

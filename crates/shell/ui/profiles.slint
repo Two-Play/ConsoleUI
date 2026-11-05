@@ -37,7 +37,7 @@ component Avatar inherits Rectangle {
         border-radius: self.width / 2;
         background: root.add ? Theme.surface : @linear-gradient(135deg, root.tint.brighter(0.25) 0%, root.tint.darker(0.35) 100%);
         border-width: root.add ? 2px * root.s : 0;
-        border-color: #ffffff33;
+        border-color: Theme.line-strong;
         drop-shadow-blur: root.is-focused ? 40px * root.s : 0;
         drop-shadow-color: (root.add ? Theme.accent : root.tint).with-alpha(0.5);
 
@@ -180,17 +180,17 @@ export component ProfilePage inherits Rectangle {
     if root.view.confirm-text != "": Rectangle {
         width: 100%;
         height: 100%;
-        background: #000000b3;
+        background: Theme.scrim;
 
         Rectangle {
             width: 680px * root.s;
             height: 270px * root.s;
             x: (parent.width - self.width) / 2;
             y: (parent.height - self.height) / 2;
-            border-radius: 24px * root.s;
-            background: #191b24;
+            border-radius: Theme.radius-panel * root.s;
+            background: Theme.panel;
             border-width: 1px;
-            border-color: #ffffff22;
+            border-color: Theme.line-soft;
 
             VerticalLayout {
                 padding: 44px * root.s;

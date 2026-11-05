@@ -37,7 +37,7 @@ component BatteryIcon inherits Rectangle {
             height: parent.height - 6px * root.s;
             width: (parent.width - 6px * root.s) * clamp(root.percent, 0, 100) / 100;
             border-radius: 2px * root.s;
-            background: root.charging ? Theme.charging : root.percent <= 15 ? #ff5a5a : Theme.text;
+            background: root.charging ? Theme.charging : root.percent <= 15 ? Theme.danger : Theme.text;
         }
     }
 
@@ -61,7 +61,7 @@ export component StatusBar inherits HorizontalLayout {
     in property <bool> controller-connected;
     in property <int> controller-battery;
     in property <string> avatar-initial;
-    in property <color> avatar-color: #7c5cff;
+    in property <color> avatar-color: Theme.profile-default;
 
     property <length> icon: 28px * s;
     property <length> row-height: 36px * s;

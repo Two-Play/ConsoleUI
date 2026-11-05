@@ -15,7 +15,7 @@ export component Button inherits Rectangle {
     min-width: 150px * root.s;
     preferred-width: label.preferred-width + 56px * root.s;
     height: 58px * root.s;
-    border-radius: 16px * root.s;
+    border-radius: Theme.radius-button * root.s;
     background: Theme.surface.with-alpha(0.08);
 
     fill := FocusFill {

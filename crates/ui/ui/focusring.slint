@@ -53,7 +53,7 @@ export component FocusRing inherits Rectangle {
     }
 
     border-width: root.bw * 1px;
-    border-color: root.focused ? root.highlight.with-alpha(0.45) : #ffffff33;
+    border-color: root.focused ? root.highlight.with-alpha(0.45) : Theme.line-strong;
     animate border-color, border-width { duration: Theme.focus-duration * 0.4; easing: ease-out-quint; }
 
     if root.focused: Rectangle {

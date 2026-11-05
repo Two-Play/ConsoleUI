@@ -36,7 +36,7 @@ export component SettingList inherits Rectangle {
         y: 10px * root.s + i * root.pitch - root.scroll;
         width: min(980px * root.s, root.width);
         height: root.row-height;
-        border-radius: 18px * root.s;
+        border-radius: Theme.radius-card * root.s;
         background: Theme.surface;
 
         fill := FocusFill {

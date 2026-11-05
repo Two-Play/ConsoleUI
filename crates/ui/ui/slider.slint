@@ -15,7 +15,7 @@ export component Slider inherits Rectangle {
         y: (parent.height - self.height) / 2;
         height: 6px * root.s;
         border-radius: self.height / 2;
-        background: root.focused ? Theme.base.with-alpha(0.25) : #ffffff26;
+        background: root.focused ? Theme.base.with-alpha(0.25) : Theme.line;
 
         Rectangle {
             width: parent.width * clamp(root.value, 0, 1);

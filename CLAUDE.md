@@ -279,7 +279,7 @@ Cargo workspace (edition 2024, `default-members` = the shell):
     `window().request_redraw()` after `show()` for a new toplevel to map.
   - `ui/main.slint`: `AppWindow`, the home screen. All sizes scale from a 1920×1080 reference via the
     `s` factor; tiles are positioned absolutely and animated (`animate x, y, width, height`).
-  - `@consoleui/theme.slint` (crate `ui`): the `Theme` global with design tokens (colors, durations). Use it instead of
+  - `@consoleui/theme.slint` (crate `ui`): the `Theme` global with design tokens (colors, radii, durations). Use it instead of
     hard-coded values.
   - `@consoleui/glass.slint`: `GlassPanel`, the frosted background of menus, dialogs and toasts; it shows the
     blurred hero copy from `hero.rs` (global `Glass`, set only by the main window).

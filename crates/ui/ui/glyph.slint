@@ -9,7 +9,7 @@ component KeyCap inherits Rectangle {
     property <length> size: 28px * root.s;
     height: root.size;
     width: max(root.size, label.preferred-width + 14px * root.s);
-    border-radius: 6px * root.s;
+    border-radius: Theme.radius-small * root.s;
     // Lower edge of the key
     background: #ffffff14;
 
@@ -93,7 +93,7 @@ export component ButtonGlyph inherits Rectangle {
         border-radius: root.face ? root.size / 2 : 6px * root.s;
         background: root.plain ? transparent : Theme.surface;
         border-width: root.face ? 0 : 1px;
-        border-color: root.plain ? transparent : #ffffff33;
+        border-color: root.plain ? transparent : Theme.line-strong;
     }
 
     label := Text {

@@ -21,7 +21,7 @@ export global Glass {
 // with a light upper edge. Children are drawn on top.
 export component GlassPanel inherits Rectangle {
     // Frosting (its alpha is set here: the more opaque, the less of the background shows)
-    in property <color> tint: #191b24;
+    in property <color> tint: Theme.panel;
     // A thin light border all around
     in property <bool> edge: true;
     clip: true;
@@ -53,7 +53,7 @@ export component GlassPanel inherits Rectangle {
     if root.edge: Rectangle {
         border-radius: root.border-radius;
         border-width: 1px;
-        border-color: #ffffff26;
+        border-color: Theme.line;
     }
 
     @children

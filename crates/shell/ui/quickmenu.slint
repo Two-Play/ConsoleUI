@@ -50,7 +50,7 @@ export component QuickMenu inherits Rectangle {
         y: root.open ? root.height - root.panel-height : root.height;
         width: 100%;
         height: root.panel-height;
-        tint: #12141c;
+        tint: Theme.panel-deep;
         edge: false;
         opacity: root.open ? 1 : 0;
         animate y, opacity {
@@ -62,7 +62,7 @@ export component QuickMenu inherits Rectangle {
             y: 0;
             width: 100%;
             height: 1px;
-            background: #ffffff22;
+            background: Theme.line-soft;
         }
 
         Text {
@@ -81,7 +81,7 @@ export component QuickMenu inherits Rectangle {
             y: 70px * root.s + (self.is-focused ? 0 : 8px * root.s);
             width: root.app-width;
             height: root.app-height;
-            border-radius: 18px * root.s;
+            border-radius: Theme.radius-card * root.s;
             background: Theme.surface;
             animate x, y { duration: Theme.focus-duration; easing: ease-out-quart; }
 
@@ -160,7 +160,7 @@ export component QuickMenu inherits Rectangle {
             y: root.cards-y + (self.is-focused ? 0 : 8px * root.s);
             width: root.card;
             height: root.card * 0.82;
-            border-radius: 18px * root.s;
+            border-radius: Theme.radius-card * root.s;
             background: Theme.surface;
             // A light accent wash trails the focus (`FocusFill`); only the lift animates besides.
             animate y { duration: Theme.focus-duration; easing: ease-out-quart; }
@@ -208,7 +208,7 @@ export component QuickMenu inherits Rectangle {
                 if item.level >= 0: Rectangle {
                     height: 6px * root.s;
                     border-radius: 3px * root.s;
-                    background: #ffffff26;
+                    background: Theme.line;
 
                     Rectangle {
                         x: 0;

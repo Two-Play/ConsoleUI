@@ -3,7 +3,7 @@ import { Theme } from "theme.slint";
 // Round profile picture: the initial on a gradient of the profile color.
 export component Avatar inherits Rectangle {
     in property <string> initial;
-    in property <color> tint: #7c5cff;
+    in property <color> tint: Theme.profile-default;
     in property <length> size: 36px;
     in property <float> s: 1;
 
