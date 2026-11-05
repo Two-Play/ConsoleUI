@@ -821,6 +821,7 @@ dependencies = [
  "consoleui-core",
  "gilrs",
  "slint",
+ "zbus",
 ]
 
 [[package]]

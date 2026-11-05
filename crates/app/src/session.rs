@@ -1,10 +1,13 @@
 //! Where the app runs and which settings of the user apply. The shell starts apps inside its own
 //! compositor (or gamescope) and keeps the settings per profile; the app reads the settings of the
-//! profile that was chosen last, so accent color and animations match the shell.
+//! profile that was chosen last, so accent color and animations match the shell. A running shell
+//! answers on the session bus (Story 8.7): that is the active profile, and it works from a sandbox.
 
 use consoleui_core::profiles::{ProfilePaths, Profiles};
 use consoleui_core::protocol::SOCKET_ENV;
-use consoleui_core::settings::Settings;
+use consoleui_core::service;
+use consoleui_core::settings::{Accent, Settings};
+use zbus::blocking::{Connection, Proxy, fdo};
 
 /// Animation durations in milliseconds as in `theme.slint`: focus, background, pulse, launch, page.
 pub const DURATIONS: [i64; 5] = [220, 500, 120, 450, 200];
@@ -34,7 +37,14 @@ impl Session {
         } else {
             Kind::Desktop
         };
-        Self { kind, settings: load_settings() }
+        let mut settings = load_settings();
+        if let Err(err) = read_from_shell(&mut settings) {
+            // The normal case on a desktop without a running shell
+            if !matches!(err, zbus::Error::FDO(_) | zbus::Error::MethodError(..)) {
+                eprintln!("Cannot ask the shell for the settings: {err}");
+            }
+        }
+        Self { kind, settings }
     }
 
     /// Inside a session the app fills the screen like every other window there.
@@ -50,6 +60,45 @@ impl Session {
     pub fn accent_rgb(&self) -> [u8; 3] {
         self.settings.accent.rgb()
     }
+}
+
+fn shell_proxy(connection: &Connection) -> zbus::Result<Proxy<'_>> {
+    zbus::blocking::proxy::Builder::new(connection)
+        .destination(service::NAME)?
+        .path(service::PATH)?
+        .interface(service::NAME)?
+        .cache_properties(zbus::proxy::CacheProperties::No)
+        .build()
+}
+
+fn read_from_shell(settings: &mut Settings) -> zbus::Result<()> {
+    let connection = Connection::session()?;
+    let names = fdo::DBusProxy::new(&connection)?;
+    if !names.name_has_owner(service::NAME.try_into()?)? {
+        return Ok(());
+    }
+    let shell = shell_proxy(&connection)?;
+    let accent: String = shell.get_property("AccentColor")?;
+    let rgb = service::color_from_hex(&accent);
+    settings.accent = Accent::ALL.into_iter().find(|a| Some(a.rgb()) == rgb).unwrap_or(settings.accent);
+    settings.animations = shell.get_property("Animations")?;
+    settings.sounds = shell.get_property("Sounds")?;
+    Ok(())
+}
+
+/// Shows a toast through the shell, also over a game; nothing happens without a running shell.
+pub fn toast(title: &str, text: &str) {
+    let (title, text) = (title.to_string(), text.to_string());
+    // Not on the UI thread: the bus may take a moment
+    std::thread::spawn(move || {
+        let sent = Connection::session().and_then(|connection| {
+            shell_proxy(&connection)?.call_method("Toast", &(title, text))?;
+            Ok(())
+        });
+        if let Err(err) = sent {
+            eprintln!("No toast: {err}");
+        }
+    });
 }
 
 fn load_settings() -> Settings {

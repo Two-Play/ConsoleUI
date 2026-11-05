@@ -28,6 +28,7 @@ use consoleui_app::audio::Audio;
 use slint::{ComponentHandle, Rgba8Pixel, SharedPixelBuffer, Timer, TimerMode};
 
 pub use consoleui_app::gamepad::Connection;
+pub use consoleui_app::session::toast;
 pub use consoleui_app::slint_bridge as bridge;
 pub use consoleui_app::{Action, Event, GlyphStyle, HintButton, Hints, Session, Sound};
 

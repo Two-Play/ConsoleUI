@@ -31,6 +31,7 @@ pub mod profiles;
 pub mod protocol;
 pub mod running;
 pub mod search;
+pub mod service;
 pub mod settings;
 pub mod sound;
 pub mod status;

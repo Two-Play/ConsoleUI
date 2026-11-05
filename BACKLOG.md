@@ -179,7 +179,7 @@ permissions, distribution. `consoleui-ui` and `consoleui-app` are the first two.
 | 8.4 | **Done.** Developer guide and design rules in `docs/sdk.md` | 2 |
 | 8.5 | Flatpak packaging: manifest in the template, a shared runtime or base app with the SDK, permissions the app needs (input devices, portals) | 5 |
 | 8.6 | **Done.** Console apps in the `.desktop` file: `X-ConsoleUI=true` lists an app whatever its categories say, `X-ConsoleUI-Kind`, `-Cover`, `-Hero`, `-Logo` (absolute path or icon name) | 3 |
-| 8.7 | System services for apps over D-Bus, usable from the sandbox and from other languages: active profile, toasts, on-screen keyboard | 8 |
+| 8.7 | **Partly done.** System services for apps over D-Bus, usable from the sandbox and from other languages: `org.consoleui.Shell1` with accent color, animations, sounds, profile name and toasts. The on-screen keyboard already works through `text-input-v3`. Open: signals when a value changes, a test inside a real sandbox (needs 8.5) | 8 |
 | 8.8 | First-party apps that prove the API before it is called stable (media player, file manager), then publish the crates and promise stability | 13 |
 | 8.9 | Distribution: our own Flatpak repository and a store page in the shell (after there are apps to offer) | 8 |
 

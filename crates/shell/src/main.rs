@@ -27,6 +27,7 @@ mod options;
 mod perf;
 mod profiles;
 mod quick;
+mod service;
 mod shell;
 mod tiles;
 mod updates;

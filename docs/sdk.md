@@ -53,10 +53,25 @@ starts with the app's ID, such as `org.example.App-cover`.
 - **`Hints`:** the content of the hint bar. The glyphs follow the device used last.
 - **`Sounds`:** the shell's UI sounds, silent if the user turned them off.
 - **`Session`:** where the app runs and the settings of the active profile.
+- **`toast(title, text)`:** a toast from the shell, also over a game. Off if the user turned notifications off.
 - **`bridge!`:** `nav_action`, `hint_model`, `controller_style` and `apply_theme` for the app's generated types.
 - **`snapshot_from_args`:** `--snapshot out.png` to check the UI without a screen capture.
 
 Depend on `consoleui-sdk` and `slint` only; the crates behind it can change without notice.
+
+## The shell's service
+
+A running shell answers on the session bus as `org.consoleui.Shell1` at `/org/consoleui/Shell1`, usable from any
+language and from a sandbox (Flatpak: `--talk-name=org.consoleui.Shell1`). `Session::detect` and `toast` use it,
+without a shell they fall back to the profile files and to doing nothing. Values are read once at the start;
+an app does not notice later changes yet.
+
+| Member | Type | Meaning |
+|---|---|---|
+| `AccentColor` | property, `s` | `#rrggbb` of the active profile |
+| `Animations`, `Sounds` | properties, `b` | The user's settings |
+| `ProfileName` | property, `s` | Name of the active profile |
+| `Toast(title, text)` | method, `ss` | Shows a toast |
 
 ## Design rules
 

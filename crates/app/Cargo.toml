@@ -9,3 +9,4 @@ description = "Runtime for ConsoleUI apps: gamepad and keyboard input as Actions
 consoleui-core.workspace = true
 gilrs = "0.11.2"
 slint = "1.18.1"
+zbus = "5.19"
