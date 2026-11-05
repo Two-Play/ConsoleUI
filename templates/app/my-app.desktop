@@ -5,3 +5,11 @@ Comment=An app for ConsoleUI
 Exec=my-app
 Icon=applications-other
 Categories=Utility;
+# Shown on the console whatever the categories say; NoDisplay=true would keep it out of desktop menus
+X-ConsoleUI=true
+# game or app
+X-ConsoleUI-Kind=app
+# Artwork: an absolute path, or an icon name (with Flatpak: starting with the app's ID)
+#X-ConsoleUI-Cover=/usr/share/my-app/cover.png
+#X-ConsoleUI-Hero=/usr/share/my-app/hero.png
+#X-ConsoleUI-Logo=/usr/share/my-app/logo.png

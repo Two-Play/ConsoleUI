@@ -29,6 +29,15 @@ pub struct DesktopEntry {
     pub no_display: bool,
     pub hidden: bool,
     pub terminal: bool,
+    /// `X-ConsoleUI=true`: made for the console (Story 8.6). Shown whatever its categories say, and
+    /// with `NoDisplay=true`, which keeps an app out of desktop menus
+    pub console_app: bool,
+    /// `X-ConsoleUI-Kind`: `game` or `app`; otherwise the categories decide
+    pub kind: Option<AppKind>,
+    /// `X-ConsoleUI-Cover`, `-Hero` and `-Logo`: an absolute path or an icon name
+    pub cover: Option<String>,
+    pub hero: Option<String>,
+    pub logo: Option<String>,
 }
 
 /// A localized key (`Name`, `Name[de]`, `Name[de_DE]`, …). Only the variants of the languages the
@@ -83,12 +92,12 @@ impl DesktopEntry {
     }
 
     fn is_console_friendly(&self) -> bool {
+        let wanted =
+            !self.no_display && self.has_category(WANTED_CATEGORIES) && !self.has_category(EXCLUDED_CATEGORIES);
         self.entry_type == "Application"
-            && !self.no_display
             && !self.hidden
             && !self.terminal
-            && self.has_category(WANTED_CATEGORIES)
-            && !self.has_category(EXCLUDED_CATEGORIES)
+            && (self.console_app || wanted)
             // Steam creates its own shortcuts for games; those already come from the Steam source.
             && self.exec.as_deref().is_some_and(|e| !e.contains("steam://rungameid"))
             && self.try_exec.as_deref().is_none_or(launch::program_exists)
@@ -121,7 +130,12 @@ pub fn discover(data_dirs: &[PathBuf], langs: &[String]) -> Vec<AppEntry> {
 fn to_app_entry(entry: DesktopEntry, data_dirs: &[PathBuf], theme: &str, langs: &[String]) -> AppEntry {
     let id = format!("desktop:{}", entry.id);
     let (accent, accent2) = palette_for(&id);
-    let kind = if entry.has_category(&["Game"]) { AppKind::Game } else { AppKind::App };
+    let category_kind = if entry.has_category(&["Game"]) { AppKind::Game } else { AppKind::App };
+    let kind = entry.kind.unwrap_or(category_kind);
+    // An absolute path, or the name of an icon: that is what Flatpak exports to the host, as long as
+    // the name starts with the app's ID (`org.example.App-cover`).
+    let art = |value: &Option<String>| value.as_deref().and_then(|value| icons::find(value, theme, data_dirs));
+    let (cover, hero, logo) = (art(&entry.cover), art(&entry.hero), art(&entry.logo));
     let (title, description) = entry.names.resolve(langs);
     AppEntry {
         title,
@@ -132,8 +146,10 @@ fn to_app_entry(entry: DesktopEntry, data_dirs: &[PathBuf], theme: &str, langs: 
         accent2,
         launch: Launch::Command(exec_to_argv(entry.exec.as_deref().unwrap_or_default())),
         artwork: Artwork {
+            cover,
+            hero,
+            logo,
             icon: entry.icon.as_deref().and_then(|name| icons::find(name, theme, data_dirs)),
-            ..Artwork::default()
         },
         last_used: None,
         id,
@@ -216,6 +232,15 @@ pub fn parse(id: &str, content: &str) -> Option<DesktopEntry> {
         no_display: flag("NoDisplay"),
         hidden: flag("Hidden"),
         terminal: flag("Terminal"),
+        console_app: flag("X-ConsoleUI"),
+        kind: values.get("X-ConsoleUI-Kind").and_then(|kind| match *kind {
+            "game" => Some(AppKind::Game),
+            "app" => Some(AppKind::App),
+            _ => None,
+        }),
+        cover: plain("X-ConsoleUI-Cover"),
+        hero: plain("X-ConsoleUI-Hero"),
+        logo: plain("X-ConsoleUI-Logo"),
     })
 }
 
@@ -319,6 +344,37 @@ fn ini_value(content: &str, section: &str, key: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn console_apps_show_whatever_their_categories_say() {
+        let text = "[Desktop Entry]\nType=Application\nName=Tool\nExec=tool\nCategories=Utility;\n";
+        assert!(!parse("a.desktop", text).unwrap().is_console_friendly());
+        let console = format!("{text}X-ConsoleUI=true\n");
+        assert!(parse("a.desktop", &console).unwrap().is_console_friendly());
+        // Kept out of desktop menus, still on the console
+        let menu_free = format!("{console}NoDisplay=true\n");
+        assert!(parse("a.desktop", &menu_free).unwrap().is_console_friendly());
+        let hidden = format!("{console}Hidden=true\n");
+        assert!(!parse("a.desktop", &hidden).unwrap().is_console_friendly());
+    }
+
+    #[test]
+    fn console_keys_set_the_kind_and_the_artwork() {
+        let dir = std::env::temp_dir().join(format!("consoleui-art-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let cover = dir.join("cover.png");
+        fs::write(&cover, b"png").unwrap();
+        let text = format!(
+            "[Desktop Entry]\nType=Application\nName=Tool\nExec=tool\nX-ConsoleUI=true\nX-ConsoleUI-Kind=game\n\
+             X-ConsoleUI-Cover={}\nX-ConsoleUI-Hero=/does/not/exist.png\n",
+            cover.display()
+        );
+        let entry = to_app_entry(parse("a.desktop", &text).unwrap(), &[], "hicolor", &[]);
+        assert_eq!(entry.kind, AppKind::Game);
+        assert_eq!(entry.artwork.cover, Some(cover));
+        assert_eq!(entry.artwork.hero, None);
+        fs::remove_dir_all(dir).unwrap();
+    }
 
     const FIREFOX: &str = "\
 [Desktop Entry]

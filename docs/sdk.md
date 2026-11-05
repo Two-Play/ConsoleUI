@@ -15,8 +15,24 @@ cargo run
 ```
 
 The crates are not published, so a new app points at this checkout with a path dependency. Slint needs the
-same `-devel` packages as the shell. To show the app in the shell, install its binary and `.desktop` file;
-the shell lists it with the other apps, shows it fullscreen and keeps the Guide button.
+same `-devel` packages as the shell.
+
+## Showing up on the console
+
+The shell finds apps through their `.desktop` file (`~/.local/share/applications` or
+`/usr/share/applications`), shows them fullscreen and keeps the Guide button. It normally lists only games and
+media apps; these keys make an app part of the console:
+
+| Key | Meaning |
+|---|---|
+| `X-ConsoleUI=true` | Listed whatever `Categories` says. With `NoDisplay=true` it stays out of desktop menus |
+| `X-ConsoleUI-Kind` | `game` or `app`, for the library filter |
+| `X-ConsoleUI-Cover` | Tile image; the tiles are square, a portrait image is cropped |
+| `X-ConsoleUI-Hero` | Background behind the home screen, 16:9 |
+| `X-ConsoleUI-Logo` | Title logo over the background |
+
+Artwork is an absolute path to a PNG, or an icon name. Flatpak only exports icons, so there use an icon name that
+starts with the app's ID, such as `org.example.App-cover`.
 
 ## What is in the template
 

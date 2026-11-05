@@ -139,7 +139,7 @@ Cargo workspace (edition 2024, `default-members` = the shell):
     languages' `.desktop` variants) keeps their sources, and `localize_entries` re-resolves them when
     `Shell::apply_language` switches the language (followed by a re-sort of entries and tiles).
   - `discover_library()` = `steam::discover` (own KeyValues parser in `vdf.rs`) + `desktop::discover`
-    (own `.desktop` parser, category allow/deny lists, `icons.rs` lookup). Then `apply_history` +
+    (own `.desktop` parser, category allow/deny lists, `icons.rs` lookup; `X-ConsoleUI*` keys, see `docs/sdk.md`). Then `apply_history` +
     `sort_by_recent` (most recent first, then alphabetical).
   - `launch::spawn` starts detached processes (desktop apps in a `systemd-run --user --scope` unit when the
     user bus exists) and returns a `ProcessHandle` that can `stop()`; Steam games are stopped via
