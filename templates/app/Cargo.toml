@@ -1,0 +1,23 @@
+[package]
+name = "my-app"
+version = "0.1.0"
+edition = "2024"
+# The ConsoleUI crates are GPL-3.0-or-later, so an app built on them is too (see docs/sdk.md).
+license = "GPL-3.0-or-later"
+
+[dependencies]
+consoleui-sdk = { path = "@SDK_PATH@" }
+slint = "1.18.1"
+
+[build-dependencies]
+consoleui-sdk = { path = "@SDK_PATH@", features = ["build"] }
+
+# Slint renders noticeably slower in debug builds otherwise
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+# Standalone, also when it is created inside another workspace
+[workspace]

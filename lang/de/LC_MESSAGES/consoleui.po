@@ -1097,5 +1097,5 @@ msgstr "Gamepad-Maus"
 msgid "Use the app with the stick"
 msgstr "Die App mit dem Stick bedienen"
 
-msgid "Stick moves, ✕ clicks, □ right-clicks, ○ ends"
-msgstr "Stick bewegt, ✕ klickt, □ für Rechtsklick, ○ beendet"
+msgid "Left stick moves it, confirm clicks, back ends it"
+msgstr "Linker Stick bewegt, Bestätigen klickt, Zurück beendet"

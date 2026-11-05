@@ -861,6 +861,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "consoleui-sdk"
+version = "0.1.0"
+dependencies = [
+ "consoleui-app",
+ "consoleui-ui",
+ "png",
+ "slint",
+ "slint-build",
+]
+
+[[package]]
 name = "consoleui-ui"
 version = "0.1.0"
 dependencies = [

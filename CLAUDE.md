@@ -265,6 +265,10 @@ Cargo workspace (edition 2024, `default-members` = the shell):
   keeps the keyboard focus (the `Overlay` message is not sent). X11/XWayland apps do not announce text fields (no
   automatic keyboard there). Test: `--actions "wait:2000,confirm,wait:5000,confirm,wait:1200,confirm,right,confirm"`
   with `--dummy-launch foot` in the VM (foot implements text-input-v3).
+- `crates/sdk` (`consoleui-sdk`, Epic 8): the one public API of an app, on top of `ui` and `app`; `Controls` merges
+  controller and keyboard input, `build::compile` is the app's `build.rs`. `templates/app` is the project template,
+  `dev/new-app.sh <name> [dir]` creates an app from it (path dependency on this checkout). Rules: `docs/sdk.md`.
+  Keep the template building: create an app in a scratch directory and run its tests after changing the SDK.
 - `crates/shell` (binary `consoleui`): Slint UI plus glue.
   - `src/compositor.rs`: counterpart of `gamescope.rs`, active when `CONSOLEUI_COMPOSITOR` is set (takes
     precedence over gamescope). Sends `Hello`/`Launched`/`Exited`/`Focus`/`Overlay`/`KeyboardLayout`/`Resolution`/`SaveScreenshot`;

@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=My App
+Comment=An app for ConsoleUI
+Exec=my-app
+Icon=applications-other
+Categories=Utility;

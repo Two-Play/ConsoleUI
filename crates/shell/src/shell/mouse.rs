@@ -26,7 +26,7 @@ impl Shell {
         if let Some(compositor) = &mut self.compositor {
             compositor.send(&ShellMessage::PointerMode { active: true });
         }
-        self.toast(ui, "◉", tr("Gamepad mouse"), tr("Stick moves, ✕ clicks, □ right-clicks, ○ ends"));
+        self.toast(ui, "◉", tr("Gamepad mouse"), tr("Left stick moves it, confirm clicks, back ends it"));
     }
 
     pub(super) fn stop_mouse_mode(&mut self) {

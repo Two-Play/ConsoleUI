@@ -1,0 +1,74 @@
+import { Dialog, Hint, HintBar, InputScope, NavAction, ControllerStyle, SettingList, SettingRow, Theme } from "@consoleui/std.slint";
+
+// Rust needs the global to apply the user's accent color and animation settings
+export { Theme }
+
+export component AppWindow inherits Window {
+    in property <[SettingRow]> rows;
+    in property <int> focused;
+    in property <bool> quitting;
+    in property <int> dialog-focused;
+    in property <[Hint]> hints;
+    in property <ControllerStyle> style: ControllerStyle.keyboard;
+    out property <bool> active: scope.active;
+    callback action(NavAction);
+    callback row-clicked(int);
+    callback dialog-clicked(int);
+    callback quit();
+
+    title: "My App";
+    preferred-width: 1280px;
+    preferred-height: 720px;
+    background: Theme.base;
+
+    // All sizes are for 1920×1080 and scale with the window
+    property <float> s: self.width / 1920px;
+
+    scope := InputScope {
+        action(a) => { root.action(a); }
+        quit => { root.quit(); }
+    }
+
+    Text {
+        x: 90px * root.s;
+        y: 70px * root.s;
+        text: "My App";
+        color: Theme.text;
+        font-size: 56px * root.s;
+        font-weight: 700;
+    }
+
+    SettingList {
+        x: 90px * root.s;
+        y: 170px * root.s;
+        width: 980px * root.s;
+        height: root.height - 290px * root.s;
+        rows: root.rows;
+        focused: root.focused;
+        s: root.s;
+        row-clicked(index) => { root.row-clicked(index); }
+    }
+
+    HintBar {
+        x: 90px * root.s;
+        y: root.height - 80px * root.s;
+        width: root.width - 180px * root.s;
+        height: 28px * root.s;
+        hints: root.hints;
+        style: root.style;
+        s: root.s;
+    }
+
+    Dialog {
+        width: 100%;
+        height: 100%;
+        open: root.quitting;
+        title: "Quit My App?";
+        text: "You come back to where you started it from.";
+        buttons: ["Stay", "Quit"];
+        focused: root.dialog-focused;
+        style: root.style;
+        s: root.s;
+        button-clicked(index) => { root.dialog-clicked(index); }
+    }
+}

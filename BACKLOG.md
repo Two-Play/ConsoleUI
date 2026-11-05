@@ -164,6 +164,25 @@ gamescope as it does today. Deliberately **not** in the compositor: own upscalin
 management, FPS limiter — the nested gamescope (7.10) provides those. License decided before 7.2:
 GPL-3.0-or-later, so code from niri (GPL-3.0-or-later) and anvil/smallvil (MIT) can be reused.
 
+## Epic 8 – App SDK
+
+**Goal:** apps that look and feel like the platform, built by us and by others, which run in a window on any
+Linux desktop and fullscreen in the console session. Apple, Android and the consoles offer the same building
+blocks: toolkit and design language, runtime, stable API, templates and rules, packaging with identity and
+permissions, distribution. `consoleui-ui` and `consoleui-app` are the first two.
+
+| ID | Story | SP |
+|---|---|---|
+| 8.1 | License decision for the SDK. Today an app that links the crates must be GPL-3.0-or-later; proprietary apps need LGPL or MIT for `ui`, `app`, `sdk` and `core`. Includes Slint's own license terms for a console device. **The owner decides** | 1 |
+| 8.2 | **Done.** `crates/sdk` as the one public API of an app: re-exports, `Controls` (controller and keyboard as one event stream), `Sounds`, `build::compile`, `--snapshot`. Semantic versions and a stability promise follow with 8.8 | 3 |
+| 8.3 | **Done.** App template `templates/app` and `dev/new-app.sh <name>`: logic without UI in `page.rs` with tests, controller, keyboard and mouse, `.desktop` file | 3 |
+| 8.4 | **Done.** Developer guide and design rules in `docs/sdk.md` | 2 |
+| 8.5 | Flatpak packaging: manifest in the template, a shared runtime or base app with the SDK, permissions the app needs (input devices, portals) | 5 |
+| 8.6 | Console apps as a kind of entry: metadata in the `.desktop` file or a manifest (`X-ConsoleUI-*`: artwork, gamepad support), the shell shows them with their art | 3 |
+| 8.7 | System services for apps over D-Bus, usable from the sandbox and from other languages: active profile, toasts, on-screen keyboard | 8 |
+| 8.8 | First-party apps that prove the API before it is called stable (media player, file manager), then publish the crates and promise stability | 13 |
+| 8.9 | Distribution: our own Flatpak repository and a store page in the shell (after there are apps to offer) | 8 |
+
 ---
 
 ## Sprint plan (proposal)
