@@ -14,5 +14,4 @@ quick-xml = "0.41"
 slint = "1.18.1"
 
 [build-dependencies]
-consoleui-ui = { workspace = true, features = ["build"] }
-slint-build = "1.18.1"
+consoleui-sdk = { workspace = true, features = ["build"] }

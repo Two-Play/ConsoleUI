@@ -1,0 +1,274 @@
+import { ContextItem, ContextMenu, ControllerStyle, Dialog, EmptyState, FocusFill, FocusRing, Hint, HintBar, InputScope, KeyCap, KeyboardPanel, NavAction, Spinner, Theme } from "@consoleui/std.slint";
+
+// Rust needs the global to apply the user's accent color and animation settings
+export { Theme }
+
+export struct FileRow {
+    icon: image,
+    folder: bool,
+    name: string,
+    size: string,
+    date: string,
+}
+
+export component AppWindow inherits Window {
+    in property <[string]> places;
+    in property <int> place;
+    in property <bool> places-focused;
+    in property <string> path;
+    in property <[FileRow]> rows;
+    in property <int> focused;
+    in property <string> position;
+    in property <bool> loading: true;
+    in property <bool> empty;
+    in property <string> error;
+    in property <bool> menu-open;
+    in property <[ContextItem]> menu-items;
+    in property <int> menu-focused;
+    in property <bool> typing;
+    in property <string> naming-title;
+    in property <string> text;
+    in property <[KeyCap]> keys;
+    in property <int> key-focused;
+    in property <bool> dialog-open;
+    in property <string> dialog-title;
+    in property <string> dialog-text;
+    in property <[string]> dialog-buttons;
+    in property <int> dialog-focused;
+    in property <[Hint]> hints;
+    in property <ControllerStyle> style: ControllerStyle.keyboard;
+    out property <bool> active: scope.active;
+    callback action(NavAction);
+    callback typed(string);
+    callback erase();
+    callback place-clicked(int);
+    callback row-clicked(int);
+    callback menu-clicked(int);
+    callback dialog-clicked(int);
+    callback quit();
+
+    title: @tr("Files");
+    preferred-width: 1280px;
+    preferred-height: 720px;
+    background: Theme.base;
+
+    // All sizes are for 1920×1080 and scale with the window
+    property <float> s: min(self.width / 1920px, self.height / 1080px);
+    property <length> margin: 90px * root.s;
+    property <length> sidebar: 340px * root.s;
+    property <length> list-x: root.margin + root.sidebar + 40px * root.s;
+    property <length> list-width: root.width - root.list-x - root.margin;
+    property <length> row-height: 76px * root.s;
+
+    scope := InputScope {
+        typing: root.typing;
+        action(a) => { root.action(a); }
+        typed(text) => { root.typed(text); }
+        erase => { root.erase(); }
+        quit => { root.quit(); }
+    }
+
+    Text {
+        x: root.margin;
+        y: 50px * root.s;
+        text: @tr("Files");
+        color: Theme.text;
+        font-size: 44px * root.s;
+        font-weight: 800;
+    }
+
+    for place[i] in root.places: Rectangle {
+        property <bool> is-focused: root.places-focused && i == root.place;
+        x: root.margin;
+        y: 140px * root.s + i * 68px * root.s;
+        width: root.sidebar;
+        height: 60px * root.s;
+        border-radius: Theme.radius-button * root.s;
+        background: i == root.place ? Theme.surface : transparent;
+
+        FocusFill {
+            width: 100%;
+            height: 100%;
+            border-radius: parent.border-radius;
+            focused: parent.is-focused;
+        }
+
+        FocusRing {
+            border-radius: parent.border-radius;
+            focused: parent.is-focused;
+            s: root.s;
+        }
+
+        Text {
+            x: 22px * root.s;
+            width: parent.width - 44px * root.s;
+            height: 100%;
+            vertical-alignment: center;
+            text: place;
+            color: i == root.place ? Theme.text : Theme.text-dim;
+            font-size: 24px * root.s;
+            font-weight: i == root.place ? 700 : 400;
+            overflow: elide;
+        }
+
+        TouchArea {
+            clicked => { root.place-clicked(i); }
+        }
+    }
+
+    Text {
+        x: root.list-x;
+        y: 66px * root.s;
+        width: root.list-width - 180px * root.s;
+        text: root.path;
+        color: Theme.text-dim;
+        font-size: 22px * root.s;
+        overflow: elide;
+    }
+
+    Text {
+        x: root.width - root.margin - self.width;
+        y: 66px * root.s;
+        width: 170px * root.s;
+        horizontal-alignment: right;
+        text: root.position;
+        color: Theme.text-dim;
+        font-size: 22px * root.s;
+    }
+
+    for file[i] in root.rows: Rectangle {
+        property <bool> is-focused: i == root.focused;
+        x: root.list-x;
+        y: 124px * root.s + i * (root.row-height + 4px * root.s);
+        width: root.list-width;
+        height: root.row-height;
+        border-radius: Theme.radius-card * root.s;
+        background: Theme.surface.with-alpha(0.06);
+
+        FocusFill {
+            width: 100%;
+            height: 100%;
+            border-radius: parent.border-radius;
+            focused: parent.is-focused;
+        }
+
+        FocusRing {
+            border-radius: parent.border-radius;
+            focused: parent.is-focused;
+            s: root.s;
+        }
+
+        Image {
+            x: 20px * root.s;
+            y: (parent.height - self.height) / 2;
+            width: 36px * root.s;
+            height: self.width;
+            source: file.icon;
+            colorize: file.folder ? Theme.accent : Theme.text-dim;
+        }
+
+        Text {
+            x: 76px * root.s;
+            width: parent.width - 440px * root.s;
+            height: 100%;
+            vertical-alignment: center;
+            text: file.name;
+            color: Theme.text;
+            font-size: 24px * root.s;
+            font-weight: parent.is-focused ? 700 : 400;
+            overflow: elide;
+        }
+
+        Text {
+            x: parent.width - 350px * root.s;
+            width: 150px * root.s;
+            height: 100%;
+            vertical-alignment: center;
+            horizontal-alignment: right;
+            text: file.size;
+            color: Theme.text-dim;
+            font-size: 20px * root.s;
+        }
+
+        Text {
+            x: parent.width - 180px * root.s;
+            width: 160px * root.s;
+            height: 100%;
+            vertical-alignment: center;
+            horizontal-alignment: right;
+            text: file.date;
+            color: Theme.text-dim;
+            font-size: 20px * root.s;
+        }
+
+        TouchArea {
+            clicked => { root.row-clicked(i); }
+        }
+    }
+
+    if root.empty: EmptyState {
+        x: root.list-x;
+        y: 124px * root.s;
+        width: root.list-width;
+        height: root.height - 240px * root.s;
+        title: root.error != "" ? @tr("This folder cannot be opened") : @tr("This folder is empty");
+        text: root.error;
+        s: root.s;
+    }
+
+    if root.loading: Spinner {
+        x: root.width - root.margin - self.width;
+        y: 26px * root.s;
+        size: 32px * root.s;
+        s: root.s;
+    }
+
+    HintBar {
+        visible: !root.typing;
+        x: root.margin;
+        y: root.height - 70px * root.s;
+        width: root.width - 2 * root.margin;
+        height: 28px * root.s;
+        hints: root.hints;
+        style: root.style;
+        s: root.s;
+    }
+
+    ContextMenu {
+        width: 100%;
+        height: 100%;
+        open: root.menu-open;
+        title: root.path;
+        items: root.menu-items;
+        focused: root.menu-focused;
+        s: root.s;
+        item-clicked(index) => { root.menu-clicked(index); }
+    }
+
+    KeyboardPanel {
+        width: 100%;
+        height: 100%;
+        open: root.typing;
+        title: root.naming-title;
+        text: root.text;
+        placeholder: @tr("Enter a name");
+        keys: root.keys;
+        focused: root.key-focused;
+        hints: root.hints;
+        style: root.style;
+        s: root.s;
+    }
+
+    Dialog {
+        width: 100%;
+        height: 100%;
+        open: root.dialog-open;
+        title: root.dialog-title;
+        text: root.dialog-text;
+        buttons: root.dialog-buttons;
+        focused: root.dialog-focused;
+        style: root.style;
+        s: root.s;
+        button-clicked(index) => { root.dialog-clicked(index); }
+    }
+}

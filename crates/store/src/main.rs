@@ -18,9 +18,9 @@ use std::time::Duration;
 
 use backend::{FakeBackend, Request, Response};
 use consoleui_core::accent;
-use consoleui_core::i18n::{self, tr, trf};
+use consoleui_core::i18n::{tr, trf};
 use consoleui_sdk::{Action, Controls, Event, HintButton, Hints, Session, Sound, Sounds, snapshot_from_args};
-use consoleui_sdk::{launch, library_changed, toast, watch_session};
+use consoleui_sdk::{apply_language, launch, library_changed, script_from_args, toast, watch_session};
 use page::{Area, COLUMNS, Finished, Outcome, Page, ROWS, Section};
 use shots::{Loaded, Shots};
 use slint::{Color, ComponentHandle, Image, ModelRc, SharedPixelBuffer, Timer, TimerMode, VecModel};
@@ -206,21 +206,6 @@ fn open(id: String) {
     });
 }
 
-fn scripted(step: &str) -> Option<Action> {
-    Some(match step {
-        "up" => Action::Up,
-        "down" => Action::Down,
-        "left" => Action::Left,
-        "right" => Action::Right,
-        "confirm" => Action::Confirm,
-        "back" => Action::Back,
-        "search" => Action::Search,
-        "next-tab" => Action::NextTab,
-        "prev-tab" => Action::PrevTab,
-        _ => return None,
-    })
-}
-
 /// The state of the running store, shared by the input paths.
 struct Store {
     ui: slint::Weak<AppWindow>,
@@ -328,11 +313,7 @@ fn main() -> Result<(), slint::PlatformError> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let ui = AppWindow::new()?;
     let session = Session::detect();
-    let language = session.settings.language.resolve();
-    i18n::set_language(language);
-    if let Err(err) = slint::select_bundled_translation(language.code()) {
-        eprintln!("Cannot select the translation {}: {err}", language.code());
-    }
+    apply_language(&session);
     apply_theme(ui.global::<Theme>(), &session);
     if session.fullscreen() {
         ui.window().set_fullscreen(true);
@@ -456,26 +437,16 @@ fn main() -> Result<(), slint::PlatformError> {
         let _ = slint::quit_event_loop();
     });
 
-    // `--actions down,right,confirm`: one step every 120 ms once the catalog is there
-    let script: Vec<String> = args
-        .iter()
-        .position(|arg| arg == "--actions")
-        .and_then(|index| args.get(index + 1))
-        .map(|steps| steps.split(',').map(str::to_string).collect())
-        .unwrap_or_default();
-    let script = RefCell::new(script.into_iter());
-    let steps = Timer::default();
-    steps.start(TimerMode::Repeated, Duration::from_millis(120), {
-        let store = store.clone();
-        move || {
-            if store.page.borrow().loading {
-                return;
-            }
-            if let Some(action) = script.borrow_mut().next().as_deref().and_then(scripted) {
-                store.action(action);
-            }
-        }
-    });
+    let _script = script_from_args(
+        {
+            let store = store.clone();
+            move || !store.page.borrow().loading
+        },
+        {
+            let store = store.clone();
+            move |action| store.action(action)
+        },
+    );
 
     debug_assert_eq!(COLUMNS * ROWS, 21, "the grid in main.slint has seven columns");
     let _snapshot = snapshot_from_args(&ui);

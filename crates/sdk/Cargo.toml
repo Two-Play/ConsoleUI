@@ -11,6 +11,7 @@ build = ["consoleui-ui/build", "dep:slint-build"]
 
 [dependencies]
 consoleui-app.workspace = true
+consoleui-core.workspace = true
 consoleui-ui.workspace = true
 png = "0.18.1"
 slint = "1.18.1"

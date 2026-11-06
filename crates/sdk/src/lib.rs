@@ -39,6 +39,24 @@ pub mod build {
     pub fn compile(path: &str) {
         slint_build::compile_with_config(path, consoleui_ui::compiler_config()).expect("Slint build failed");
     }
+
+    /// Like [`compile`], with German for `@tr()` from a gettext catalog. Slint looks for a file named
+    /// after the package, so the catalog gets a copy under that name.
+    pub fn compile_translated(path: &str, catalog: &str) {
+        use std::path::Path;
+        use std::{env, fs};
+
+        println!("cargo:rerun-if-changed={catalog}");
+        let lang = Path::new(&env::var("OUT_DIR").expect("OUT_DIR")).join("lang");
+        let target = lang.join("de/LC_MESSAGES");
+        fs::create_dir_all(&target).expect("no directory for the catalog");
+        let name = env::var("CARGO_PKG_NAME").expect("CARGO_PKG_NAME");
+        fs::copy(catalog, target.join(format!("{name}.po"))).expect("cannot copy the catalog");
+        let config = consoleui_ui::compiler_config()
+            .with_bundled_translations(lang)
+            .with_default_translation_context(slint_build::DefaultTranslationContext::None);
+        slint_build::compile_with_config(path, config).expect("Slint build failed");
+    }
 }
 
 /// Both input paths of an app as one stream of [`Event`]s: controllers are polled while the window
@@ -104,6 +122,48 @@ pub fn watch_session(session: &Session, mut changed: impl FnMut(&Session) + 'sta
     timer.start(TimerMode::Repeated, Duration::from_millis(250), move || {
         if let Some(session) = sessions.try_iter().last() {
             changed(&session);
+        }
+    });
+    timer
+}
+
+/// Takes over the language of the user's settings, for `@tr()` and `consoleui_core::i18n`.
+pub fn apply_language(session: &Session) {
+    let language = session.settings.language.resolve();
+    consoleui_core::i18n::set_language(language);
+    if let Err(err) = slint::select_bundled_translation(language.code()) {
+        eprintln!("Cannot select the translation {}: {err}", language.code());
+    }
+}
+
+fn scripted(step: &str) -> Option<Action> {
+    Some(match step {
+        "up" => Action::Up,
+        "down" => Action::Down,
+        "left" => Action::Left,
+        "right" => Action::Right,
+        "confirm" => Action::Confirm,
+        "back" => Action::Back,
+        "menu" => Action::Menu,
+        "search" => Action::Search,
+        "secondary" => Action::Secondary,
+        "next-tab" => Action::NextTab,
+        "prev-tab" => Action::PrevTab,
+        _ => return None,
+    })
+}
+
+/// With `--actions down,right,confirm` on the command line: one step every 120 ms once `ready` says
+/// so, for checking a UI by script. Keep the returned timer alive.
+pub fn script_from_args(ready: impl Fn() -> bool + 'static, mut run: impl FnMut(Action) + 'static) -> Timer {
+    let steps = std::env::args().skip_while(|arg| arg != "--actions").nth(1).unwrap_or_default();
+    let mut steps: Vec<String> = steps.split(',').map(str::to_string).rev().collect();
+    let timer = Timer::default();
+    timer.start(TimerMode::Repeated, Duration::from_millis(120), move || {
+        if ready()
+            && let Some(action) = steps.pop().as_deref().and_then(scripted)
+        {
+            run(action);
         }
     });
     timer

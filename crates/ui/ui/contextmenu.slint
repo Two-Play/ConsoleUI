@@ -13,6 +13,8 @@ export component ContextMenu inherits Rectangle {
     in property <int> focused;
     in property <float> s: 1;
 
+    callback item-clicked(int);
+
     property <length> row-height: 64px * root.s;
     property <length> pad: 28px * root.s;
 
@@ -86,6 +88,10 @@ export component ContextMenu inherits Rectangle {
                 font-weight: 700;
                 vertical-alignment: center;
                 overflow: elide;
+            }
+
+            TouchArea {
+                clicked => { root.item-clicked(i); }
             }
         }
     }

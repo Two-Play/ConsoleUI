@@ -485,9 +485,18 @@ mod tests {
         assert!(catalog.header.contains("plural=(n != 1);"), "German must use the plural rule n != 1");
         let crates = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
         let mut files = Vec::new();
-        for name in
-            ["core/src", "core/examples", "shell/src", "shell/ui", "shell/examples", "store/src", "store/ui", "ui/ui"]
-        {
+        for name in [
+            "core/src",
+            "core/examples",
+            "shell/src",
+            "shell/ui",
+            "shell/examples",
+            "store/src",
+            "store/ui",
+            "files/src",
+            "files/ui",
+            "ui/ui",
+        ] {
             if crates.join(name).is_dir() {
                 sources(&crates.join(name), &mut files);
             }

@@ -1192,3 +1192,63 @@ msgstr "Nächster / vorheriger Titel"
 
 msgid "Play / pause"
 msgstr "Wiedergabe / Pause"
+
+msgid "A folder cannot go into itself."
+msgstr "Ein Ordner kann nicht in sich selbst liegen."
+
+msgid "A name cannot contain a slash."
+msgstr "Ein Name darf keinen Schrägstrich enthalten."
+
+msgid "Copy"
+msgstr "Kopieren"
+
+msgid "Cut"
+msgstr "Ausschneiden"
+
+msgid "Files"
+msgstr "Dateien"
+
+msgid "Hide hidden files"
+msgstr "Versteckte Dateien ausblenden"
+
+msgid "Move to trash"
+msgstr "In den Papierkorb"
+
+msgid "Move {} to the trash?"
+msgstr "{} in den Papierkorb legen?"
+
+msgid "New folder"
+msgstr "Neuer Ordner"
+
+msgid "Not possible here."
+msgstr "Das geht hier nicht."
+
+msgid "Paste"
+msgstr "Einfügen"
+
+msgid "Show hidden files"
+msgstr "Versteckte Dateien zeigen"
+
+msgid "That did not work"
+msgstr "Das hat nicht geklappt"
+
+msgid "That name is already taken."
+msgstr "Dieser Name ist schon vergeben."
+
+msgid "There is no space left."
+msgstr "Es ist kein Speicherplatz mehr frei."
+
+msgid "This drive has no trash."
+msgstr "Dieses Laufwerk hat keinen Papierkorb."
+
+msgid "This folder cannot be opened"
+msgstr "Dieser Ordner lässt sich nicht öffnen"
+
+msgid "This folder is empty"
+msgstr "Dieser Ordner ist leer"
+
+msgid "You can restore it from the trash."
+msgstr "Du kannst es aus dem Papierkorb wiederherstellen."
+
+msgid "You may not change this."
+msgstr "Das darfst du nicht ändern."

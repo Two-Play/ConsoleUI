@@ -850,6 +850,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "consoleui-files"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "consoleui-core",
+ "consoleui-sdk",
+ "slint",
+]
+
+[[package]]
 name = "consoleui-gallery"
 version = "0.1.0"
 dependencies = [
@@ -866,6 +876,7 @@ name = "consoleui-sdk"
 version = "0.1.0"
 dependencies = [
  "consoleui-app",
+ "consoleui-core",
  "consoleui-ui",
  "png",
  "slint",
@@ -878,12 +889,10 @@ version = "0.1.0"
 dependencies = [
  "consoleui-core",
  "consoleui-sdk",
- "consoleui-ui",
  "flate2",
  "image",
  "quick-xml",
  "slint",
- "slint-build",
 ]
 
 [[package]]

@@ -277,6 +277,10 @@ Cargo workspace (edition 2024, `default-members` = the shell):
   `consoleui-store --fake --actions right,confirm,confirm --snapshot out.png --snapshot-after 950`. Without `--fake`, the
   Install and Remove buttons really change the system; browsing is read-only. Its `build.rs` copies the catalog because Slint
   looks for `<package>.po`.
+- `crates/files` (binary `consoleui-files`, Story 8.8, not a default member): the file manager, an app on the SDK like the
+  store. `entries.rs` lists a folder, `ops.rs` copies, moves, renames and trashes (Freedesktop trash, `places()` for the
+  sidebar), `worker.rs` runs that on a thread, `page.rs` is the UI-free state (only the rows on screen reach Slint). Scripted
+  checks change real files: pass a scratch folder as the first argument and set `XDG_DATA_HOME` for the trash.
 - `crates/shell` (binary `consoleui`): Slint UI plus glue.
   - `src/compositor.rs`: counterpart of `gamescope.rs`, active when `CONSOLEUI_COMPOSITOR` is set (takes
     precedence over gamescope). Sends `Hello`/`Launched`/`Exited`/`Focus`/`Overlay`/`KeyboardLayout`/`Resolution`/`SaveScreenshot`;

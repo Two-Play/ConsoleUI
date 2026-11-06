@@ -58,7 +58,9 @@ starts with the app's ID, such as `org.example.App-cover`.
 - **`launch(entry)`, `library_changed()`:** ask the shell to start an entry of its library, or to look for apps
   that were installed or removed.
 - **`bridge!`:** `nav_action`, `hint_model`, `controller_style` and `apply_theme` for the app's generated types.
-- **`snapshot_from_args`:** `--snapshot out.png` to check the UI without a screen capture.
+- **`snapshot_from_args`, `script_from_args`:** `--snapshot out.png` and `--actions down,confirm` to check the UI
+  without a screen capture.
+- **`apply_language`:** the user's language for `@tr()` and `build::compile_translated` for a catalog.
 
 Depend on `consoleui-sdk` and `slint` only; the crates behind it can change without notice.
 

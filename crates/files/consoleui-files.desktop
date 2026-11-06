@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Files
+Name[de]=Dateien
+Comment=Browse and manage your files
+Comment[de]=Deine Dateien ansehen und verwalten
+Exec=consoleui-files
+Icon=consoleui-files
+Categories=Utility;
+X-ConsoleUI=true
+X-ConsoleUI-Kind=app

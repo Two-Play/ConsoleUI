@@ -1,0 +1,15 @@
+[package]
+name = "consoleui-files"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "The file manager of ConsoleUI: browse, open, copy, move and throw away files with a controller"
+
+[dependencies]
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+consoleui-core.workspace = true
+consoleui-sdk.workspace = true
+slint = "1.18.1"
+
+[build-dependencies]
+consoleui-sdk = { workspace = true, features = ["build"] }
