@@ -7,6 +7,18 @@ use consoleui_core::desktop::wanted_categories;
 use quick_xml::Reader;
 use quick_xml::events::{BytesStart, Event};
 
+/// How many screenshots of an app are shown.
+const MAX_SHOTS: usize = 6;
+/// The width that suits the detail page best; the catalog has several sizes of each image.
+const SHOT_WIDTH: i64 = 1248;
+
+/// A screenshot on Flathub's server.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Shot {
+    pub url: String,
+    pub caption: String,
+}
+
 /// An app of the catalog.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Listing {
@@ -16,6 +28,7 @@ pub struct Listing {
     pub description: String,
     pub developer: String,
     pub icon: Option<PathBuf>,
+    pub shots: Vec<Shot>,
     pub game: bool,
     /// The app says it can be used with a controller
     pub gamepad: bool,
@@ -38,6 +51,10 @@ enum Tag {
     Control,
     Icon,
     Value,
+    Screenshots,
+    Screenshot,
+    Image,
+    Caption,
     Other,
 }
 
@@ -56,6 +73,10 @@ impl Tag {
             b"control" => Self::Control,
             b"icon" => Self::Icon,
             b"value" => Self::Value,
+            b"screenshots" => Self::Screenshots,
+            b"screenshot" => Self::Screenshot,
+            b"image" => Self::Image,
+            b"caption" => Self::Caption,
             _ => Self::Other,
         }
     }
@@ -95,12 +116,26 @@ struct Draft {
     developer: String,
     developer_name: Localized,
     icon: Option<String>,
+    shots: Vec<Shot>,
+    /// Sizes of the screenshot being read
+    images: Vec<(i64, String)>,
+    caption: Localized,
     categories: Vec<String>,
     gamepad: bool,
     verified: bool,
 }
 
 impl Draft {
+    /// The end of a screenshot: picks the size that suits the detail page.
+    fn finish_shot(&mut self) {
+        let images = std::mem::take(&mut self.images);
+        let caption = std::mem::take(&mut self.caption).take();
+        let best = images.into_iter().min_by_key(|(width, _)| (width - SHOT_WIDTH).abs());
+        if let Some((_, url)) = best.filter(|_| self.shots.len() < MAX_SHOTS) {
+            self.shots.push(Shot { url, caption });
+        }
+    }
+
     fn finish(self, icons: &Path) -> Option<Listing> {
         let name = self.name.take();
         if self.id.is_empty() || name.is_empty() || !wanted_categories(&self.categories) {
@@ -114,6 +149,7 @@ impl Draft {
             description: self.description.take(),
             developer: if self.developer.is_empty() { developer_name } else { self.developer },
             icon: self.icon.map(|file| icons.join("128x128").join(file)),
+            shots: self.shots,
             game: self.categories.iter().any(|c| c == "Game"),
             gamepad: self.gamepad,
             verified: self.verified,
@@ -153,6 +189,7 @@ pub fn parse(xml: &[u8], icons: &Path, lang: &str) -> Vec<Listing> {
     // Language of the element whose text is collected; `None` skips it
     let mut language: Option<bool> = None;
     let mut verified_value = false;
+    let mut image_width = 0;
     loop {
         let event = match reader.read_event() {
             Ok(event) => event,
@@ -176,7 +213,7 @@ pub fn parse(xml: &[u8], icons: &Path, lang: &str) -> Vec<Listing> {
                 let tag = Tag::of(element.name().as_ref());
                 stack.push(tag);
                 match tag {
-                    Tag::Paragraph | Tag::Item | Tag::Name | Tag::Summary | Tag::DeveloperName => {
+                    Tag::Paragraph | Tag::Item | Tag::Name | Tag::Summary | Tag::DeveloperName | Tag::Caption => {
                         language = language_of(&element, lang);
                         text.clear();
                     }
@@ -190,6 +227,10 @@ pub fn parse(xml: &[u8], icons: &Path, lang: &str) -> Vec<Listing> {
                     Tag::Value => {
                         verified_value =
                             attribute(&element, b"key").as_deref() == Some("flathub::verification::verified");
+                        text.clear();
+                    }
+                    Tag::Image => {
+                        image_width = attribute(&element, b"width").and_then(|w| w.parse().ok()).unwrap_or(0);
                         text.clear();
                     }
                     Tag::Id | Tag::Category | Tag::Control => text.clear(),
@@ -236,6 +277,16 @@ pub fn parse(xml: &[u8], icons: &Path, lang: &str) -> Vec<Listing> {
                         current.description.add(format!("• {}", tidy(&text)), local);
                     }
                     (Tag::Icon, Some(_)) if top => current.icon = Some(tidy(&text)),
+                    (Tag::Image, _) if parent == Some(Tag::Screenshots) => {
+                        let url = tidy(&text);
+                        if [".png", ".jpg", ".jpeg"].iter().any(|end| url.to_lowercase().ends_with(end)) {
+                            current.images.push((image_width, url));
+                        }
+                    }
+                    (Tag::Caption, Some(local)) if parent == Some(Tag::Screenshots) => {
+                        current.caption.set(tidy(&text), local);
+                    }
+                    (Tag::Screenshot, _) if parent == Some(Tag::Screenshots) => current.finish_shot(),
                     (Tag::Category, _) => current.categories.push(tidy(&text)),
                     (Tag::Control, _) if text.trim() == "gamepad" => current.gamepad = true,
                     (Tag::Value, _) if verified_value && text.trim() == "true" => current.verified = true,
@@ -273,6 +324,17 @@ mod tests {
     <icon type="cached" height="128" width="128" scale="2">double.png</icon>
     <icon type="cached" height="128" width="128">org.example.Game.png</icon>
     <categories><category>Game</category></categories>
+    <screenshots>
+      <screenshot type="default">
+        <caption>The menu</caption>
+        <caption xml:lang="de">Das Menü</caption>
+        <image type="source" width="3840">https://example.org/orig.png</image>
+        <image type="thumbnail" width="1248">https://example.org/1248.png</image>
+        <image type="thumbnail" width="224">https://example.org/224.png</image>
+      </screenshot>
+      <screenshot><image type="source" width="800">https://example.org/two.jpg</image></screenshot>
+      <screenshot><image type="source" width="800">https://example.org/three.svg</image></screenshot>
+    </screenshots>
     <releases><release><description><p>Not this one</p></description></release></releases>
     <custom><value key="other">true</value><value key="flathub::verification::verified">true</value></custom>
   </component>
@@ -306,6 +368,9 @@ mod tests {
         assert_eq!(game.developer, "Example Team");
         assert_eq!(game.icon.as_deref(), Some(Path::new("/icons/128x128/org.example.Game.png")));
         assert!(game.game && game.gamepad && game.verified);
+        let urls: Vec<&str> = game.shots.iter().map(|shot| shot.url.as_str()).collect();
+        assert_eq!(urls, ["https://example.org/1248.png", "https://example.org/two.jpg"]);
+        assert_eq!(game.shots[0].caption, "The menu");
         let player = &listings[1];
         assert_eq!(player.id, "org.example.Player");
         assert_eq!(player.developer, "Someone");
@@ -316,6 +381,7 @@ mod tests {
     fn prefers_the_wanted_language() {
         let listings = parse(CATALOG.as_bytes(), Path::new("/icons"), "de");
         assert_eq!(listings[0].name, "Spiel");
+        assert_eq!(listings[0].shots[0].caption, "Das Menü");
         assert_eq!(listings[1].name, "Player", "untranslated texts stay English");
     }
 }

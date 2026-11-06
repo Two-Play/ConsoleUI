@@ -15,6 +15,10 @@ pub fn data_home() -> Option<PathBuf> {
     from_env_or_home("XDG_DATA_HOME", ".local/share")
 }
 
+pub fn cache_home() -> Option<PathBuf> {
+    from_env_or_home("XDG_CACHE_HOME", ".cache")
+}
+
 pub fn config_home() -> Option<PathBuf> {
     from_env_or_home("XDG_CONFIG_HOME", ".config")
 }

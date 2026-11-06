@@ -8,7 +8,7 @@ use consoleui_core::osk::{KeyboardEvent, OnScreenKeyboard};
 use consoleui_core::search::normalize;
 use consoleui_core::{Action, sound::Sound};
 
-use crate::appstream::Listing;
+use crate::appstream::{Listing, Shot};
 use crate::backend::{Request, Response};
 
 /// Tiles per row and rows on the screen; only these reach the UI, the catalog has thousands.
@@ -83,6 +83,14 @@ impl DetailButton {
     }
 }
 
+/// What has the focus on the detail page.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Area {
+    Buttons,
+    Shots,
+    Text,
+}
+
 pub struct Page {
     listings: Vec<Listing>,
     pub loading: bool,
@@ -99,6 +107,10 @@ pub struct Page {
     /// The open detail page, index into `listings`
     detail: Option<usize>,
     button: usize,
+    area: Area,
+    shot: usize,
+    /// The focused screenshot fills the screen
+    viewing: bool,
     pub scroll: i32,
     /// How far the description can scroll, from the UI
     pub max_scroll: i32,
@@ -121,6 +133,9 @@ impl Page {
             top_row: 0,
             detail: None,
             button: 0,
+            area: Area::Buttons,
+            shot: 0,
+            viewing: false,
             scroll: 0,
             max_scroll: 0,
             jobs: HashMap::new(),
@@ -169,6 +184,44 @@ impl Page {
 
     pub fn button(&self) -> usize {
         self.button
+    }
+
+    pub fn area(&self) -> Area {
+        self.area
+    }
+
+    pub fn shots(&self) -> &[Shot] {
+        self.detail().map_or(&[], |listing| &listing.shots)
+    }
+
+    pub fn shot(&self) -> usize {
+        self.shot
+    }
+
+    pub fn viewing(&self) -> bool {
+        self.viewing
+    }
+
+    /// A screenshot that cannot be loaded leaves the page.
+    pub fn drop_shot(&mut self, url: &str) {
+        for listing in &mut self.listings {
+            listing.shots.retain(|shot| shot.url != url);
+        }
+        let count = self.shots().len();
+        self.shot = self.shot.min(count.saturating_sub(1));
+        if count == 0 {
+            self.viewing = false;
+            if self.area == Area::Shots {
+                self.area = Area::Buttons;
+            }
+        }
+    }
+
+    /// A click on a screenshot.
+    pub fn view_shot(&mut self, index: usize) {
+        self.area = Area::Shots;
+        self.shot = index.min(self.shots().len().saturating_sub(1));
+        self.viewing = true;
     }
 
     fn rebuild(&mut self) {
@@ -314,16 +367,49 @@ impl Page {
 
     fn apply_detail(&mut self, action: Action) -> Outcome {
         let buttons = self.buttons();
-        match action {
-            Action::Left if self.button > 0 => self.button -= 1,
-            Action::Right if self.button + 1 < buttons.len() => self.button += 1,
-            Action::Up if self.scroll > 0 => self.scroll -= 1,
-            Action::Down if self.scroll < self.max_scroll => self.scroll += 1,
-            Action::Back => {
+        let shots = self.shots().len();
+        if self.viewing {
+            return self.apply_viewer(action, shots);
+        }
+        match (self.area, action) {
+            (_, Action::Back) => {
                 self.detail = None;
                 return Outcome::Changed(Sound::Back);
             }
-            Action::Confirm => return self.press(buttons.get(self.button).copied()),
+            (Area::Buttons, Action::Left) if self.button > 0 => self.button -= 1,
+            (Area::Buttons, Action::Right) if self.button + 1 < buttons.len() => self.button += 1,
+            (Area::Buttons, Action::Confirm) => return self.press(buttons.get(self.button).copied()),
+            (Area::Buttons, Action::Down) if shots > 0 => self.area = Area::Shots,
+            (Area::Shots, Action::Left) if self.shot > 0 => self.shot -= 1,
+            (Area::Shots, Action::Right) if self.shot + 1 < shots => self.shot += 1,
+            (Area::Shots, Action::Up) => self.area = Area::Buttons,
+            (Area::Shots, Action::Confirm) => {
+                self.viewing = true;
+                return Outcome::Changed(Sound::Open);
+            }
+            (Area::Buttons | Area::Shots | Area::Text, Action::Down) if self.scroll < self.max_scroll => {
+                self.area = Area::Text;
+                self.scroll += 1;
+            }
+            (Area::Text, Action::Up) => {
+                self.scroll -= 1;
+                if self.scroll == 0 {
+                    self.area = if shots > 0 { Area::Shots } else { Area::Buttons };
+                }
+            }
+            _ => return Outcome::Nothing,
+        }
+        Outcome::Changed(Sound::Move)
+    }
+
+    fn apply_viewer(&mut self, action: Action, shots: usize) -> Outcome {
+        match action {
+            Action::Left if self.shot > 0 => self.shot -= 1,
+            Action::Right if self.shot + 1 < shots => self.shot += 1,
+            Action::Back | Action::Confirm => {
+                self.viewing = false;
+                return Outcome::Changed(Sound::Back);
+            }
             _ => return Outcome::Nothing,
         }
         Outcome::Changed(Sound::Move)
@@ -416,6 +502,8 @@ impl Page {
         let Some(&index) = self.view.get(self.focused) else { return Outcome::Nothing };
         self.detail = Some(index);
         self.button = 0;
+        self.area = Area::Buttons;
+        self.shot = 0;
         self.scroll = 0;
         Outcome::Changed(Sound::Open)
     }
@@ -574,6 +662,57 @@ mod tests {
         assert_eq!(page.apply(Action::Back), Outcome::Changed(Sound::Open));
         page.apply(Action::Right);
         assert_eq!(page.apply(Action::Confirm), Outcome::Quit);
+    }
+
+    fn page_with_shots() -> Page {
+        let mut page = Page::new();
+        let shot = |url: &str| Shot { url: url.into(), caption: String::new() };
+        let listing = Listing { shots: vec![shot("a"), shot("b")], ..listing(1, true) };
+        page.receive(Response::Catalog(Ok(vec![listing])));
+        page.apply(Action::Confirm);
+        page
+    }
+
+    #[test]
+    fn down_goes_from_the_buttons_to_the_screenshots_and_the_text() {
+        let mut page = page_with_shots();
+        page.max_scroll = 2;
+        page.apply(Action::Down);
+        assert_eq!(page.area(), Area::Shots);
+        page.apply(Action::Right);
+        assert_eq!(page.shot(), 1);
+        assert_eq!(page.apply(Action::Right), Outcome::Nothing);
+        page.apply(Action::Down);
+        assert_eq!((page.area(), page.scroll), (Area::Text, 1));
+        page.apply(Action::Up);
+        assert_eq!((page.area(), page.scroll), (Area::Shots, 0));
+        page.apply(Action::Up);
+        assert_eq!(page.area(), Area::Buttons);
+    }
+
+    #[test]
+    fn the_full_view_pages_through_and_back_returns_to_the_details() {
+        let mut page = page_with_shots();
+        page.apply(Action::Down);
+        page.apply(Action::Confirm);
+        assert!(page.viewing());
+        page.apply(Action::Right);
+        assert_eq!(page.shot(), 1);
+        page.apply(Action::Back);
+        assert!(!page.viewing());
+        assert!(page.detail().is_some());
+    }
+
+    #[test]
+    fn shots_that_fail_leave_the_page() {
+        let mut page = page_with_shots();
+        page.apply(Action::Down);
+        page.apply(Action::Right);
+        page.drop_shot("b");
+        assert_eq!(page.shot(), 0);
+        page.drop_shot("a");
+        assert_eq!(page.area(), Area::Buttons);
+        assert_eq!(page.apply(Action::Down), Outcome::Nothing);
     }
 
     #[test]

@@ -1183,3 +1183,6 @@ msgstr "{} ist installiert"
 
 msgid "{} was removed"
 msgstr "{} wurde entfernt"
+
+msgid "Enlarge"
+msgstr "Vergrößern"

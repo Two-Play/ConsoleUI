@@ -3,7 +3,7 @@
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::Duration;
 
-use crate::appstream::Listing;
+use crate::appstream::{Listing, Shot};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Request {
@@ -97,11 +97,18 @@ impl Backend for FakeBackend {
                 .into(),
             developer: "ConsoleUI".into(),
             icon: None,
+            shots: shots(index),
             game: true,
             gamepad: index % 3 == 0,
             verified: index % 2 == 0,
             installed: index == 1,
         };
+        fn shots(index: usize) -> Vec<Shot> {
+            let shot = |url: String| Shot { caption: format!("Picture of {url}"), url };
+            // The first one has a picture that fails to load
+            let broken = (index == 0).then(|| "fake:broken".to_string());
+            (0..5).map(|i| format!("fake:{i}")).chain(broken).map(shot).collect()
+        }
         let mut listings: Vec<Listing> = names.iter().enumerate().map(game).collect();
         let app = |id: &str, name: &str| Listing {
             id: id.into(),

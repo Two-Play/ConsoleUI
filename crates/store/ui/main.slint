@@ -1,7 +1,13 @@
-import { AppTile, Badge, Button, ControllerStyle, Dialog, EmptyState, Hint, HintBar, InputScope, KeyCap, KeyboardPanel, NavAction, ProgressBar, Spinner, TabBar, Theme, Tile } from "@consoleui/std.slint";
+import { AppTile, Badge, Button, ControllerStyle, Dialog, EmptyState, FocusRing, Hint, HintBar, InputScope, KeyCap, KeyboardPanel, NavAction, ProgressBar, Spinner, TabBar, Theme, Tile } from "@consoleui/std.slint";
 
 // Rust needs the global to apply the user's accent color and animation settings
 export { Theme }
+
+export struct StoreShot {
+    image: image,
+    ready: bool,
+    caption: string,
+}
 
 export struct StoreDetail {
     open: bool,
@@ -19,6 +25,11 @@ export struct StoreDetail {
     buttons: [string],
     button: int,
     scroll: int,
+    shots: [StoreShot],
+    shot: int,
+    shots-focused: bool,
+    // The focused screenshot fills the screen
+    viewing: bool,
 }
 
 export component AppWindow inherits Window {
@@ -50,6 +61,7 @@ export component AppWindow inherits Window {
     callback tab-clicked(int);
     callback tile-clicked(int);
     callback button-clicked(int);
+    callback shot-clicked(int);
     callback dialog-clicked(int);
     callback quit();
 
@@ -65,6 +77,9 @@ export component AppWindow inherits Window {
     property <length> gap: (root.width - 2 * root.margin - 7 * root.tile) / 6;
     property <length> row-height: 270px * root.s;
     property <length> scroll-step: 120px * root.s;
+    property <length> shot-width: 480px * root.s;
+    property <length> shot-gap: 24px * root.s;
+    property <bool> has-shots: root.detail.shots.length > 0;
 
     scope := InputScope {
         typing: root.typing;
@@ -176,6 +191,22 @@ export component AppWindow inherits Window {
 
         TouchArea { }
 
+        // The first screenshot behind the page, as the library does with its hero images
+        if root.has-shots: Image {
+            width: 100%;
+            height: 100%;
+            source: root.detail.shots[0].image;
+            image-fit: cover;
+            opacity: 0.22;
+            animate opacity {
+                duration: Theme.background-duration;
+            }
+        }
+
+        if root.has-shots: Rectangle {
+            background: @linear-gradient(180deg, Theme.base.with-alpha(0.55) 0%, Theme.base 75%);
+        }
+
         Tile {
             x: root.margin;
             y: 80px * root.s;
@@ -265,9 +296,58 @@ export component AppWindow inherits Window {
             }
         }
 
+        // The row moves so that the focused screenshot stays on the screen
+        if root.has-shots: Rectangle {
+            y: 395px * root.s;
+            height: 280px * root.s;
+
+            for shot[i] in root.detail.shots: Rectangle {
+                property <bool> is-focused: root.detail.shots-focused && i == root.detail.shot;
+                x: root.margin + (i - max(0, root.detail.shot - 1)) * (root.shot-width + root.shot-gap);
+                y: 5px * root.s;
+                width: root.shot-width;
+                height: 270px * root.s;
+                border-radius: Theme.radius-card * root.s;
+                background: Theme.surface;
+                animate x {
+                    duration: Theme.focus-duration;
+                    easing: ease-out-quart;
+                }
+
+                Rectangle {
+                    border-radius: parent.border-radius;
+                    clip: true;
+
+                    Image {
+                        width: 100%;
+                        height: 100%;
+                        source: shot.image;
+                        image-fit: cover;
+                    }
+                }
+
+                if !shot.ready: Spinner {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    size: 40px * root.s;
+                    s: root.s;
+                }
+
+                FocusRing {
+                    border-radius: parent.border-radius;
+                    focused: parent.is-focused;
+                    s: root.s;
+                }
+
+                TouchArea {
+                    clicked => { root.shot-clicked(i); }
+                }
+            }
+        }
+
         description-box := Rectangle {
             x: root.margin;
-            y: 400px * root.s;
+            y: (root.has-shots ? 695px : 400px) * root.s;
             width: root.width - 2 * root.margin;
             height: root.height - self.y - 110px * root.s;
             clip: true;
@@ -286,6 +366,49 @@ export component AppWindow inherits Window {
                     easing: ease-out-quart;
                 }
             }
+        }
+    }
+
+    if root.detail.viewing: Rectangle {
+        background: Theme.base;
+
+        TouchArea {
+            clicked => { root.action(NavAction.back); }
+        }
+
+        Image {
+            x: root.margin;
+            y: 40px * root.s;
+            width: root.width - 2 * root.margin;
+            height: root.height - 190px * root.s;
+            source: root.detail.shots[root.detail.shot].image;
+            image-fit: contain;
+        }
+
+        if !root.detail.shots[root.detail.shot].ready: Spinner {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            size: 56px * root.s;
+            s: root.s;
+        }
+
+        Text {
+            x: root.margin;
+            y: root.height - 135px * root.s;
+            width: root.width - 2 * root.margin;
+            horizontal-alignment: center;
+            text: root.detail.shots[root.detail.shot].caption;
+            color: Theme.text-dim;
+            font-size: 22px * root.s;
+            overflow: elide;
+        }
+
+        Text {
+            x: root.width - root.margin - self.width;
+            y: root.height - 70px * root.s;
+            text: (root.detail.shot + 1) + " / " + root.detail.shots.length;
+            color: Theme.text-dim;
+            font-size: 22px * root.s;
         }
     }
 

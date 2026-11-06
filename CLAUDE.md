@@ -273,7 +273,7 @@ Cargo workspace (edition 2024, `default-members` = the shell):
 - `crates/store` (binary `consoleui-store`, Story 8.9, not a default member): the store, an app on the SDK that also
   uses `consoleui-core`. `appstream.rs` streams the Flathub catalog flatpak keeps on disk (only apps `desktop::wanted_categories`
   lets into the shell's lists), `page.rs` is the UI-free state (seven columns, only the rows on screen reach Slint),
-  `backend.rs` the thread with `Backend`, `flatpak.rs` the real one (`--user`), `FakeBackend` is `--fake`. Scripted checks:
+  `shots.rs` downloads the screenshots with `curl` into the cache, `backend.rs` the thread with `Backend`, `flatpak.rs` the real one (`--user`), `FakeBackend` is `--fake`. Scripted checks:
   `consoleui-store --fake --actions right,confirm,confirm --snapshot out.png --snapshot-after 950`. Without `--fake`, the
   Install and Remove buttons really change the system; browsing is read-only. Its `build.rs` copies the catalog because Slint
   looks for `<package>.po`.

@@ -9,7 +9,7 @@ description = "The store of ConsoleUI: browse, install and remove apps from Flat
 consoleui-core.workspace = true
 consoleui-sdk.workspace = true
 flate2 = "1"
-image = { version = "0.25.10", default-features = false, features = ["png"] }
+image = { version = "0.25.10", default-features = false, features = ["jpeg", "png"] }
 quick-xml = "0.41"
 slint = "1.18.1"
 

@@ -6,6 +6,7 @@ mod appstream;
 mod backend;
 mod flatpak;
 mod page;
+mod shots;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -20,7 +21,8 @@ use consoleui_core::accent;
 use consoleui_core::i18n::{self, tr, trf};
 use consoleui_sdk::{Action, Controls, Event, HintButton, Hints, Session, Sound, Sounds, snapshot_from_args};
 use consoleui_sdk::{launch, library_changed, toast, watch_session};
-use page::{COLUMNS, Finished, Outcome, Page, ROWS, Section};
+use page::{Area, COLUMNS, Finished, Outcome, Page, ROWS, Section};
+use shots::{Loaded, Shots};
 use slint::{Color, ComponentHandle, Image, ModelRc, SharedPixelBuffer, Timer, TimerMode, VecModel};
 
 slint::include_modules!();
@@ -87,11 +89,19 @@ fn hints(page: &Page) -> Hints {
         Hints::new().with(HintButton::Dpad, tr("Select")).confirm(tr("OK")).back(tr("Cancel"))
     } else if page.typing {
         Hints::new().with(HintButton::Dpad, tr("Select")).confirm(tr("Type")).back(tr("Close"))
+    } else if page.viewing() {
+        Hints::new().with(HintButton::Dpad, tr("Select")).back(tr("Close"))
     } else if page.detail().is_some() {
         let buttons = page.buttons();
         let mut hints = Hints::new();
-        if let Some(button) = buttons.get(page.button()) {
-            hints = hints.confirm(button.label());
+        match page.area() {
+            Area::Buttons => {
+                if let Some(button) = buttons.get(page.button()) {
+                    hints = hints.confirm(button.label());
+                }
+            }
+            Area::Shots => hints = hints.with(HintButton::Dpad, tr("Select")).confirm(tr("Enlarge")),
+            Area::Text => {}
         }
         hints.updown(tr("Scroll")).back(tr("Back"))
     } else {
@@ -102,7 +112,7 @@ fn hints(page: &Page) -> Hints {
 }
 
 /// Puts the state of the page into the window.
-fn show(ui: &AppWindow, page: &Page, icons: &mut Icons) {
+fn show(ui: &AppWindow, page: &Page, icons: &mut Icons, pictures: &HashMap<String, Image>) {
     let tiles: Vec<AppTile> = page.visible().map(|listing| tile(icons, page, listing)).collect();
     ui.set_tiles(ModelRc::new(VecModel::from(tiles)));
     ui.set_focused(page.visible_focus() as i32);
@@ -138,8 +148,24 @@ fn show(ui: &AppWindow, page: &Page, icons: &mut Icons) {
             buttons: ModelRc::new(VecModel::from(
                 page.buttons().iter().map(|b| b.label().into()).collect::<Vec<slint::SharedString>>(),
             )),
-            button: page.button() as i32,
+            button: if page.area() == Area::Buttons { page.button() as i32 } else { -1 },
             scroll: page.scroll,
+            shots: ModelRc::new(VecModel::from(
+                page.shots()
+                    .iter()
+                    .map(|shot| {
+                        let picture = pictures.get(&shot.url);
+                        StoreShot {
+                            ready: picture.is_some(),
+                            image: picture.cloned().unwrap_or_default(),
+                            caption: shot.caption.as_str().into(),
+                        }
+                    })
+                    .collect::<Vec<_>>(),
+            )),
+            shot: page.shot() as i32,
+            shots_focused: page.area() == Area::Shots,
+            viewing: page.viewing(),
         }
     });
     ui.set_detail(detail.unwrap_or_default());
@@ -200,14 +226,50 @@ struct Store {
     ui: slint::Weak<AppWindow>,
     page: RefCell<Page>,
     icons: RefCell<Icons>,
+    shots: Shots,
+    /// Decoded screenshots of the open detail page
+    pictures: RefCell<HashMap<String, Image>>,
+    /// The app whose screenshots were asked for
+    wanted: RefCell<Option<String>>,
     requests: Sender<Request>,
     sounds: Rc<Sounds>,
 }
 
 impl Store {
     fn refresh(&self) {
+        self.want_shots();
         if let Some(ui) = self.ui.upgrade() {
-            show(&ui, &self.page.borrow(), &mut self.icons.borrow_mut());
+            show(&ui, &self.page.borrow(), &mut self.icons.borrow_mut(), &self.pictures.borrow());
+        }
+    }
+
+    /// A new detail page: its screenshots start loading, the ones before make room.
+    fn want_shots(&self) {
+        let page = self.page.borrow();
+        let id = page.detail().map(|listing| listing.id.clone());
+        if *self.wanted.borrow() != id {
+            self.pictures.borrow_mut().clear();
+            self.shots.want(page.shots().iter().map(|shot| shot.url.clone()));
+            *self.wanted.borrow_mut() = id;
+        }
+    }
+
+    fn poll_shots(&self) {
+        let mut changed = false;
+        for loaded in self.shots.loaded.try_iter() {
+            changed = true;
+            match loaded {
+                Loaded::Ready(url, pixels) => {
+                    // Still on this page?
+                    if self.page.borrow().shots().iter().any(|shot| shot.url == url) {
+                        self.pictures.borrow_mut().insert(url, Image::from_rgba8(pixels));
+                    }
+                }
+                Loaded::Failed(url) => self.page.borrow_mut().drop_shot(&url),
+            }
+        }
+        if changed {
+            self.refresh();
         }
     }
 
@@ -286,15 +348,15 @@ fn main() -> Result<(), slint::PlatformError> {
         }
     });
 
-    let (requests, responses) = if args.iter().any(|arg| arg == "--fake") {
-        backend::spawn(FakeBackend)
-    } else {
-        backend::spawn(flatpak::Flatpak)
-    };
+    let fake = args.iter().any(|arg| arg == "--fake");
+    let (requests, responses) = if fake { backend::spawn(FakeBackend) } else { backend::spawn(flatpak::Flatpak) };
     let store = Rc::new(Store {
         ui: ui.as_weak(),
         page: RefCell::new(Page::new()),
         icons: RefCell::default(),
+        shots: Shots::start(fake),
+        pictures: RefCell::default(),
+        wanted: RefCell::default(),
         requests,
         sounds,
     });
@@ -304,7 +366,10 @@ fn main() -> Result<(), slint::PlatformError> {
     let poll = Timer::default();
     poll.start(TimerMode::Repeated, Duration::from_millis(50), {
         let store = store.clone();
-        move || store.poll(&responses)
+        move || {
+            store.poll(&responses);
+            store.poll_shots();
+        }
     });
 
     let controls = Rc::new(Controls::start(
@@ -369,6 +434,13 @@ fn main() -> Result<(), slint::PlatformError> {
             let outcome = page.press(button);
             drop(page);
             store.outcome(outcome);
+        }
+    });
+    ui.on_shot_clicked({
+        let store = store.clone();
+        move |index| {
+            store.page.borrow_mut().view_shot(index as usize);
+            store.refresh();
         }
     });
     ui.on_dialog_clicked({
