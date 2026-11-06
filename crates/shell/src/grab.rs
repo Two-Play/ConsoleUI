@@ -19,7 +19,9 @@ use std::time::Instant;
 
 use consoleui_core::Action;
 use consoleui_core::input::evdev::{self, ABS_HAT0X, ABS_HAT0Y, ABS_X, ABS_Y, EV_ABS, EV_KEY};
-use consoleui_core::input::{DirectionRepeat, GlyphStyle, Stick, StickChange, glyph_style, is_direction};
+use consoleui_core::input::{
+    DirectionRepeat, GlyphStyle, Stick, StickChange, glyph_style, is_direction, is_steam_virtual_pad,
+};
 
 /// `_IOW('E', 0x90, int)`
 const EVIOCGRAB: libc::c_ulong = 0x4004_4590;
@@ -42,6 +44,9 @@ struct AbsInfo {
 struct Device {
     file: File,
     style: GlyphStyle,
+    /// Steam's virtual pad next to a real controller: grabbed so that the game gets nothing from
+    /// it either, but its events only repeat the real controller's and are dropped.
+    mirror: bool,
     /// (min, max) for ABS_X and ABS_Y
     range: [(i32, i32); 2],
     axes: [f32; 2],
@@ -58,7 +63,7 @@ pub struct Grab {
 impl Grab {
     /// Grabs all evdev devices with one of the names (as gilrs reports them).
     pub fn acquire(names: &[String]) -> Self {
-        let devices = fs::read_dir("/sys/class/input")
+        let mut devices: Vec<Device> = fs::read_dir("/sys/class/input")
             .into_iter()
             .flatten()
             .flatten()
@@ -69,12 +74,25 @@ impl Grab {
                 }
                 let name = fs::read_to_string(entry.path().join("device/name")).ok()?;
                 let name = name.trim();
-                names.iter().any(|n| n == name).then(|| (format!("/dev/input/{node}"), glyph_style(name)))
+                let id = |file: &str| {
+                    let text = fs::read_to_string(entry.path().join("device/id").join(file)).ok()?;
+                    u16::from_str_radix(text.trim(), 16).ok()
+                };
+                let steam_virtual = is_steam_virtual_pad(id("vendor"), id("product"));
+                names
+                    .iter()
+                    .any(|n| n == name)
+                    .then(|| (format!("/dev/input/{node}"), glyph_style(name), steam_virtual))
             })
-            .filter_map(|(path, style)| {
-                open(&path, style).map_err(|err| eprintln!("Controller {path} not exclusive: {err}")).ok()
+            .filter_map(|(path, style, steam_virtual)| {
+                let device = open(&path, style, steam_virtual);
+                device.map_err(|err| eprintln!("Controller {path} not exclusive: {err}")).ok()
             })
             .collect();
+        if devices.iter().all(|device| device.mirror) {
+            // Only Steam's virtual pad is there: it is the controller.
+            devices.iter_mut().for_each(|device| device.mirror = false);
+        }
         Self { devices, repeat: DirectionRepeat::default() }
     }
 
@@ -87,6 +105,7 @@ impl Grab {
         let travel = |device: &&Device| device.axes[0].hypot(device.axes[1]);
         self.devices
             .iter()
+            .filter(|device| !device.mirror)
             .max_by(|a, b| travel(a).total_cmp(&travel(b)))
             .map_or((0.0, 0.0), |d| (d.axes[0], d.axes[1]))
     }
@@ -99,6 +118,9 @@ impl Grab {
             while let Ok(read) = device.file.read(&mut buffer) {
                 if read == 0 {
                     break;
+                }
+                if device.mirror {
+                    continue;
                 }
                 for event in buffer[..read].as_chunks::<EVENT_SIZE>().0 {
                     let kind = u16::from_ne_bytes([event[16], event[17]]);
@@ -157,7 +179,7 @@ fn handle(
     }
 }
 
-fn open(path: &str, style: GlyphStyle) -> std::io::Result<Device> {
+fn open(path: &str, style: GlyphStyle, mirror: bool) -> std::io::Result<Device> {
     let file = OpenOptions::new().read(true).custom_flags(libc::O_NONBLOCK).open(path)?;
     let fd = file.as_raw_fd();
     // SAFETY: valid descriptor, EVIOCGRAB expects an int value (1 = grab).
@@ -173,6 +195,7 @@ fn open(path: &str, style: GlyphStyle) -> std::io::Result<Device> {
     Ok(Device {
         file,
         style,
+        mirror,
         range,
         axes: [0.0; 2],
         hat: [0.0; 2],

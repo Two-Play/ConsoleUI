@@ -165,7 +165,8 @@ Cargo workspace (edition 2024, `default-members` = the shell):
     home row (pinned first, then recents); hidden entries are left out of home, library and search.
   - `input.rs` has the device-free gamepad logic
     (`DirectionRepeat` for hold-to-repeat, `Stick` with hysteresis, `glyph_style` by device name, `GuideChord`:
-    Guide counts on release, Guide + R1 is `Action::Screenshot`).
+    Guide counts on release, Guide + R1 is `Action::Screenshot`, `is_steam_virtual_pad`: next to a real
+    controller the shell ignores Steam's virtual pad, which repeats its input, but still grabs it).
   - `running::RunningApp` decides when the launch overlay closes: process exit for commands,
     `steam::running_games()` for Steam games (scans `/proc` for processes with `SteamAppId=<id>`;
     `RunningAppID` in `~/.steam/registry.vdf` is updated by Steam only minutes later), with a minimum hold

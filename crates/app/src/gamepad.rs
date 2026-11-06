@@ -3,7 +3,9 @@
 use std::time::Instant;
 
 use consoleui_core::Action;
-use consoleui_core::input::{DirectionRepeat, GlyphStyle, GuideChord, Stick, StickChange, glyph_style, is_direction};
+use consoleui_core::input::{
+    DirectionRepeat, GlyphStyle, GuideChord, Stick, StickChange, glyph_style, is_direction, is_steam_virtual_pad,
+};
 use gilrs::{Axis, Button, Event, EventType, Gamepad, Gilrs, MappingSource, PowerInfo};
 
 pub struct ControllerStatus {
@@ -52,7 +54,7 @@ impl Gamepads {
         let mut actions = Vec::new();
         while let Some(Event { id, event, .. }) = self.gilrs.next_event() {
             let gamepad = self.gilrs.gamepad(id);
-            if mapping_known(&gamepad) {
+            if mapping_known(&gamepad) && !is_steam_virtual(&gamepad) {
                 match event {
                     EventType::Connected => self.connections.push(Connection::Connected(gamepad.name().to_string())),
                     EventType::Disconnected => {
@@ -61,7 +63,7 @@ impl Gamepads {
                     _ => {}
                 }
             }
-            if !is_supported(&gamepad) {
+            if !is_supported(&gamepad) || (is_steam_virtual(&gamepad) && has_real_pad(&self.gilrs)) {
                 continue;
             }
             match event {
@@ -116,9 +118,11 @@ impl Gamepads {
         while self.gilrs.next_event().is_some() {}
     }
 
-    /// First connected controller, for the top bar and the button glyphs.
+    /// First connected controller, for the top bar and the button glyphs. A real one goes first:
+    /// Steam's virtual pad calls itself an Xbox pad and has no battery.
     pub fn status(&self) -> Option<ControllerStatus> {
-        self.gilrs.gamepads().map(|(_, gamepad)| gamepad).find(is_supported).map(|gamepad| ControllerStatus {
+        let gamepads = self.gilrs.gamepads().map(|(_, gamepad)| gamepad).filter(is_supported);
+        gamepads.min_by_key(is_steam_virtual).map(|gamepad| ControllerStatus {
             style: glyph_style(gamepad.name()),
             battery: match gamepad.power_info() {
                 PowerInfo::Discharging(percent) | PowerInfo::Charging(percent) => Some(percent),
@@ -142,6 +146,15 @@ fn apply_change(repeat: &mut DirectionRepeat, change: StickChange, now: Instant,
 /// does not show up as a controller.
 fn is_supported(gamepad: &Gamepad) -> bool {
     gamepad.is_connected() && mapping_known(gamepad)
+}
+
+fn is_steam_virtual(gamepad: &Gamepad) -> bool {
+    is_steam_virtual_pad(gamepad.vendor_id(), gamepad.product_id())
+}
+
+/// With a real controller connected, Steam's virtual pad only repeats its input.
+fn has_real_pad(gilrs: &Gilrs) -> bool {
+    gilrs.gamepads().any(|(_, gamepad)| is_supported(&gamepad) && !is_steam_virtual(&gamepad))
 }
 
 fn mapping_known(gamepad: &Gamepad) -> bool {

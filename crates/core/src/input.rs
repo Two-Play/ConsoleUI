@@ -54,6 +54,13 @@ pub fn glyph_style(name: &str) -> GlyphStyle {
     if sony.iter().any(|s| name.contains(s)) { GlyphStyle::PlayStation } else { GlyphStyle::Xbox }
 }
 
+/// Steam Input's virtual gamepad (uinput, named like an Xbox 360 pad). It repeats what a real
+/// controller does for games, so next to a real controller it would double every press; on its
+/// own it can be the only way to read a controller, for example with Remote Play.
+pub fn is_steam_virtual_pad(vendor: Option<u16>, product: Option<u16>) -> bool {
+    vendor == Some(0x28de) && product == Some(0x11ff)
+}
+
 /// The input device used last; the hints show its buttons.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InputDevice {
@@ -236,6 +243,15 @@ pub mod evdev {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn only_steams_virtual_pad_counts_as_virtual() {
+        assert!(super::is_steam_virtual_pad(Some(0x28de), Some(0x11ff)));
+        // A real Steam Controller and a real Xbox 360 pad
+        assert!(!super::is_steam_virtual_pad(Some(0x28de), Some(0x1102)));
+        assert!(!super::is_steam_virtual_pad(Some(0x045e), Some(0x028e)));
+        assert!(!super::is_steam_virtual_pad(None, None));
+    }
+
     use super::*;
 
     #[test]
