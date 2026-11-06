@@ -91,6 +91,7 @@ Schätzung in Story Points (SP): 1, 2, 3, 5, 8, 13. Ein Sprint dauert 2 Wochen.
 | 4.4 | Running apps are shown in the shell ("Running now"); you can switch back to them or quit them | 5 |
 | 4.5 | Processes run in their own systemd scope (`systemd-run --user --scope`), so crashes and quitting work cleanly | 3 |
 | 4.6 | Quick menu as an overlay above running games (volume, brightness, back to the shell, quit the game). Brightness only on screens with a backlight, the card is hidden otherwise | 8 (spike 0.3) |
+| 4.8 | **Done.** Media card in the quick menu: while a player (browser, music app) has something loaded over MPRIS, a card shows the track and artist; confirm plays or pauses, up and down skip | 3 |
 | 4.7 | **Done.** Window switcher in the quick menu: a row with every running app, most recently used first, one card per window with a live preview (our compositor; artwork in gamescope and on the desktop). ✕ switches, □ quits, ✕ right after opening goes to the previous app | 5 |
 
 ## Epic 5 – System & settings

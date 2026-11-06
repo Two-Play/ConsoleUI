@@ -20,6 +20,7 @@ mod grab;
 mod hero;
 mod inputmethod;
 mod loader;
+mod media;
 mod music;
 mod network;
 mod notifications;

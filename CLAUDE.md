@@ -329,6 +329,7 @@ Cargo workspace (edition 2024, `default-members` = the shell):
   - `src/gamepad.rs`: gilrs polling → `Action`s (only devices with an SDL mapping); PS/Guide → `Action::Guide`.
   - `src/gamescope.rs`: X11 control of gamescope (tagging windows, baselayer, preparing the overlay and
     notification windows).
+  - `src/media.rs`: MPRIS on its own thread, asked only while the quick menu is open (`Shell::poll_media`); `consoleui_core::media` picks the player. The quick menu's media card shows it, `examples/fake_mpris.rs` is a stand-in player that prints its commands.
   - `src/quick.rs`: quick menu ("Steuerzentrale") items and input handling, with the window switcher row
     above the cards when there is something to switch to (Story 4.7). In gamescope it is shown in
     `OverlayWindow` (`ui/overlay.slint`, transparent, gets `STEAM_OVERLAY` and is remapped before first

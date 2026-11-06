@@ -14,6 +14,7 @@ use consoleui_core::game_options::{GameOptions, GameOptionsPanel, GameOptionsSto
 use consoleui_core::i18n::{self, Language, tr, trf};
 use consoleui_core::keymap::KeyboardLayout;
 use consoleui_core::launch::{self, ProcessHandle};
+use consoleui_core::media::Player;
 use consoleui_core::netpages::Page;
 use consoleui_core::notification::Incoming;
 use consoleui_core::osk::{KeyboardEvent, OnScreenKeyboard};
@@ -44,6 +45,7 @@ use crate::downloads::{self, DownloadNews};
 use crate::gamescope::{Gamescope, x11_window_id};
 use crate::hero::Heroes;
 use crate::loader::{self, Library, LoadedEntry};
+use crate::media::{self, Media};
 use crate::music::Music;
 use crate::network::Network;
 use crate::notifications;
@@ -237,6 +239,9 @@ pub struct Shell {
     notifications_rx: Option<mpsc::Receiver<Incoming>>,
     /// Toasts from apps, and what they can read about the active profile (Story 8.7)
     service: Option<Service>,
+    media: Option<Media>,
+    /// What the media card showed last
+    media_player: Option<Player>,
     /// An app asked to start this entry; waits for the library if it is new
     pending_launch: Option<String>,
     /// The library changed while a look at it was running
@@ -416,6 +421,8 @@ impl Shell {
             artwork_rx: None,
             notifications_rx: None,
             service: None,
+            media: None,
+            media_player: None,
             pending_launch: None,
             look_again: false,
             downloads_rx: None,
@@ -1188,6 +1195,7 @@ impl Shell {
     pub fn start_system_services(&mut self, steam: bool) {
         self.notifications_rx = Some(notifications::start());
         self.service = Some(service::start(self.published()));
+        self.media = Some(media::start());
         self.downloads_rx = steam.then(downloads::start);
     }
 
@@ -1390,7 +1398,21 @@ impl Shell {
     }
 
     /// Runs on a timer: takes over responses of the network thread and shows toasts.
+    /// Keeps the media card current while the quick menu is open.
+    fn poll_media(&mut self, ui: &AppWindow) {
+        let open = self.quick.is_some();
+        let Some(media) = self.media.as_mut() else { return };
+        media.watch(open);
+        let Some(player) = media.player.try_iter().last() else { return };
+        self.media_player = player.clone();
+        if let Some(quick) = self.quick.as_mut() {
+            quick.set_media(player);
+            self.show_quick(ui, true);
+        }
+    }
+
     pub fn poll_network(&mut self, ui: &AppWindow) {
+        self.poll_media(ui);
         let (changed, notices) = self.network.poll(self.screen == Screen::Settings);
         for notice in notices {
             self.toast(ui, notice.symbol, &notice.title, &notice.text);
@@ -2010,7 +2032,7 @@ impl Shell {
         let profile = self.profiles.get(&self.profile).map(|p| p.name.clone()).unwrap_or_default();
         let switcher = self.switcher(in_front);
         let mouse = self.offers_mouse_mode() && self.mouse_mode.is_none();
-        self.quick = Some(QuickMenu::new(foreground, profile, switcher, mouse));
+        self.quick = Some(QuickMenu::new(foreground, profile, switcher, mouse, self.media_player.clone()));
         self.previews.clear();
         // The previews follow with the next frame of the compositor; until then the row shows covers.
         if let Some(compositor) = self.compositor.as_mut().filter(|compositor| compositor.window_list()) {
@@ -2065,6 +2087,12 @@ impl Shell {
         let Some(quick) = self.quick.as_mut() else { return };
         match quick.apply(action) {
             QuickOutcome::Stay => self.show_quick(ui, true),
+            QuickOutcome::Media(command) => {
+                if let Some(media) = &self.media {
+                    media.send(command);
+                }
+                self.show_quick(ui, true);
+            }
             QuickOutcome::Close => self.close_quick(ui),
             QuickOutcome::Confirm(action) => {
                 let dialog = self.quick_dialog(&action);
@@ -2121,7 +2149,7 @@ impl Shell {
                     }
                     QuickAction::Quit(entry_id) => self.quit_running(&entry_id),
                     QuickAction::Mouse(app_id) => self.start_mouse_mode(ui, app_id),
-                    QuickAction::Volume | QuickAction::Brightness => {}
+                    QuickAction::Volume | QuickAction::Brightness | QuickAction::Media => {}
                     QuickAction::Power(power) => {
                         if let Err(err) = system::power(power) {
                             eprintln!("Power action failed: {err}");

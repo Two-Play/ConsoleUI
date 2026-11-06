@@ -1,6 +1,7 @@
 //! Content and state of the quick menu (PS/Guide button).
 
 use consoleui_core::i18n::{tr, trf};
+use consoleui_core::media::{MediaCommand, Player};
 use consoleui_core::protocol::WindowInfo;
 use consoleui_core::switcher::{Switcher, SwitcherEntry, SwitcherOutcome};
 use consoleui_core::system::{self, Backlight, PowerAction, Volume};
@@ -24,6 +25,8 @@ pub enum QuickAction {
     /// Open the profile screen (Story 5.7)
     SwitchProfile,
     Volume,
+    /// What plays right now; only while a player has something loaded
+    Media,
     /// Only on screens with a backlight (Story 4.6)
     Brightness,
     Power(PowerAction),
@@ -51,6 +54,7 @@ pub struct QuickMenu {
     actions: Vec<QuickAction>,
     focused: usize,
     volume: Option<Volume>,
+    media: Option<Player>,
     brightness: Option<Backlight>,
     app_title: Option<String>,
     app_in_front: bool,
@@ -69,10 +73,18 @@ pub enum QuickOutcome {
     Run(QuickAction),
     /// The action has serious consequences: the shell asks first (dialog)
     Confirm(QuickAction),
+    /// For the player on the media card
+    Media(MediaCommand),
 }
 
 impl QuickMenu {
-    pub fn new(foreground: Option<ForegroundApp>, profile: String, switcher: Switcher, mouse: bool) -> Self {
+    pub fn new(
+        foreground: Option<ForegroundApp>,
+        profile: String,
+        switcher: Switcher,
+        mouse: bool,
+        media: Option<Player>,
+    ) -> Self {
         let mut actions = Vec::new();
         let app_title = foreground.as_ref().map(|app| app.title.clone());
         let app_in_front = foreground.as_ref().is_some_and(|app| app.in_front);
@@ -93,17 +105,39 @@ impl QuickMenu {
             QuickAction::Logout,
         ]);
         let in_switcher = switcher.is_useful();
-        Self {
+        let mut menu = Self {
             actions,
             focused: 0,
             volume: system::volume(),
+            media: None,
             brightness,
             app_title,
             app_in_front,
             profile,
             switcher,
             in_switcher,
+        };
+        menu.set_media(media);
+        menu
+    }
+
+    /// A player appeared, changed or went away: the card follows, the focus stays where it is.
+    pub fn set_media(&mut self, media: Option<Player>) {
+        let current = self.actions[self.focused].clone();
+        let card = self.actions.iter().position(|action| *action == QuickAction::Media);
+        match (&media, card) {
+            (Some(_), None) => {
+                let volume = self.actions.iter().position(|action| *action == QuickAction::Volume).unwrap_or(0);
+                self.actions.insert(volume + 1, QuickAction::Media);
+            }
+            (None, Some(card)) => {
+                self.actions.remove(card);
+            }
+            _ => {}
         }
+        self.media = media;
+        let volume = self.actions.iter().position(|action| *action == QuickAction::Volume).unwrap_or(0);
+        self.focused = self.actions.iter().position(|action| *action == current).unwrap_or(volume);
     }
 
     /// The focused card, -1 while the focus is in the switcher row.
@@ -201,11 +235,22 @@ impl QuickMenu {
                 self.brightness = system::backlight();
                 QuickOutcome::Stay
             }
+            Action::Up | Action::Down if current == QuickAction::Media => {
+                let player = self.media.as_ref();
+                if action == Action::Up && player.is_some_and(|player| player.can_next) {
+                    QuickOutcome::Media(MediaCommand::Next)
+                } else if action == Action::Down && player.is_some_and(|player| player.can_previous) {
+                    QuickOutcome::Media(MediaCommand::Previous)
+                } else {
+                    QuickOutcome::Stay
+                }
+            }
             Action::Up if self.switcher.is_useful() => {
                 self.in_switcher = true;
                 QuickOutcome::Stay
             }
             Action::Confirm if current == QuickAction::Brightness => QuickOutcome::Stay,
+            Action::Confirm if current == QuickAction::Media => QuickOutcome::Media(MediaCommand::PlayPause),
             Action::Confirm if current == QuickAction::Volume => {
                 report(system::toggle_mute());
                 self.volume = system::volume();
@@ -222,7 +267,7 @@ impl QuickMenu {
         self.actions
             .iter()
             .map(|action| {
-                let (symbol, label, value) = match action {
+                let (symbol, label, value): (&str, &str, String) = match action {
                     QuickAction::Resume(_) => ("▶", tr("Resume"), self.app_title.clone().unwrap_or_default()),
                     // Only a card of the switcher row, never of this one
                     QuickAction::Switch { .. } => ("▶", tr("Resume"), String::new()),
@@ -231,6 +276,7 @@ impl QuickMenu {
                     QuickAction::Mouse(_) => ("◉", tr("Gamepad mouse"), tr("Use the app with the stick").to_string()),
                     QuickAction::SwitchProfile => ("☺", tr("Switch profile"), self.profile.clone()),
                     QuickAction::Volume => ("♪", tr("Volume"), self.volume_text()),
+                    QuickAction::Media => self.media_card(),
                     QuickAction::Brightness => ("☀", tr("Brightness"), self.brightness_text()),
                     QuickAction::Power(PowerAction::Suspend) => ("☾", tr("Sleep"), String::new()),
                     QuickAction::Power(PowerAction::Reboot) => ("↻", tr("Restart"), String::new()),
@@ -251,10 +297,19 @@ impl QuickMenu {
                     value: value.into(),
                     adjustable: matches!(action, QuickAction::Volume | QuickAction::Brightness),
                     can_mute: *action == QuickAction::Volume,
+                    media: *action == QuickAction::Media,
                     level,
                 }
             })
             .collect()
+    }
+
+    /// Symbol of what confirm does, the track and who plays it.
+    fn media_card(&self) -> (&str, &str, String) {
+        match &self.media {
+            Some(player) => (if player.playing { "‖" } else { "▶" }, player.headline(), player.detail().to_string()),
+            None => ("▶", "", String::new()),
+        }
     }
 
     fn volume_text(&self) -> String {
@@ -276,5 +331,56 @@ impl QuickMenu {
 fn report(result: std::io::Result<()>) {
     if let Err(err) = result {
         eprintln!("Quick menu: {err}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use consoleui_core::Action;
+
+    use super::*;
+
+    fn menu(media: Option<Player>) -> QuickMenu {
+        QuickMenu::new(None, "Me".into(), Switcher::default(), false, media)
+    }
+
+    fn player() -> Player {
+        Player { title: "Song".into(), playing: true, can_next: true, ..Player::default() }
+    }
+
+    fn focus_card(menu: &mut QuickMenu) {
+        let card = menu.actions.iter().position(|action| *action == QuickAction::Media).expect("a media card");
+        menu.focus(card);
+    }
+
+    #[test]
+    fn the_card_exists_only_with_a_player() {
+        let mut menu = menu(None);
+        assert!(!menu.actions.contains(&QuickAction::Media));
+        menu.set_media(Some(player()));
+        assert!(menu.actions.contains(&QuickAction::Media));
+        menu.set_media(None);
+        assert!(!menu.actions.contains(&QuickAction::Media));
+    }
+
+    #[test]
+    fn the_focus_survives_the_card_coming_and_going() {
+        let mut menu = menu(None);
+        let sleep = menu.actions.iter().position(|a| *a == QuickAction::Power(PowerAction::Suspend)).unwrap();
+        menu.focus(sleep);
+        menu.set_media(Some(player()));
+        assert_eq!(menu.actions[menu.focused], QuickAction::Power(PowerAction::Suspend));
+        focus_card(&mut menu);
+        menu.set_media(None);
+        assert_eq!(menu.actions[menu.focused], QuickAction::Volume, "the card next to it");
+    }
+
+    #[test]
+    fn the_card_sends_only_what_the_player_can_do() {
+        let mut menu = menu(Some(player()));
+        focus_card(&mut menu);
+        assert!(matches!(menu.apply(Action::Confirm), QuickOutcome::Media(MediaCommand::PlayPause)));
+        assert!(matches!(menu.apply(Action::Up), QuickOutcome::Media(MediaCommand::Next)));
+        assert!(matches!(menu.apply(Action::Down), QuickOutcome::Stay), "no previous track");
     }
 }

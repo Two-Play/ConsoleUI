@@ -3,7 +3,7 @@ use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::library::Launch;
@@ -158,9 +158,11 @@ pub fn spawn(launch: &Launch) -> io::Result<ProcessHandle> {
     Ok(ProcessHandle { exited, stopper })
 }
 
+/// Two launches in the same millisecond must not share a name: systemd-run would refuse the second.
 fn unique_unit_name() -> String {
+    static NEXT: AtomicU32 = AtomicU32::new(0);
     let millis = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or_default();
-    format!("consoleui-app-{millis}")
+    format!("consoleui-app-{millis}-{}-{}", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed))
 }
 
 /// systemd-run needs the user bus; without it (e.g. without systemd) we start directly.
@@ -251,6 +253,11 @@ mod tests {
         handle.stop().unwrap();
         wait_for_exit(&handle);
         assert!(handle.has_exited());
+    }
+
+    #[test]
+    fn unit_names_differ_within_a_millisecond() {
+        assert_ne!(unique_unit_name(), unique_unit_name());
     }
 
     #[test]

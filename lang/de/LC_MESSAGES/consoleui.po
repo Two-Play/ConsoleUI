@@ -1186,3 +1186,9 @@ msgstr "{} wurde entfernt"
 
 msgid "Enlarge"
 msgstr "Vergrößern"
+
+msgid "Next / previous"
+msgstr "Nächster / vorheriger Titel"
+
+msgid "Play / pause"
+msgstr "Wiedergabe / Pause"
