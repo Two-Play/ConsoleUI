@@ -17,6 +17,12 @@ const WANTED_CATEGORIES: &[&str] = &["Game", "AudioVideo", "Audio", "Video", "Ne
 /// wanted category.
 const EXCLUDED_CATEGORIES: &[&str] = &["Settings", "System", "Development", "Office", "ConsoleOnly"];
 
+/// Whether these categories make an app show up in the shell's lists.
+pub fn wanted_categories(categories: &[String]) -> bool {
+    let any = |list: &[&str]| categories.iter().any(|c| list.contains(&c.as_str()));
+    any(WANTED_CATEGORIES) && !any(EXCLUDED_CATEGORIES)
+}
+
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct DesktopEntry {
     pub id: String,
@@ -92,8 +98,7 @@ impl DesktopEntry {
     }
 
     fn is_console_friendly(&self) -> bool {
-        let wanted =
-            !self.no_display && self.has_category(WANTED_CATEGORIES) && !self.has_category(EXCLUDED_CATEGORIES);
+        let wanted = !self.no_display && wanted_categories(&self.categories);
         self.entry_type == "Application"
             && !self.hidden
             && !self.terminal

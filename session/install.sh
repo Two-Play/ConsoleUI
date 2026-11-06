@@ -3,7 +3,7 @@
 #   "ConsoleUI"                  gamescope session (session/consoleui-session)
 #   "ConsoleUI (own compositor)" Epic 7 compositor (session/consoleui-compositor-session), only
 #                                if the compositor was built
-# Build first as a normal user:  cargo build --release
+# Build first as a normal user:  cargo build --release -p consoleui -p consoleui-store
 #   and for the compositor:      dev/toolbox.sh run cargo build --release -p consoleui-compositor
 #   (or everything in the toolbox: dev/toolbox.sh run cargo build --release --workspace)
 # Then:                          sudo session/install.sh
@@ -33,5 +33,16 @@ if [ -x "$compositor" ]; then
     echo "Installed the session \"ConsoleUI (own compositor)\"."
 else
     echo "No compositor build at $compositor; skipped the \"ConsoleUI (own compositor)\" session."
+fi
+store="${CONSOLEUI_STORE_BUILD:-$root/target/release/consoleui-store}"
+[ -x "$store" ] || store="$root/target/toolbox/release/consoleui-store"
+if [ -x "$store" ]; then
+    install -Dm755 "$store" /usr/local/bin/consoleui-store
+    install -Dm644 "$root/crates/store/consoleui-store.desktop" /usr/share/applications/consoleui-store.desktop
+    install -Dm644 "$root/crates/store/consoleui-store.svg" \
+        /usr/share/icons/hicolor/scalable/apps/consoleui-store.svg
+    echo "Installed the store."
+else
+    echo "No store build; skipped it (cargo build --release -p consoleui-store)."
 fi
 echo "Done. Log out and pick the session on the login screen."

@@ -270,6 +270,13 @@ Cargo workspace (edition 2024, `default-members` = the shell):
   controller and keyboard input, `build::compile` is the app's `build.rs`. `templates/app` is the project template,
   `dev/new-app.sh <name> [dir]` creates an app from it (path dependency on this checkout). Rules: `docs/sdk.md`.
   Keep the template building: create an app in a scratch directory and run its tests after changing the SDK.
+- `crates/store` (binary `consoleui-store`, Story 8.9, not a default member): the store, an app on the SDK that also
+  uses `consoleui-core`. `appstream.rs` streams the Flathub catalog flatpak keeps on disk (only apps `desktop::wanted_categories`
+  lets into the shell's lists), `page.rs` is the UI-free state (seven columns, only the rows on screen reach Slint),
+  `backend.rs` the thread with `Backend`, `flatpak.rs` the real one (`--user`), `FakeBackend` is `--fake`. Scripted checks:
+  `consoleui-store --fake --actions right,confirm,confirm --snapshot out.png --snapshot-after 950`. Without `--fake`, the
+  Install and Remove buttons really change the system; browsing is read-only. Its `build.rs` copies the catalog because Slint
+  looks for `<package>.po`.
 - `crates/shell` (binary `consoleui`): Slint UI plus glue.
   - `src/compositor.rs`: counterpart of `gamescope.rs`, active when `CONSOLEUI_COMPOSITOR` is set (takes
     precedence over gamescope). Sends `Hello`/`Launched`/`Exited`/`Focus`/`Overlay`/`KeyboardLayout`/`Resolution`/`SaveScreenshot`;
@@ -362,7 +369,7 @@ Cargo workspace (edition 2024, `default-members` = the shell):
     and the `NetView` Slint struct (`ui/network.slint`, shown over the settings page while a sub-page is
     open). `main.rs` polls responses every 100 ms (`Shell::poll_network`); results become toasts.
   - `src/service.rs` (Story 8.7): `org.consoleui.Shell1` on the session bus for apps (names in `consoleui_core::service`,
-    client in `consoleui_app::session`; `docs/sdk.md` lists the members). `Service::publish` keeps it current and sends `PropertiesChanged`, apps follow with `watch_session`.
+    client in `consoleui_app::session`; `docs/sdk.md` lists the members). `Service::publish` keeps it current and sends `PropertiesChanged`, apps follow with `watch_session`. `RefreshLibrary` and `Launch` arrive as `AppRequest`s; `loader::spawn_library_check` finds new entries and desktop entries that are gone.
   - `src/notifications.rs`: the shell answers `org.freedesktop.Notifications` on the session bus (zbus), so
     `notify-send` and other programs show toasts, also over a game; it starts only when no desktop service owns
     the name. `consoleui_core::notification` strips the markup. `src/downloads.rs` watches Steam's

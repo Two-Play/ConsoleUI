@@ -49,7 +49,7 @@ use crate::network::Network;
 use crate::notifications;
 use crate::profiles::{self as profile_view, ProfileStart};
 use crate::quick::{ForegroundApp, QuickAction, QuickMenu, QuickOutcome};
-use crate::service::{self, Published, Service};
+use crate::service::{self, AppRequest, Published, Service};
 use crate::{
     AppTile, AppWindow, ControllerStyle, Glass, GlyphButton, Hint, KeyCap, NotificationWindow, OverlayWindow,
     QuickItem, Screen, SettingRow, SwitcherItem, Theme, tiles,
@@ -237,9 +237,13 @@ pub struct Shell {
     notifications_rx: Option<mpsc::Receiver<Incoming>>,
     /// Toasts from apps, and what they can read about the active profile (Story 8.7)
     service: Option<Service>,
+    /// An app asked to start this entry; waits for the library if it is new
+    pending_launch: Option<String>,
+    /// The library changed while a look at it was running
+    look_again: bool,
     downloads_rx: Option<mpsc::Receiver<DownloadNews>>,
     /// Steam games that finished downloading, looked up after a download finished
-    new_games_rx: Option<mpsc::Receiver<Vec<LoadedEntry>>>,
+    new_games_rx: Option<mpsc::Receiver<loader::LibraryChanges>>,
     /// The dialog is shown in the overlay window (opened from the quick menu over an app)
     dialog_in_overlay: bool,
     quick: Option<QuickMenu>,
@@ -412,6 +416,8 @@ impl Shell {
             artwork_rx: None,
             notifications_rx: None,
             service: None,
+            pending_launch: None,
+            look_again: false,
             downloads_rx: None,
             new_games_rx: None,
             dialog_in_overlay: false,
@@ -1201,11 +1207,23 @@ impl Shell {
         if let Some(service) = &self.service {
             service.publish(self.published());
         }
+        let requests: Vec<AppRequest> = self.service.iter().flat_map(|s| s.requests.try_iter()).collect();
+        let mut look = false;
+        for request in requests {
+            match request {
+                AppRequest::RefreshLibrary => look = true,
+                AppRequest::Launch(id) => {
+                    look |= !self.entries.iter().any(|e| e.id == id);
+                    self.pending_launch = Some(id);
+                }
+            }
+        }
+        self.launch_pending(ui);
         let receivers = self.notifications_rx.iter().chain(self.service.as_ref().map(|service| &service.toasts));
         let messages: Vec<Incoming> = receivers.flat_map(|rx| rx.try_iter()).collect();
         let news: Vec<DownloadNews> = self.downloads_rx.iter().flat_map(|rx| rx.try_iter()).collect();
         if !self.settings.notifications {
-            return self.poll_new_games(ui, !news.is_empty());
+            return self.poll_new_games(ui, look || !news.is_empty());
         }
         // Only the latest message shows; a toast replaces the one before it.
         if let Some(message) = messages.last() {
@@ -1218,23 +1236,36 @@ impl Shell {
         } else if !started.is_empty() {
             self.toast(ui, "⬇", tr("Download started"), &started.join(", "));
         }
-        self.poll_new_games(ui, !finished.is_empty());
+        self.poll_new_games(ui, look || !finished.is_empty());
     }
 
-    /// Adds Steam games that finished downloading (`look`: a download just finished).
+    /// Takes over what changed in the library (`look`: a download finished or an app says so).
     fn poll_new_games(&mut self, ui: &AppWindow, look: bool) {
-        if look && self.new_games_rx.is_none() && !self.dummy {
+        self.look_again |= look;
+        if self.look_again && self.new_games_rx.is_none() && !self.dummy {
+            self.look_again = false;
             let known = self.entries.iter().map(|e| e.id.clone()).collect();
-            self.new_games_rx = Some(loader::spawn_new_games(known, self.settings.artwork));
+            self.new_games_rx = Some(loader::spawn_library_check(known, self.settings.artwork));
         }
         let Some(done) = self.new_games_rx.as_ref().and_then(|rx| rx.try_recv().ok()) else { return };
         self.new_games_rx = None;
-        if done.is_empty() {
+        if done.new.is_empty() && done.gone.is_empty() {
+            // Nothing new: an app asked to start something that does not exist
+            if !self.look_again {
+                self.pending_launch = None;
+            }
             return;
         }
         let keep = self.focused_entry().map(|i| self.entries[i].id.clone());
         let today = tiles::today();
-        for loaded in done {
+        for id in &done.gone {
+            let running = self.running.iter().any(|r| &r.entry_id == id);
+            if let Some(index) = self.entries.iter().position(|e| &e.id == id).filter(|_| !running) {
+                self.entries.remove(index);
+                self.tiles.remove(index);
+            }
+        }
+        for loaded in done.new {
             if self.entries.iter().any(|e| e.id == loaded.entry.id) {
                 continue;
             }
@@ -1252,6 +1283,18 @@ impl Shell {
         self.refresh(ui);
         if let Some(id) = keep {
             self.focus_entry(&id);
+        }
+        self.launch_pending(ui);
+    }
+
+    /// Starts what an app asked for, once the library knows the entry.
+    fn launch_pending(&mut self, ui: &AppWindow) {
+        let Some(id) = &self.pending_launch else { return };
+        if let Some(index) = self.entries.iter().position(|e| &e.id == id) {
+            let id = id.clone();
+            self.pending_launch = None;
+            self.focus_entry(&id);
+            self.launch(ui, index);
         }
     }
 

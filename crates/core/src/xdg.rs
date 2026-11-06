@@ -31,6 +31,13 @@ pub fn data_dirs() -> Vec<PathBuf> {
             dirs.push(dir);
         }
     }
+    // A session started by a display manager may not have flatpak's directories in `XDG_DATA_DIRS`
+    let flatpak = data_home().map(|home| home.join("flatpak/exports/share"));
+    for dir in flatpak.into_iter().chain([PathBuf::from("/var/lib/flatpak/exports/share")]) {
+        if !dirs.contains(&dir) {
+            dirs.push(dir);
+        }
+    }
     dirs
 }
 

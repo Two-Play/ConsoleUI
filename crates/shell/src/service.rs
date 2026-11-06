@@ -18,9 +18,19 @@ pub struct Published {
     pub profile: String,
 }
 
+/// What apps ask the shell to do.
+#[derive(Debug)]
+pub enum AppRequest {
+    /// Apps were installed or removed
+    RefreshLibrary,
+    /// Start this entry of the library
+    Launch(String),
+}
+
 struct Server {
     published: Arc<Mutex<Published>>,
     toasts: Sender<Incoming>,
+    requests: Sender<AppRequest>,
 }
 
 impl Server {
@@ -56,6 +66,14 @@ impl Server {
             let _ = self.toasts.send(message);
         }
     }
+
+    fn refresh_library(&self) {
+        let _ = self.requests.send(AppRequest::RefreshLibrary);
+    }
+
+    fn launch(&self, entry: String) {
+        let _ = self.requests.send(AppRequest::Launch(entry));
+    }
 }
 
 /// The running service, seen from the shell.
@@ -64,6 +82,7 @@ pub struct Service {
     changes: Sender<()>,
     /// Toasts that apps asked for
     pub toasts: Receiver<Incoming>,
+    pub requests: Receiver<AppRequest>,
 }
 
 impl Service {
@@ -81,16 +100,18 @@ impl Service {
 pub fn start(values: Published) -> Service {
     let published = Arc::new(Mutex::new(values));
     let (toasts, toasts_rx) = mpsc::channel();
+    let (requests, requests_rx) = mpsc::channel();
     let (changes, changes_rx) = mpsc::channel();
     let shared = published.clone();
     std::thread::spawn(move || {
         // The connection serves requests in the background as long as it lives.
-        let served = serve(shared.clone(), toasts).and_then(|connection| announce(&connection, &shared, changes_rx));
+        let server = Server { published: shared.clone(), toasts, requests };
+        let served = serve(server).and_then(|connection| announce(&connection, &shared, changes_rx));
         if let Err(err) = served {
             eprintln!("No service for apps: {err}");
         }
     });
-    Service { published, changes, toasts: toasts_rx }
+    Service { published, changes, toasts: toasts_rx, requests: requests_rx }
 }
 
 /// Sends `PropertiesChanged` for what differs after each change, until the shell ends.
@@ -124,10 +145,10 @@ fn announce(connection: &Connection, published: &Mutex<Published>, changes: Rece
     Ok(())
 }
 
-fn serve(published: Arc<Mutex<Published>>, toasts: Sender<Incoming>) -> Result<Connection, String> {
+fn serve(server: Server) -> Result<Connection, String> {
     let err = |e: zbus::Error| e.to_string();
     let connection = Connection::session().map_err(err)?;
-    connection.object_server().at(PATH, Server { published, toasts }).map_err(err)?;
+    connection.object_server().at(PATH, server).map_err(err)?;
     match connection.request_name_with_flags(NAME, RequestNameFlags::DoNotQueue.into()).map_err(err)? {
         RequestNameReply::PrimaryOwner | RequestNameReply::AlreadyOwner => Ok(connection),
         _ => Err(format!("{NAME} belongs to another shell")),

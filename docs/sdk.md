@@ -55,6 +55,8 @@ starts with the app's ID, such as `org.example.App-cover`.
 - **`Session`:** where the app runs and the settings of the active profile.
 - **`watch_session`:** calls the app when the user changes a setting in the running shell.
 - **`toast(title, text)`:** a toast from the shell, also over a game. Off if the user turned notifications off.
+- **`launch(entry)`, `library_changed()`:** ask the shell to start an entry of its library, or to look for apps
+  that were installed or removed.
 - **`bridge!`:** `nav_action`, `hint_model`, `controller_style` and `apply_theme` for the app's generated types.
 - **`snapshot_from_args`:** `--snapshot out.png` to check the UI without a screen capture.
 
@@ -74,6 +76,8 @@ and `Sounds::follow` there.
 | `Animations`, `Sounds` | properties, `b` | The user's settings |
 | `ProfileName` | property, `s` | Name of the active profile |
 | `Toast(title, text)` | method, `ss` | Shows a toast |
+| `RefreshLibrary()` | method | Looks for apps that were installed or removed |
+| `Launch(entry)` | method, `s` | Starts an entry of the library, for example `desktop:org.example.App.desktop` |
 
 ## Design rules
 

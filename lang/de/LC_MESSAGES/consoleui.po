@@ -1099,3 +1099,87 @@ msgstr "Die App mit dem Stick bedienen"
 
 msgid "Left stick moves it, confirm clicks, back ends it"
 msgstr "Linker Stick bewegt, Bestätigen klickt, Zurück beendet"
+
+msgid "CONTROLLER"
+msgstr "CONTROLLER"
+
+msgid "Details"
+msgstr "Details"
+
+msgid "INSTALLED"
+msgstr "INSTALLIERT"
+
+msgid "Installed"
+msgstr "Installiert"
+
+msgid "Installing {} %"
+msgstr "Wird installiert: {} %"
+
+msgid "Installing…"
+msgstr "Wird installiert …"
+
+msgid "Its saved data stays on this console."
+msgstr "Die gespeicherten Daten bleiben auf dieser Konsole."
+
+msgid "Loading the catalog…"
+msgstr "Katalog wird geladen …"
+
+msgid "Nothing found"
+msgstr "Nichts gefunden"
+
+msgid "Nothing here"
+msgstr "Hier ist nichts"
+
+msgid "Nothing installed yet"
+msgstr "Noch nichts installiert"
+
+msgid "Quit the store?"
+msgstr "Store beenden?"
+
+msgid "Quitting the store stops what is being installed."
+msgstr "Wenn du den Store beendest, bricht die laufende Installation ab."
+
+msgid "Remove {}?"
+msgstr "{} entfernen?"
+
+msgid "Removing…"
+msgstr "Wird entfernt …"
+
+msgid "Scroll"
+msgstr "Blättern"
+
+msgid "Search the store"
+msgstr "Im Store suchen"
+
+msgid "Stay"
+msgstr "Bleiben"
+
+msgid "Store"
+msgstr "Store"
+
+msgid "The store is not available"
+msgstr "Der Store ist nicht verfügbar"
+
+msgid "Try another word."
+msgstr "Versuch es mit einem anderen Wort."
+
+msgid "VERIFIED"
+msgstr "VERIFIZIERT"
+
+msgid "What you install here shows up in your library."
+msgstr "Was du hier installierst, erscheint in deiner Bibliothek."
+
+msgid "You find it in your library."
+msgstr "Du findest es in deiner Bibliothek."
+
+msgid "{} could not be installed"
+msgstr "{} konnte nicht installiert werden"
+
+msgid "{} could not be removed"
+msgstr "{} konnte nicht entfernt werden"
+
+msgid "{} is installed"
+msgstr "{} ist installiert"
+
+msgid "{} was removed"
+msgstr "{} wurde entfernt"

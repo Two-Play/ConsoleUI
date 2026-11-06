@@ -127,6 +127,29 @@ pub fn toast(title: &str, text: &str) {
     });
 }
 
+/// Tells the shell that apps were installed or removed, so its lists catch up.
+pub fn library_changed() {
+    std::thread::spawn(|| {
+        let sent = Connection::session().and_then(|connection| {
+            shell_proxy(&connection)?.call_method("RefreshLibrary", &())?;
+            Ok(())
+        });
+        if let Err(err) = sent {
+            eprintln!("The shell's library stays as it is: {err}");
+        }
+    });
+}
+
+/// Asks the shell to start an entry of its library (`desktop:<file>`, `steam:<id>`), so it shows up
+/// like any other launch. False without a running shell. Blocks for a moment: not for the UI thread.
+pub fn launch(entry_id: &str) -> bool {
+    let sent = Connection::session().and_then(|connection| {
+        shell_proxy(&connection)?.call_method("Launch", &(entry_id,))?;
+        Ok(())
+    });
+    sent.is_ok()
+}
+
 fn load_settings() -> Settings {
     let Some(root) = Profiles::default_root() else { return Settings::default() };
     match Profiles::load(&root).last() {

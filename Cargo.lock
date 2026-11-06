@@ -873,6 +873,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "consoleui-store"
+version = "0.1.0"
+dependencies = [
+ "consoleui-core",
+ "consoleui-sdk",
+ "consoleui-ui",
+ "flate2",
+ "image",
+ "quick-xml",
+ "slint",
+ "slint-build",
+]
+
+[[package]]
 name = "consoleui-ui"
 version = "0.1.0"
 dependencies = [

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Store
+Comment=Find and install games and apps
+Comment[de]=Spiele und Apps finden und installieren
+Exec=consoleui-store
+Icon=consoleui-store
+Categories=Network;
+X-ConsoleUI=true
+X-ConsoleUI-Kind=app

@@ -42,13 +42,26 @@ pub fn spawn_artwork(entries: Vec<AppEntry>) -> mpsc::Receiver<Vec<LoadedEntry>>
     receiver
 }
 
-/// Looks for Steam games that are installed now but not in `known` (their downloads finished).
-pub fn spawn_new_games(known: Vec<String>, artwork: bool) -> mpsc::Receiver<Vec<LoadedEntry>> {
+/// What changed in the library since the last look.
+pub struct LibraryChanges {
+    pub new: Vec<LoadedEntry>,
+    /// Desktop entries that are gone. Steam games stay: a library on a drive that is not mounted
+    /// right now should not take them away.
+    pub gone: Vec<String>,
+}
+
+/// Compares what is installed now with `known`: Steam downloads that finished, apps from the store.
+pub fn spawn_library_check(known: Vec<String>, artwork: bool) -> mpsc::Receiver<LibraryChanges> {
     let (sender, receiver) = mpsc::channel();
     std::thread::spawn(move || {
-        let found = consoleui_core::steam::find_root().map(|root| consoleui_core::steam::discover(&root));
-        let new: Vec<AppEntry> = found.unwrap_or_default().into_iter().filter(|e| !known.contains(&e.id)).collect();
-        let _ = sender.send(decode_all(new, artwork));
+        let found = discover_library();
+        let gone = known
+            .iter()
+            .filter(|id| id.starts_with("desktop:") && !found.iter().any(|e| &e.id == *id))
+            .cloned()
+            .collect();
+        let new: Vec<AppEntry> = found.into_iter().filter(|e| !known.contains(&e.id)).collect();
+        let _ = sender.send(LibraryChanges { new: decode_all(new, artwork), gone });
     });
     receiver
 }

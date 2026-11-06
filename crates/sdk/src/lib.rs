@@ -28,7 +28,7 @@ use consoleui_app::audio::Audio;
 use slint::{ComponentHandle, Rgba8Pixel, SharedPixelBuffer, Timer, TimerMode};
 
 pub use consoleui_app::gamepad::Connection;
-pub use consoleui_app::session::toast;
+pub use consoleui_app::session::{launch, library_changed, toast};
 pub use consoleui_app::slint_bridge as bridge;
 pub use consoleui_app::{Action, Event, GlyphStyle, HintButton, Hints, Session, Sound};
 
@@ -110,13 +110,16 @@ pub fn watch_session(session: &Session, mut changed: impl FnMut(&Session) + 'sta
 }
 
 /// With `--snapshot PATH` on the command line: saves the window as PNG after a moment and quits,
-/// for checking a UI without a screen capture. Keep the returned timer alive.
+/// for checking a UI without a screen capture; `--snapshot-after MS` changes the moment. Keep the
+/// returned timer alive.
 pub fn snapshot_from_args<C: ComponentHandle + 'static>(ui: &C) -> Timer {
     let timer = Timer::default();
     let mut args = std::env::args().skip_while(|arg| arg != "--snapshot").skip(1);
+    let delay = std::env::args().skip_while(|arg| arg != "--snapshot-after").nth(1);
+    let delay = delay.and_then(|ms| ms.parse().ok()).unwrap_or(1200);
     if let Some(path) = args.next() {
         let ui = ui.as_weak();
-        timer.start(TimerMode::SingleShot, Duration::from_millis(1200), move || {
+        timer.start(TimerMode::SingleShot, Duration::from_millis(delay), move || {
             if let Some(ui) = ui.upgrade() {
                 let saved = ui.window().take_snapshot().map_err(Box::<dyn Error>::from);
                 if let Err(err) = saved.and_then(|pixels| save_png(&path, &pixels)) {
