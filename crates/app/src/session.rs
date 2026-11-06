@@ -7,6 +7,7 @@ use consoleui_core::profiles::{ProfilePaths, Profiles};
 use consoleui_core::protocol::SOCKET_ENV;
 use consoleui_core::service;
 use consoleui_core::settings::{Accent, Settings};
+use std::sync::mpsc::{self, Receiver, Sender};
 use zbus::blocking::{Connection, Proxy, fdo};
 
 /// Animation durations in milliseconds as in `theme.slint`: focus, background, pulse, launch, page.
@@ -47,6 +48,19 @@ impl Session {
         Self { kind, settings }
     }
 
+    /// The session again whenever the shell reports a changed setting. Nothing arrives without
+    /// a running shell. An app built on `consoleui-sdk` uses `watch_session` instead.
+    pub fn watch(&self) -> Receiver<Session> {
+        let (sender, receiver) = mpsc::channel();
+        let session = self.clone();
+        std::thread::spawn(move || {
+            if let Err(err) = forward_changes(session, sender) {
+                eprintln!("Cannot follow the shell's settings: {err}");
+            }
+        });
+        receiver
+    }
+
     /// Inside a session the app fills the screen like every other window there.
     pub fn fullscreen(&self) -> bool {
         self.kind != Kind::Desktop
@@ -83,6 +97,18 @@ fn read_from_shell(settings: &mut Settings) -> zbus::Result<()> {
     settings.accent = Accent::ALL.into_iter().find(|a| Some(a.rgb()) == rgb).unwrap_or(settings.accent);
     settings.animations = shell.get_property("Animations")?;
     settings.sounds = shell.get_property("Sounds")?;
+    Ok(())
+}
+
+fn forward_changes(mut session: Session, sender: Sender<Session>) -> zbus::Result<()> {
+    let connection = Connection::session()?;
+    let builder = fdo::PropertiesProxy::builder(&connection).destination(service::NAME)?.path(service::PATH)?;
+    let properties = builder.cache_properties(zbus::proxy::CacheProperties::No).build()?;
+    for _ in properties.receive_properties_changed()? {
+        if read_from_shell(&mut session.settings).is_ok() && sender.send(session.clone()).is_err() {
+            break;
+        }
+    }
     Ok(())
 }
 

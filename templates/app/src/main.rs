@@ -5,7 +5,7 @@ mod page;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use consoleui_sdk::{Action, Controls, Event, Hints, Session, Sounds, snapshot_from_args};
+use consoleui_sdk::{Action, Controls, Event, Hints, Session, Sounds, snapshot_from_args, watch_session};
 use page::{Outcome, Page};
 use slint::{ComponentHandle, ModelRc, VecModel};
 
@@ -39,7 +39,17 @@ fn main() -> Result<(), slint::PlatformError> {
     if session.fullscreen() {
         ui.window().set_fullscreen(true);
     }
-    let sounds = Sounds::start(&session);
+    let sounds = Rc::new(Sounds::start(&session));
+    // The user can change these in the shell while the app runs
+    let _watch = watch_session(&session, {
+        let (ui, sounds) = (ui.as_weak(), sounds.clone());
+        move |session| {
+            sounds.follow(session);
+            if let Some(ui) = ui.upgrade() {
+                apply_theme(ui.global::<Theme>(), session);
+            }
+        }
+    });
     let page = Rc::new(RefCell::new(Page::new()));
     show(&ui, &page.borrow());
 

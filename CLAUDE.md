@@ -362,7 +362,7 @@ Cargo workspace (edition 2024, `default-members` = the shell):
     and the `NetView` Slint struct (`ui/network.slint`, shown over the settings page while a sub-page is
     open). `main.rs` polls responses every 100 ms (`Shell::poll_network`); results become toasts.
   - `src/service.rs` (Story 8.7): `org.consoleui.Shell1` on the session bus for apps (names in `consoleui_core::service`,
-    client in `consoleui_app::session`; `docs/sdk.md` lists the members). `Shell::publish` keeps it current.
+    client in `consoleui_app::session`; `docs/sdk.md` lists the members). `Service::publish` keeps it current and sends `PropertiesChanged`, apps follow with `watch_session`.
   - `src/notifications.rs`: the shell answers `org.freedesktop.Notifications` on the session bus (zbus), so
     `notify-send` and other programs show toasts, also over a game; it starts only when no desktop service owns
     the name. `consoleui_core::notification` strips the markup. `src/downloads.rs` watches Steam's

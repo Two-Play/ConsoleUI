@@ -18,7 +18,7 @@
 //! `bridge!` generates `nav_action`, `hint_model`, `controller_style` and `apply_theme` against the
 //! types Slint generated for the app. Everything outside this crate may change without notice.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::error::Error;
 use std::rc::Rc;
 use std::time::Duration;
@@ -67,18 +67,46 @@ impl Controls {
 }
 
 /// The UI sounds of the shell; silent if the user turned them off or there is no audio.
-pub struct Sounds(RefCell<Option<Audio>>);
+pub struct Sounds {
+    audio: RefCell<Option<Audio>>,
+    enabled: Cell<bool>,
+}
 
 impl Sounds {
     pub fn start(session: &Session) -> Self {
-        Self(RefCell::new(session.settings.sounds.then(Audio::start).flatten()))
+        let sounds = Self { audio: RefCell::new(None), enabled: Cell::new(false) };
+        sounds.follow(session);
+        sounds
+    }
+
+    /// Takes over the user's setting, for [`watch_session`].
+    pub fn follow(&self, session: &Session) {
+        let enabled = session.settings.sounds;
+        self.enabled.set(enabled);
+        let mut audio = self.audio.borrow_mut();
+        if enabled && audio.is_none() {
+            *audio = Audio::start();
+        }
     }
 
     pub fn play(&self, sound: Sound) {
-        if let Some(audio) = self.0.borrow_mut().as_mut() {
+        if let Some(audio) = self.audio.borrow_mut().as_mut().filter(|_| self.enabled.get()) {
             audio.play(sound);
         }
     }
+}
+
+/// Calls `changed` when the user changes a setting in the running shell (accent color, animations,
+/// sounds), so the app can follow at once. Keep the returned timer alive.
+pub fn watch_session(session: &Session, mut changed: impl FnMut(&Session) + 'static) -> Timer {
+    let sessions = session.watch();
+    let timer = Timer::default();
+    timer.start(TimerMode::Repeated, Duration::from_millis(250), move || {
+        if let Some(session) = sessions.try_iter().last() {
+            changed(&session);
+        }
+    });
+    timer
 }
 
 /// With `--snapshot PATH` on the command line: saves the window as PNG after a moment and quits,

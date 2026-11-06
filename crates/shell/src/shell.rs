@@ -6,7 +6,7 @@ use std::cell::Cell;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::mpsc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use consoleui_core::dialog::{Dialog, DialogButton, DialogOutcome};
@@ -49,7 +49,7 @@ use crate::network::Network;
 use crate::notifications;
 use crate::profiles::{self as profile_view, ProfileStart};
 use crate::quick::{ForegroundApp, QuickAction, QuickMenu, QuickOutcome};
-use crate::service::{self, Published};
+use crate::service::{self, Published, Service};
 use crate::{
     AppTile, AppWindow, ControllerStyle, Glass, GlyphButton, Hint, KeyCap, NotificationWindow, OverlayWindow,
     QuickItem, Screen, SettingRow, SwitcherItem, Theme, tiles,
@@ -236,8 +236,7 @@ pub struct Shell {
     /// Messages of other programs, and Steam download news (`start_system_services`)
     notifications_rx: Option<mpsc::Receiver<Incoming>>,
     /// Toasts from apps, and what they can read about the active profile (Story 8.7)
-    service_rx: Option<mpsc::Receiver<Incoming>>,
-    published: Arc<Mutex<Published>>,
+    service: Option<Service>,
     downloads_rx: Option<mpsc::Receiver<DownloadNews>>,
     /// Steam games that finished downloading, looked up after a download finished
     new_games_rx: Option<mpsc::Receiver<Vec<LoadedEntry>>>,
@@ -412,8 +411,7 @@ impl Shell {
             artwork_loaded: start.settings.artwork,
             artwork_rx: None,
             notifications_rx: None,
-            service_rx: None,
-            published: Arc::default(),
+            service: None,
             downloads_rx: None,
             new_games_rx: None,
             dialog_in_overlay: false,
@@ -1183,26 +1181,27 @@ impl Shell {
     /// Starts listening for messages of other programs and, with `steam`, for Steam downloads.
     pub fn start_system_services(&mut self, steam: bool) {
         self.notifications_rx = Some(notifications::start());
-        self.publish();
-        self.service_rx = Some(service::start(self.published.clone()));
+        self.service = Some(service::start(self.published()));
         self.downloads_rx = steam.then(downloads::start);
     }
 
-    /// Keeps what apps read over the session bus current.
-    fn publish(&self) {
-        *self.published.lock().unwrap() = Published {
+    /// What apps read over the session bus.
+    fn published(&self) -> Published {
+        Published {
             accent: self.settings.accent.rgb(),
             animations: self.settings.animations,
             sounds: self.settings.sounds,
             profile: self.profiles.get(&self.profile).map(|p| p.name.clone()).unwrap_or_default(),
-        };
+        }
     }
 
     /// Shows what came from the system services as toasts; a finished download also adds the new
     /// game to the lists.
     fn poll_system_services(&mut self, ui: &AppWindow) {
-        self.publish();
-        let receivers = self.notifications_rx.iter().chain(&self.service_rx);
+        if let Some(service) = &self.service {
+            service.publish(self.published());
+        }
+        let receivers = self.notifications_rx.iter().chain(self.service.as_ref().map(|service| &service.toasts));
         let messages: Vec<Incoming> = receivers.flat_map(|rx| rx.try_iter()).collect();
         let news: Vec<DownloadNews> = self.downloads_rx.iter().flat_map(|rx| rx.try_iter()).collect();
         if !self.settings.notifications {
