@@ -872,6 +872,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "consoleui-media"
+version = "0.1.0"
+dependencies = [
+ "consoleui-core",
+ "consoleui-sdk",
+ "serde_json",
+ "slint",
+ "zbus",
+]
+
+[[package]]
 name = "consoleui-sdk"
 version = "0.1.0"
 dependencies = [

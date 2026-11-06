@@ -1,0 +1,345 @@
+import { ControllerStyle, Dialog, EmptyState, FocusFill, FocusRing, Hint, HintBar, InputScope, NavAction, ProgressBar, Spinner, TabBar, Theme } from "@consoleui/std.slint";
+
+// Rust needs the global to apply the user's accent color and animation settings
+export { Theme }
+
+export struct MediaRow {
+    icon: image,
+    folder: bool,
+    name: string,
+}
+
+export component AppWindow inherits Window {
+    in property <int> tab;
+    in property <string> path;
+    in property <[MediaRow]> rows;
+    in property <int> focused;
+    in property <string> position;
+    in property <bool> loading: true;
+    in property <bool> empty;
+    in property <string> error;
+    in property <string> empty-text;
+    in property <bool> now-playing;
+    in property <bool> playing;
+    in property <string> track;
+    in property <string> artist;
+    in property <string> album;
+    in property <bool> paused;
+    in property <float> progress;
+    in property <string> time;
+    in property <string> length;
+    in property <string> queue-place;
+    in property <bool> shuffle;
+    in property <string> repeat;
+    in property <bool> has-cover;
+    in property <image> album-art;
+    in property <bool> dialog-open;
+    in property <string> dialog-title;
+    in property <string> dialog-text;
+    in property <[string]> dialog-buttons;
+    in property <int> dialog-focused;
+    in property <[Hint]> hints;
+    in property <ControllerStyle> style: ControllerStyle.keyboard;
+    out property <bool> active: scope.active;
+    callback action(NavAction);
+    callback tab-clicked(int);
+    callback row-clicked(int);
+    callback bar-clicked();
+    callback dialog-clicked(int);
+    callback quit();
+
+    title: @tr("Media");
+    preferred-width: 1280px;
+    preferred-height: 720px;
+    background: Theme.base;
+
+    // All sizes are for 1920×1080 and scale with the window
+    property <float> s: min(self.width / 1920px, self.height / 1080px);
+    property <length> margin: 90px * root.s;
+    property <length> list-width: root.width - 2 * root.margin;
+    property <length> row-height: 76px * root.s;
+    property <length> bar-height: 84px * root.s;
+
+    scope := InputScope {
+        action(a) => { root.action(a); }
+        quit => { root.quit(); }
+    }
+
+    if !root.now-playing: Rectangle {
+        Text {
+            x: root.margin;
+            y: 46px * root.s;
+            text: @tr("Media");
+            color: Theme.text;
+            font-size: 44px * root.s;
+            font-weight: 800;
+        }
+
+        TabBar {
+            x: root.margin + 300px * root.s;
+            y: 54px * root.s;
+            tabs: [@tr("Music"), @tr("Videos")];
+            current: root.tab;
+            style: root.style;
+            s: root.s;
+            clicked(index) => { root.tab-clicked(index); }
+        }
+
+        Text {
+            x: root.margin + 740px * root.s;
+            y: 62px * root.s;
+            width: root.list-width - 920px * root.s;
+            horizontal-alignment: right;
+            text: root.path;
+            color: Theme.text-dim;
+            font-size: 22px * root.s;
+            overflow: elide;
+        }
+
+        Text {
+            x: root.width - root.margin - self.width;
+            y: 62px * root.s;
+            width: 160px * root.s;
+            horizontal-alignment: right;
+            text: root.position;
+            color: Theme.text-dim;
+            font-size: 22px * root.s;
+        }
+
+        for item[i] in root.rows: Rectangle {
+            property <bool> is-focused: i == root.focused;
+            x: root.margin;
+            y: 124px * root.s + i * (root.row-height + 4px * root.s);
+            width: root.list-width;
+            height: root.row-height;
+            border-radius: Theme.radius-card * root.s;
+            background: Theme.surface.with-alpha(0.06);
+
+            FocusFill {
+                width: 100%;
+                height: 100%;
+                border-radius: parent.border-radius;
+                focused: parent.is-focused;
+            }
+
+            FocusRing {
+                border-radius: parent.border-radius;
+                focused: parent.is-focused;
+                s: root.s;
+            }
+
+            Image {
+                x: 20px * root.s;
+                y: (parent.height - self.height) / 2;
+                width: 36px * root.s;
+                height: self.width;
+                source: item.icon;
+                colorize: item.folder ? Theme.accent : Theme.text-dim;
+            }
+
+            Text {
+                x: 76px * root.s;
+                width: parent.width - 100px * root.s;
+                height: 100%;
+                vertical-alignment: center;
+                text: item.name;
+                color: Theme.text;
+                font-size: 24px * root.s;
+                font-weight: parent.is-focused ? 700 : 400;
+                overflow: elide;
+            }
+
+            TouchArea {
+                clicked => { root.row-clicked(i); }
+            }
+        }
+
+        if root.empty: EmptyState {
+            x: root.margin;
+            y: 124px * root.s;
+            width: root.list-width;
+            height: root.height - 340px * root.s;
+            title: root.error != "" ? @tr("This folder cannot be opened") : @tr("Nothing to play here");
+            text: root.error != "" ? root.error : root.empty-text;
+            s: root.s;
+        }
+
+        if root.loading: Spinner {
+            x: root.width - root.margin - self.width;
+            y: 26px * root.s;
+            size: 32px * root.s;
+            s: root.s;
+        }
+
+        // What plays, while the lists are in front
+        if root.playing: Rectangle {
+            x: root.margin;
+            y: root.height - 90px * root.s - root.bar-height;
+            width: root.list-width;
+            height: root.bar-height;
+            border-radius: Theme.radius-card * root.s;
+            background: Theme.surface;
+
+            Text {
+                x: 24px * root.s;
+                y: 12px * root.s;
+                width: parent.width - 220px * root.s;
+                text: root.artist != "" ? root.track + " · " + root.artist : root.track;
+                color: Theme.text;
+                font-size: 24px * root.s;
+                font-weight: 700;
+                overflow: elide;
+            }
+
+            Text {
+                x: parent.width - self.width - 24px * root.s;
+                y: 14px * root.s;
+                width: 180px * root.s;
+                horizontal-alignment: right;
+                text: root.time + " / " + root.length;
+                color: Theme.text-dim;
+                font-size: 20px * root.s;
+            }
+
+            ProgressBar {
+                x: 24px * root.s;
+                y: parent.height - 22px * root.s;
+                width: parent.width - 48px * root.s;
+                value: root.progress;
+                fill: Theme.accent;
+                s: root.s;
+            }
+
+            TouchArea {
+                clicked => { root.bar-clicked(); }
+            }
+        }
+    }
+
+    if root.now-playing: player := Rectangle {
+        property <length> art: 620px * root.s;
+        property <length> text-x: root.margin + self.art + 80px * root.s;
+        property <length> text-width: root.width - self.text-x - root.margin;
+
+        Rectangle {
+            x: root.margin;
+            y: 150px * root.s;
+            width: player.art;
+            height: player.art;
+            border-radius: Theme.radius-card * 2 * root.s;
+            background: Theme.surface;
+            clip: true;
+
+            if root.has-cover: Image {
+                width: 100%;
+                height: 100%;
+                source: root.album-art;
+                image-fit: cover;
+            }
+
+            if !root.has-cover: Image {
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                width: parent.width * 0.4;
+                height: self.width;
+                source: @image-url("icons/audio.svg");
+                colorize: Theme.text-dim;
+            }
+        }
+
+        Text {
+            x: player.text-x;
+            y: 210px * root.s;
+            width: player.text-width;
+            text: root.track;
+            color: Theme.text;
+            font-size: 56px * root.s;
+            font-weight: 800;
+            wrap: word-wrap;
+            overflow: elide;
+            height: 150px * root.s;
+            vertical-alignment: bottom;
+        }
+
+        Text {
+            x: player.text-x;
+            y: 376px * root.s;
+            width: player.text-width;
+            text: root.artist;
+            color: Theme.text;
+            font-size: 32px * root.s;
+            overflow: elide;
+        }
+
+        Text {
+            x: player.text-x;
+            y: 426px * root.s;
+            width: player.text-width;
+            text: root.album;
+            color: Theme.text-dim;
+            font-size: 26px * root.s;
+            overflow: elide;
+        }
+
+        ProgressBar {
+            x: player.text-x;
+            y: 540px * root.s;
+            width: player.text-width;
+            value: root.progress;
+            fill: Theme.accent;
+            s: root.s;
+        }
+
+        Text {
+            x: player.text-x;
+            y: 560px * root.s;
+            text: root.paused ? root.time + "  ·  " + @tr("Paused") : root.time;
+            color: Theme.text-dim;
+            font-size: 24px * root.s;
+        }
+
+        Text {
+            x: player.text-x;
+            y: 560px * root.s;
+            width: player.text-width;
+            horizontal-alignment: right;
+            text: root.length;
+            color: Theme.text-dim;
+            font-size: 24px * root.s;
+        }
+
+        Text {
+            x: player.text-x;
+            y: 640px * root.s;
+            width: player.text-width;
+            text: root.queue-place
+                + (root.shuffle ? "  ·  " + @tr("Shuffle") : "")
+                + (root.repeat != "" ? "  ·  " + root.repeat : "");
+            color: Theme.text-dim;
+            font-size: 24px * root.s;
+        }
+    }
+
+    HintBar {
+        x: root.margin;
+        y: root.height - 70px * root.s;
+        width: root.list-width;
+        height: 28px * root.s;
+        hints: root.hints;
+        style: root.style;
+        s: root.s;
+    }
+
+    Dialog {
+        width: 100%;
+        height: 100%;
+        open: root.dialog-open;
+        title: root.dialog-title;
+        text: root.dialog-text;
+        buttons: root.dialog-buttons;
+        focused: root.dialog-focused;
+        style: root.style;
+        s: root.s;
+        button-clicked(index) => { root.dialog-clicked(index); }
+    }
+}

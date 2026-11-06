@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Media
+Name[de]=Mediathek
+Comment=Play your music and videos
+Comment[de]=Deine Musik und Videos abspielen
+Exec=consoleui-media
+Icon=consoleui-media
+Categories=AudioVideo;
+X-ConsoleUI=true
+X-ConsoleUI-Kind=app

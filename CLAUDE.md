@@ -281,6 +281,15 @@ Cargo workspace (edition 2024, `default-members` = the shell):
   store. `entries.rs` lists a folder, `ops.rs` copies, moves, renames and trashes (Freedesktop trash, `places()` for the
   sidebar), `worker.rs` runs that on a thread, `page.rs` is the UI-free state (only the rows on screen reach Slint). Scripted
   checks change real files: pass a scratch folder as the first argument and set `XDG_DATA_HOME` for the trash.
+- `crates/media` (binary `consoleui-media`, Story 8.8, not a default member): the media player, an app on the SDK that plays
+  with mpv (must be installed, a dialog says so otherwise). `library.rs` lists the user's music and video folders and mounted
+  drives, `mpv.rs` is mpv's side without a process (arguments, IPC lines, parsing), `player.rs` the process and the thread on
+  its socket, `page.rs` the UI-free state, `mpris.rs` puts it on the bus for the quick menu's media card. Music has no window
+  and goes on behind the lists and behind a game. A video is mpv's own window over the app; `Page::video_playing` keeps the
+  controller with the app, which steers mpv (the shell's grab still takes it for the quick menu). Video positions are in
+  `$XDG_DATA_HOME/consoleui/media-positions`. Scripted checks: pass a scratch folder as the first argument and `MPV_HOME` with
+  `ao=null` in `mpv.conf` for silence; in the VM also `vo=wlshm` (mpv's default output aborts there without a GPU) and a VP9
+  video (no H.264 decoder in the guest).
 - `crates/shell` (binary `consoleui`): Slint UI plus glue.
   - `src/compositor.rs`: counterpart of `gamescope.rs`, active when `CONSOLEUI_COMPOSITOR` is set (takes
     precedence over gamescope). Sends `Hello`/`Launched`/`Exited`/`Focus`/`Overlay`/`KeyboardLayout`/`Resolution`/`SaveScreenshot`;

@@ -1252,3 +1252,57 @@ msgstr "Du kannst es aus dem Papierkorb wiederherstellen."
 
 msgid "You may not change this."
 msgstr "Das darfst du nicht ändern."
+
+msgid "Nothing to play here"
+msgstr "Hier gibt es nichts abzuspielen"
+
+msgid "Now playing"
+msgstr "Aktueller Titel"
+
+msgid "Pause"
+msgstr "Pause"
+
+msgid "Paused"
+msgstr "Pausiert"
+
+msgid "Play all"
+msgstr "Alle abspielen"
+
+msgid "Playing needs the program mpv. Install it and try again."
+msgstr "Zum Abspielen wird das Programm mpv gebraucht. Installiere es und versuche es noch einmal."
+
+msgid "Put your files into {}"
+msgstr "Lege deine Dateien in {}"
+
+msgid "Repeat"
+msgstr "Wiederholen"
+
+msgid "Repeat all"
+msgstr "Alle wiederholen"
+
+msgid "Repeat track"
+msgstr "Titel wiederholen"
+
+msgid "Seek"
+msgstr "Spulen"
+
+msgid "Shuffle"
+msgstr "Zufällig"
+
+msgid "Stop"
+msgstr "Stopp"
+
+msgid "There is nothing to play in here."
+msgstr "Hier drin gibt es nichts abzuspielen."
+
+msgid "This file cannot be played."
+msgstr "Diese Datei lässt sich nicht abspielen."
+
+msgid "Track {} of {}"
+msgstr "Titel {} von {}"
+
+msgid "Videos"
+msgstr "Videos"
+
+msgid "{}: pause, left and right: seek, {}: stop"
+msgstr "{}: Pause, links und rechts: spulen, {}: Stopp"

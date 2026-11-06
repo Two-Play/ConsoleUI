@@ -161,16 +161,7 @@ pub struct Place {
 /// Reads `XDG_DOCUMENTS_DIR="$HOME/Dokumente"` and its kin.
 fn user_dirs(text: &str, home: &Path) -> Vec<PathBuf> {
     let wanted = ["DOWNLOAD", "DOCUMENTS", "PICTURES", "MUSIC", "VIDEOS"];
-    let path_of = |key: &str| {
-        let prefix = format!("XDG_{key}_DIR=");
-        let line = text.lines().find_map(|line| line.trim().strip_prefix(prefix.as_str()))?;
-        let value = line.trim_matches('"');
-        match value.strip_prefix("$HOME/") {
-            Some(rest) => Some(home.join(rest)),
-            None => value.starts_with('/').then(|| PathBuf::from(value)),
-        }
-    };
-    wanted.iter().filter_map(|key| path_of(key)).filter(|path| path != home).collect()
+    wanted.iter().filter_map(|key| xdg::parse_user_dir(text, home, key)).filter(|path| path != home).collect()
 }
 
 /// Home, the user's folders that exist, then the drives mounted for the user.

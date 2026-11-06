@@ -1,7 +1,7 @@
 //! XDG paths and language settings from the environment.
 
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub fn home() -> Option<PathBuf> {
     env::var_os("HOME").filter(|v| !v.is_empty()).map(PathBuf::from)
@@ -21,6 +21,23 @@ pub fn cache_home() -> Option<PathBuf> {
 
 pub fn config_home() -> Option<PathBuf> {
     from_env_or_home("XDG_CONFIG_HOME", ".config")
+}
+
+/// Reads `XDG_MUSIC_DIR="$HOME/Musik"` and its kin out of the text of `user-dirs.dirs`.
+pub fn parse_user_dir(text: &str, home: &Path, key: &str) -> Option<PathBuf> {
+    let prefix = format!("XDG_{key}_DIR=");
+    let line = text.lines().find_map(|line| line.trim().strip_prefix(prefix.as_str()))?;
+    let value = line.trim_matches('"');
+    match value.strip_prefix("$HOME/") {
+        Some(rest) => Some(home.join(rest)),
+        None => value.starts_with('/').then(|| PathBuf::from(value)),
+    }
+}
+
+/// The user's folder for `key` (`MUSIC`, `VIDEOS`, ...), in the user's language.
+pub fn user_dir(key: &str) -> Option<PathBuf> {
+    let text = std::fs::read_to_string(config_home()?.join("user-dirs.dirs")).unwrap_or_default();
+    parse_user_dir(&text, &home()?, key)
 }
 
 /// `$XDG_DATA_HOME` followed by `$XDG_DATA_DIRS`, by priority and without duplicates.

@@ -3,7 +3,7 @@
 #   "ConsoleUI"                  gamescope session (session/consoleui-session)
 #   "ConsoleUI (own compositor)" Epic 7 compositor (session/consoleui-compositor-session), only
 #                                if the compositor was built
-# Build first as a normal user:  cargo build --release -p consoleui -p consoleui-store -p consoleui-files
+# Build first as a normal user:  cargo build --release -p consoleui -p consoleui-store -p consoleui-files -p consoleui-media
 #   and for the compositor:      dev/toolbox.sh run cargo build --release -p consoleui-compositor
 #   (or everything in the toolbox: dev/toolbox.sh run cargo build --release --workspace)
 # Then:                          sudo session/install.sh
@@ -55,5 +55,17 @@ if [ -x "$files" ]; then
     echo "Installed the file manager."
 else
     echo "No file manager build; skipped it (cargo build --release -p consoleui-files)."
+fi
+media="${CONSOLEUI_MEDIA_BUILD:-$root/target/release/consoleui-media}"
+[ -x "$media" ] || media="$root/target/toolbox/release/consoleui-media"
+if [ -x "$media" ]; then
+    install -Dm755 "$media" /usr/local/bin/consoleui-media
+    install -Dm644 "$root/crates/media/consoleui-media.desktop" /usr/share/applications/consoleui-media.desktop
+    install -Dm644 "$root/crates/media/consoleui-media.svg" \
+        /usr/share/icons/hicolor/scalable/apps/consoleui-media.svg
+    echo "Installed the media player."
+    command -v mpv >/dev/null || echo "The media player needs mpv to play anything."
+else
+    echo "No media player build; skipped it (cargo build --release -p consoleui-media)."
 fi
 echo "Done. Log out and pick the session on the login screen."

@@ -495,6 +495,8 @@ mod tests {
             "store/ui",
             "files/src",
             "files/ui",
+            "media/src",
+            "media/ui",
             "ui/ui",
         ] {
             if crates.join(name).is_dir() {
