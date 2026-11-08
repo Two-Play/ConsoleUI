@@ -48,6 +48,9 @@ pub struct DesktopEntry {
     pub plugin: Option<String>,
     /// `X-ConsoleUI-Plugin-Provides`: `library`, `panel`
     pub plugin_provides: Vec<String>,
+    /// `X-Flatpak`: the app ID of an entry Flatpak exported, and `X-Flatpak-RenamedFrom`
+    pub flatpak: Option<String>,
+    pub flatpak_renamed_from: Option<String>,
 }
 
 /// A localized key (`Name`, `Name[de]`, `Name[de_DE]`, …). Only the variants of the languages the
@@ -126,7 +129,7 @@ pub fn discover(data_dirs: &[PathBuf], langs: &[String]) -> Vec<AppEntry> {
             if !seen.insert(id.clone()) {
                 continue;
             }
-            let Some(entry) = fs::read_to_string(&path).ok().and_then(|c| parse(&id, &c)) else {
+            let Some(entry) = read_entry(&id, &path) else {
                 continue;
             };
             if entry.is_console_friendly() {
@@ -166,6 +169,45 @@ fn to_app_entry(entry: DesktopEntry, data_dirs: &[PathBuf], theme: &str, langs: 
     }
 }
 
+/// Reads and parses a desktop file. Flatpak (1.18) drops unknown keys when it exports an app's
+/// entry, `X-ConsoleUI*` among them, and leaves `X-Flatpak=<app ID>`: those keys then come from
+/// the app's own entry inside its installation, next to the `exports` directory.
+fn read_entry(id: &str, path: &Path) -> Option<DesktopEntry> {
+    let mut entry = parse(id, &fs::read_to_string(path).ok()?)?;
+    if let Some(app_id) = entry.flatpak.clone()
+        && let Some(inner) = flatpak_original(path, &app_id, entry.flatpak_renamed_from.as_deref().unwrap_or(id))
+        && let Some(original) = fs::read_to_string(&inner).ok().and_then(|content| parse(id, &content))
+    {
+        entry.console_app |= original.console_app;
+        entry.kind = entry.kind.or(original.kind);
+        entry.cover = entry.cover.or(original.cover);
+        entry.hero = entry.hero.or(original.hero);
+        entry.logo = entry.logo.or(original.logo);
+        entry.plugin = entry.plugin.or(original.plugin);
+        if entry.plugin_provides.is_empty() {
+            entry.plugin_provides = original.plugin_provides;
+        }
+    }
+    Some(entry)
+}
+
+/// `<installation>/exports/share/applications/<id>` → `<installation>/app/<app ID>/current/active/
+/// files/share/applications/<original name>`, if it is there.
+fn flatpak_original(exported: &Path, app_id: &str, original_name: &str) -> Option<PathBuf> {
+    let applications = exported.parent()?;
+    let installation = applications.parent()?.parent()?.parent()?;
+    if applications.file_name()? != "applications"
+        || installation.join("exports").as_path() != applications.parent()?.parent()?
+    {
+        return None;
+    }
+    let inner = installation.join("app").join(app_id).join("current/active/files/share/applications");
+    [original_name.to_string(), format!("{app_id}.desktop")]
+        .into_iter()
+        .map(|name| inner.join(name))
+        .find(|path| path.is_file())
+}
+
 /// The desktop entries in the `applications` directories, the first location of an ID winning (as
 /// for the apps), parsed.
 pub fn all_entries(data_dirs: &[PathBuf]) -> Vec<DesktopEntry> {
@@ -174,7 +216,7 @@ pub fn all_entries(data_dirs: &[PathBuf]) -> Vec<DesktopEntry> {
     for dir in data_dirs {
         for (id, path) in desktop_files(&dir.join("applications")) {
             if seen.insert(id.clone())
-                && let Some(entry) = fs::read_to_string(&path).ok().and_then(|c| parse(&id, &c))
+                && let Some(entry) = read_entry(&id, &path)
             {
                 entries.push(entry);
             }
@@ -278,6 +320,9 @@ pub fn parse(id: &str, content: &str) -> Option<DesktopEntry> {
             .get("X-ConsoleUI-Plugin-Provides")
             .map(|v| v.split(';').filter(|c| !c.is_empty()).map(str::to_string).collect())
             .unwrap_or_default(),
+        flatpak: plain("X-Flatpak").filter(|id| !id.is_empty()),
+        flatpak_renamed_from: plain("X-Flatpak-RenamedFrom")
+            .and_then(|names| names.split(';').find(|name| !name.is_empty()).map(str::to_string)),
     })
 }
 
@@ -381,6 +426,31 @@ fn ini_value(content: &str, section: &str, key: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn flatpak_entries_get_their_keys_from_inside_the_app() {
+        let root = std::env::temp_dir().join(format!("consoleui-flatpak-{}", std::process::id()));
+        let exports = root.join("exports/share/applications");
+        let inner = root.join("app/org.example.Game/current/active/files/share/applications");
+        fs::create_dir_all(&exports).unwrap();
+        fs::create_dir_all(&inner).unwrap();
+        fs::write(
+            exports.join("org.example.Game.desktop"),
+            "[Desktop Entry]\nType=Application\nName=Game\nExec=/usr/bin/flatpak run org.example.Game\nNoDisplay=true\nX-Flatpak=org.example.Game\n",
+        )
+        .unwrap();
+        fs::write(
+            inner.join("org.example.Game.desktop"),
+            "[Desktop Entry]\nType=Application\nName=Game\nExec=game\nX-ConsoleUI=true\nX-ConsoleUI-Kind=game\nX-ConsoleUI-Plugin=org.example.Game\n",
+        )
+        .unwrap();
+        let entry = read_entry("org.example.Game.desktop", &exports.join("org.example.Game.desktop")).unwrap();
+        assert!(entry.console_app);
+        assert_eq!(entry.kind, Some(AppKind::Game));
+        assert_eq!(entry.plugin.as_deref(), Some("org.example.Game"));
+        assert_eq!(entry.exec.as_deref(), Some("/usr/bin/flatpak run org.example.Game"), "the exported Exec stays");
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn console_apps_show_whatever_their_categories_say() {

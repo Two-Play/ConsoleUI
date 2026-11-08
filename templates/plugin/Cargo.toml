@@ -1,0 +1,13 @@
+[package]
+name = "my-plugin"
+version = "0.1.0"
+edition = "2024"
+# The template is CC0 (see COPYING): pick the license of your plugin, closed ones are fine too.
+# A plugin only talks to the shell over the session bus and does not link the ConsoleUI crates.
+license = "CC0-1.0"
+
+[dependencies]
+zbus = "5.19"
+
+# Standalone, also when it is created inside another workspace
+[workspace]

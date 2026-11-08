@@ -13,6 +13,22 @@ it. New members are only ever added; a breaking change would get a new interface
 The user turns every plugin on in the settings ("Plugins") before the shell starts it, and sees what it provides.
 A plugin that adds library entries can start programs on the user's machine: that is what the user agrees to.
 
+## Writing one
+
+```bash
+dev/new-plugin.sh my-plugin [directory]    # in a ConsoleUI checkout
+```
+
+creates a plugin from `templates/plugin`: a small Rust program (only `zbus`, no ConsoleUI crate) that offers a
+library entry and a panel with one item of each kind, its desktop entry, a Flatpak manifest and a README. The
+template is CC0, so the plugin may use any license. Its bus name and Flatpak ID is `org.example.<Name>`: change it
+to one of your own domain in the three places the README lists. Any other language works the same way; only the
+interface below counts.
+
+As a Flatpak a plugin needs no permissions for the contract: a sandbox may own its app ID on the session bus, the
+exported desktop entry starts it with `flatpak run`, and the shell runs the commands of library entries itself.
+Artwork from a sandbox is an icon name that starts with the app ID (Flatpak exports those), not a path.
+
 ## Being found
 
 A plugin installs a desktop entry into an `applications` directory (`/usr/share/applications`,
@@ -32,6 +48,10 @@ X-ConsoleUI-Plugin=org.consoleui.plugins.Lutris
 # What it offers: library, panel
 X-ConsoleUI-Plugin-Provides=library;
 ```
+
+Flatpak (1.18) drops unknown keys such as `X-ConsoleUI-Plugin` from the entry it exports and leaves
+`X-Flatpak=<app ID>`; the shell then reads them from the entry inside the installed app, so a Flatpak plugin needs
+nothing extra. The same holds for the `X-ConsoleUI*` keys of apps (`docs/sdk.md`).
 
 The shell starts `Exec` when the plugin is turned on and its bus name has no owner yet, waits up to 5 seconds for
 the name, and stops the process again when the plugin is turned off (or asks it to with `Quit`). A plugin may also

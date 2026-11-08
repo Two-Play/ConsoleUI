@@ -1,0 +1,35 @@
+# Flatpak build of the plugin (Epic 9). Change the ID to one of your own domain (here, in the
+# desktop entry's X-ConsoleUI-Plugin and in src/main.rs) before you publish it.
+#   flatpak-builder --user --install --force-clean build-dir @APP_ID@.yml
+# Needs the Rust extension once: flatpak install --user flathub org.freedesktop.Sdk.Extension.rust-stable//25.08
+id: @APP_ID@
+runtime: org.freedesktop.Platform
+runtime-version: '25.08'
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: my-plugin
+# No permissions needed: a sandbox may own its app ID on the session bus, and the shell runs the
+# commands of library entries itself. Add what the plugin's own work needs.
+finish-args: []
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin
+  env:
+    CARGO_HOME: /run/build/my-plugin/cargo
+  # cargo downloads zbus while building; Flathub builds without network and needs vendored sources
+  build-args:
+    - --share=network
+modules:
+  - name: my-plugin
+    buildsystem: simple
+    build-commands:
+      - cargo build --release
+      - install -Dm755 target/release/my-plugin /app/bin/my-plugin
+      - install -Dm644 my-plugin.desktop /app/share/applications/${FLATPAK_ID}.desktop
+    sources:
+      - type: dir
+        path: .
+        skip:
+          - target
+          - build-dir
+          - .flatpak-builder

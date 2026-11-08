@@ -143,7 +143,9 @@ Cargo workspace (edition 2024, `default-members` = the shell):
     languages' `.desktop` variants) keeps their sources, and `localize_entries` re-resolves them when
     `Shell::apply_language` switches the language (followed by a re-sort of entries and tiles).
   - `discover_library()` = `steam::discover` (own KeyValues parser in `vdf.rs`) + `desktop::discover`
-    (own `.desktop` parser, category allow/deny lists, `icons.rs` lookup; `X-ConsoleUI*` keys, see `docs/sdk.md`). Then `apply_history` +
+    (own `.desktop` parser, category allow/deny lists, `icons.rs` lookup; `X-ConsoleUI*` keys, see `docs/sdk.md`;
+    Flatpak 1.18 drops them from exported entries, so `read_entry` takes them from the app's own entry inside its
+    installation when the export has `X-Flatpak`). Then `apply_history` +
     `sort_by_recent` (most recent first, then alphabetical).
   - `launch::spawn` starts detached processes (desktop apps in a `systemd-run --user --scope` unit when the
     user bus exists) and returns a `ProcessHandle` that can `stop()`; Steam games are stopped via
@@ -311,6 +313,7 @@ Cargo workspace (edition 2024, `default-members` = the shell):
   are on, `Entries`, `Panel`, `Activate`, signals), `src/shell/plugins.rs` the glue (library merge, quick menu cards,
   the panel in the main or overlay window with `ControlPanel` from the `ui` crate, the settings list). `crates/plugins`
   holds the plugins that come with ConsoleUI (Lutris, power profile), on purpose without the ConsoleUI crates;
+  `templates/plugin` is the CC0 template (`dev/new-plugin.sh <name> [dir]`), keep it building after contract changes;
   `--fake` changes nothing. Scripted checks: desktop entries in a scratch `XDG_DATA_HOME/applications` with absolute
   `Exec` paths, a private bus (`dbus-run-session`); a plugin inherits the scratch `XDG_DATA_HOME` (Lutris then finds
   no games: give it the real one in `Exec`).
