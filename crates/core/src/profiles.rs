@@ -67,6 +67,8 @@ pub struct ProfilePaths {
     pub collection: PathBuf,
     pub game_options: PathBuf,
     pub settings: PathBuf,
+    /// Which theme music plays per game
+    pub theme_music: PathBuf,
 }
 
 impl ProfilePaths {
@@ -77,6 +79,7 @@ impl ProfilePaths {
             collection: dir.join("collection.json"),
             game_options: dir.join("game_options.json"),
             settings: dir.join("settings.json"),
+            theme_music: dir.join("theme_music.json"),
             dir,
         }
     }

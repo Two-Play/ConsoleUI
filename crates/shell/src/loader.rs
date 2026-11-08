@@ -124,8 +124,13 @@ fn decode(mut entry: AppEntry, artwork: bool) -> LoadedEntry {
     LoadedEntry { entry, cover, logo }
 }
 
+/// By content, not by name: Steam's cache has PNGs called `.jpg`.
+pub fn open_image(path: &Path) -> image::ImageResult<image::DynamicImage> {
+    image::ImageReader::open(path)?.with_guessed_format()?.decode()
+}
+
 fn read(path: &Path, max: Option<(u32, u32)>) -> Option<SharedPixelBuffer<Rgba8Pixel>> {
-    let image = image::open(path).map_err(|err| eprintln!("Image {} not readable: {err}", path.display())).ok()?;
+    let image = open_image(path).map_err(|err| eprintln!("Image {} not readable: {err}", path.display())).ok()?;
     let image = match max {
         Some((w, h)) if image.width() > w || image.height() > h => image.thumbnail(w, h),
         _ => image,

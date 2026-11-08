@@ -30,6 +30,7 @@ mod profiles;
 mod quick;
 mod service;
 mod shell;
+mod themes;
 mod tiles;
 mod updates;
 

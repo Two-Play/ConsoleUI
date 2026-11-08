@@ -86,6 +86,33 @@ export component Tile inherits Rectangle {
         }
     }
 
+    // Not installed: the cover stays recognizable but steps back, a download mark at the bottom
+    if root.data.not-installed: Rectangle {
+        width: 100%;
+        height: 100%;
+        border-radius: root.border-radius;
+        background: #0000008c;
+    }
+
+    if root.data.not-installed: Rectangle {
+        property <length> size: max(16px, root.width * 0.17);
+        x: root.width * 0.07;
+        y: root.height - self.size - root.width * 0.07;
+        width: self.size;
+        height: self.size;
+        border-radius: self.size / 2;
+        background: Theme.badge;
+
+        Image {
+            width: parent.size * 0.62;
+            height: self.width;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            source: @image-url("icons/download.svg");
+            colorize: Theme.text;
+        }
+    }
+
     if root.data.running: Rectangle {
         x: root.width * 0.07;
         y: root.width * 0.07;

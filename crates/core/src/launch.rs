@@ -100,6 +100,12 @@ fn plan(launch: &Launch, scope_unit: Option<&str>) -> Option<(Command, Option<St
             command.args(["-silent", &format!("steam://rungameid/{app_id}")]);
             Some((command, None))
         }
+        // Steam's install dialog; the download runs in Steam, nothing to track here
+        Launch::SteamInstall(app_id) => {
+            let mut command = Command::new("steam");
+            command.args(["-silent", &format!("steam://install/{app_id}")]);
+            Some((command, None))
+        }
         Launch::Command(argv) => {
             let (program, args) = argv.split_first()?;
             let command = match scope_unit {

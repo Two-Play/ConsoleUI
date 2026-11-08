@@ -46,7 +46,7 @@ pub fn to_tile(loaded: &LoadedEntry, index: usize, today: NaiveDate) -> AppTile 
         title: entry.title.as_str().into(),
         subtitle: subtitle(entry, today).into(),
         kind: kind_label(entry.kind).into(),
-        action_label: action_label(entry.kind, false).into(),
+        action_label: action_label(entry, false).into(),
         monogram: entry.monogram().into(),
         show_monogram: real_cover.is_none() && icon.is_none(),
         has_icon: icon.is_some(),
@@ -57,6 +57,7 @@ pub fn to_tile(loaded: &LoadedEntry, index: usize, today: NaiveDate) -> AppTile 
         accent: Color::from_rgb_u8(entry.accent[0], entry.accent[1], entry.accent[2]),
         running: false,
         pinned: false,
+        not_installed: !entry.installed(),
     }
 }
 
@@ -69,9 +70,10 @@ pub fn kind_label(kind: AppKind) -> &'static str {
 }
 
 /// Label of the launch button
-pub fn action_label(kind: AppKind, running: bool) -> &'static str {
-    match (kind, running) {
+pub fn action_label(entry: &AppEntry, running: bool) -> &'static str {
+    match (entry.kind, running) {
         (_, true) => tr("Resume"),
+        _ if !entry.installed() => tr("Install"),
         (AppKind::Game, false) => tr("Play"),
         (AppKind::App, false) => tr("Open"),
     }
@@ -96,6 +98,7 @@ pub fn library_tile(count: usize) -> AppTile {
         accent: Color::from_rgb_u8(accent[0], accent[1], accent[2]),
         running: false,
         pinned: false,
+        not_installed: false,
     }
 }
 

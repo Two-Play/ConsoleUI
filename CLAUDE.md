@@ -171,6 +171,10 @@ Cargo workspace (edition 2024, `default-members` = the shell):
     (`DirectionRepeat` for hold-to-repeat, `Stick` with hysteresis, `glyph_style` by device name, `GuideChord`:
     Guide counts on release, Guide + R1 is `Action::Screenshot`, `is_steam_virtual_pad`: next to a real
     controller the shell ignores Steam's virtual pad, which repeats its input, but still grabs it).
+  - `steam::discover_not_installed` (Story 7.4): played games of the account that are not installed, from the most recent
+    user's `localconfig.vdf` and named by `steam_appinfo.rs` (parser of the binary `appcache/appinfo.vdf`, v28/v29); they get
+    `Launch::SteamInstall` (`steam://install`), only the library filter "Not installed" and the search show them.
+    `steam::shader_processing` finds games whose shaders Steam processes (`fossilize_replay` processes).
   - `running::RunningApp` decides when the launch overlay closes: process exit for commands,
     `steam::running_games()` for Steam games (scans `/proc` for processes with `SteamAppId=<id>`;
     `RunningAppID` in `~/.steam/registry.vdf` is updated by Steam only minutes later), with a minimum hold
@@ -347,7 +351,9 @@ Cargo workspace (edition 2024, `default-members` = the shell):
     to the `backdrop` image in `main.slint`; `Shell::update_ambience` decides when it runs (shown by
     the "Background" setting and the shell in front).
   - `src/music.rs`: background music on its own thread (ambient loop through `pw-cat --raw` with fades,
-    or the user's files); `Shell::update_ambience` lets it play only while the shell is in front.
+    or the user's files, or with "Game themes" the theme of the focused game, decoded by `ffmpeg`, Story 6.12);
+    `Shell::update_ambience` lets it play only while the shell is in front. `src/themes.rs` searches the themes with
+    `yt-dlp` (`consoleui_core::themes`: query, cache file, arguments, the choice per game).
   - `src/grab.rs`: while the quick menu is open, `EVIOCGRAB` on the controller's evdev nodes (matched by
     gilrs `os_name`) and read them directly so the game in front gets no input.
   - `src/gamepad.rs`: gilrs polling → `Action`s (only devices with an SDL mapping); PS/Guide → `Action::Guide`.

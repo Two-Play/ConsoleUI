@@ -1312,3 +1312,27 @@ msgstr "Bildschirm"
 
 msgid "Which connected screen shows the console"
 msgstr "Welcher angeschlossene Bildschirm die Konsole zeigt"
+
+msgid "Not installed"
+msgstr "Nicht installiert"
+
+msgid "Steam asks where to install it …"
+msgstr "Steam fragt, wohin es installiert werden soll …"
+
+msgid "Steam is processing shaders …"
+msgstr "Steam verarbeitet Shader …"
+
+msgid "Steam is processing shaders"
+msgstr "Steam verarbeitet Shader"
+
+msgid "Game themes"
+msgstr "Spielmusik"
+
+msgid "Other theme music"
+msgstr "Andere Titelmusik"
+
+msgid "No theme music"
+msgstr "Keine Titelmusik"
+
+msgid "Theme music on"
+msgstr "Titelmusik an"

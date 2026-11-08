@@ -26,10 +26,11 @@ use consoleui_core::protocol::{
     BlurRegion, CompositorMessage, DisplayInfo, Rect, ShellMessage, Transition, WindowRole,
 };
 use consoleui_core::running::{MIN_HOLD, Phase, RunningApp, STEAM_HELP_AFTER};
-use consoleui_core::settings::{BackgroundChoice, GlyphChoice, Setting, Settings};
+use consoleui_core::settings::{BackgroundChoice, GlyphChoice, MusicChoice, Setting, Settings};
 use consoleui_core::sound::Sound;
 use consoleui_core::switcher::{Switcher, SwitcherApp, most_recent_first};
 use consoleui_core::system::{self, PowerAction};
+use consoleui_core::themes::{self as theme_music, ThemeChoices};
 use consoleui_core::{
     Action, AppEntry, AppKind, Carousel, Collection, Grid, History, HomeArea, HomeOutcome, Launch, LibraryFilter,
     LibrarySort, apply_history, compare_recent, home_view, library_view, localize_entries, search, steam,
@@ -115,6 +116,9 @@ struct Running {
     has_window: bool,
     /// The user asked for the Steam client's windows during the launch
     show_steam: bool,
+    /// Not a game start but Steam's install dialog for a game that is not installed: it ends when
+    /// the dialog closes or the download starts
+    install: bool,
     /// When it was last in front, in the order of `Shell::front_changes` (0: never)
     last_front: u64,
 }
@@ -203,6 +207,13 @@ pub struct Shell {
     game_options_path: Option<PathBuf>,
     /// Open options panel (from the context menu)
     game_options_panel: Option<GameOptionsPanel>,
+    /// Which theme music plays per game, with "Game themes"
+    theme_choices: ThemeChoices,
+    theme_choices_path: Option<PathBuf>,
+    /// Searches theme music; started the first time it is needed
+    theme_fetcher: Option<crate::themes::Fetcher>,
+    /// The game the focus rests on, and since when (a theme waits until the focus settles)
+    theme_focus: Option<(String, Instant)>,
     /// Hero images, decoded in the background and cached with a limit
     heroes: Heroes,
 
@@ -405,6 +416,10 @@ impl Shell {
             game_options: GameOptionsStore::default(),
             game_options_path: None,
             game_options_panel: None,
+            theme_choices: ThemeChoices::default(),
+            theme_choices_path: None,
+            theme_fetcher: None,
+            theme_focus: None,
             heroes: Heroes::new(ui),
             running: Vec::new(),
             next_app_id: FIRST_DESKTOP_APP_ID,
@@ -489,6 +504,8 @@ impl Shell {
         self.history = self.history_path.as_deref().map(History::load).unwrap_or_default();
         self.collection_path = paths.as_ref().map(|p| p.collection.clone());
         self.collection = self.collection_path.as_deref().map(Collection::load).unwrap_or_default();
+        self.theme_choices_path = paths.as_ref().map(|p| p.theme_music.clone());
+        self.theme_choices = self.theme_choices_path.as_deref().map(ThemeChoices::load).unwrap_or_default();
         self.game_options_path = paths.map(|p| p.game_options);
         self.game_options = self.game_options_path.as_deref().map(GameOptionsStore::load).unwrap_or_default();
         for entry in &mut self.entries {
@@ -961,6 +978,8 @@ impl Shell {
         if ui.get_launching() {
             // "Back" brings up the overview; the app keeps running and stays tracked.
             if action == Action::Back {
+                let foreground = self.foreground;
+                self.end_installs(ui, |r| Some(r.app_id) == foreground);
                 self.show_shell(ui);
             } else if action == Action::Confirm {
                 self.show_steam(ui);
@@ -1250,10 +1269,18 @@ impl Shell {
         if let Some(message) = messages.last() {
             self.toast(ui, "✉", &message.title, &message.text);
         }
+        let started_ids: Vec<u32> = news.iter().flat_map(|n| n.started_ids.clone()).collect();
+        if !started_ids.is_empty() {
+            // For Steam the app ID is the Steam app ID
+            self.end_installs(ui, |r| started_ids.contains(&r.app_id));
+        }
         let started: Vec<String> = news.iter().flat_map(|n| n.started.clone()).collect();
         let finished: Vec<String> = news.iter().flat_map(|n| n.finished.clone()).collect();
+        let shaders: Vec<String> = news.iter().flat_map(|n| n.shaders.clone()).collect();
         if !finished.is_empty() {
             self.toast(ui, "⬇", tr("Download finished"), &finished.join(", "));
+        } else if !shaders.is_empty() && !ui.get_launching() {
+            self.toast(ui, "◈", tr("Steam is processing shaders"), &shaders.join(", "));
         } else if !started.is_empty() {
             self.toast(ui, "⬇", tr("Download started"), &started.join(", "));
         }
@@ -1265,7 +1292,8 @@ impl Shell {
         self.look_again |= look;
         if self.look_again && self.new_games_rx.is_none() && !self.dummy {
             self.look_again = false;
-            let known = self.entries.iter().map(|e| e.id.clone()).collect();
+            // A game that is not installed yet comes back as installed
+            let known = self.entries.iter().filter(|e| e.installed()).map(|e| e.id.clone()).collect();
             self.new_games_rx = Some(loader::spawn_library_check(known, self.settings.artwork));
         }
         let Some(done) = self.new_games_rx.as_ref().and_then(|rx| rx.try_recv().ok()) else { return };
@@ -1287,7 +1315,12 @@ impl Shell {
             }
         }
         for loaded in done.new {
-            if self.entries.iter().any(|e| e.id == loaded.entry.id) {
+            if let Some(index) = self.entries.iter().position(|e| e.id == loaded.entry.id) {
+                if !self.entries[index].installed() && loaded.entry.installed() {
+                    self.tiles[index] = tiles::to_tile(&loaded, index, today);
+                    self.discovered_last_used.insert(loaded.entry.id.clone(), loaded.entry.last_used);
+                    self.entries[index] = loaded.entry;
+                }
                 continue;
             }
             let tile = tiles::to_tile(&loaded, self.tiles.len(), today);
@@ -1669,6 +1702,8 @@ impl Shell {
     fn update_ambience(&mut self, ui: &AppWindow) {
         let in_front = self.foreground.is_none() && !ui.get_launching() && !ui.get_booting();
         self.music.set(self.settings.music, self.settings.music_track.as_deref(), in_front);
+        let theme = if self.settings.music == MusicChoice::GameThemes && in_front { self.wanted_theme() } else { None };
+        self.music.set_theme(theme);
         let entry = self.focused_entry();
         let has_artwork = self.settings.artwork && entry.is_some_and(|i| self.entries[i].artwork.hero.is_some());
         let accent = match entry {
@@ -1688,6 +1723,43 @@ impl Shell {
             Look { animate: self.settings.animations, style: self.settings.shader, palette: self.settings.palette },
             accent,
         );
+    }
+
+    /// The cached theme music of the game the focus rests on (with "Game themes"). One that is not
+    /// cached yet is searched for; it plays once it is there and the focus is still on the game.
+    fn wanted_theme(&mut self) -> Option<PathBuf> {
+        /// Scrolling past a game does not start its music (nor a search)
+        const SETTLE: Duration = Duration::from_millis(700);
+        if let Some(fetcher) = &mut self.theme_fetcher {
+            fetcher.poll();
+        }
+        let entry = &self.entries[self.focused_entry()?];
+        if entry.kind != AppKind::Game {
+            self.theme_focus = None;
+            return None;
+        }
+        match &self.theme_focus {
+            Some((id, since)) if *id == entry.id => {
+                if since.elapsed() < SETTLE {
+                    return None;
+                }
+            }
+            _ => {
+                self.theme_focus = Some((entry.id.clone(), Instant::now()));
+                return None;
+            }
+        }
+        let result = self.theme_choices.result(&entry.id)?;
+        let dir = consoleui_core::xdg::cache_home()?.join("consoleui/themes");
+        let file = theme_music::cache_file(&dir, &entry.id, result);
+        if file.is_file() {
+            return Some(file);
+        }
+        if !theme_music::failed_marker(&file).exists() {
+            let title = entry.title.clone();
+            self.theme_fetcher.get_or_insert_with(crate::themes::Fetcher::start).request(&title, result, &file);
+        }
+        None
     }
 
     /// Fades in the hero of the focused entry (once it is decoded), prefetches the neighbours
@@ -1757,10 +1829,7 @@ impl Shell {
     pub fn update_hints(&self, ui: &AppWindow) {
         let hint = |button, label: &str| Hint { button, label: label.into() };
         let keyboard = ui.get_controller_style() == ControllerStyle::Keyboard;
-        let start_label = |index: usize| match self.entries[index].kind {
-            AppKind::Game => tr("Play"),
-            AppKind::App => tr("Open"),
-        };
+        let start_label = |index: usize| tiles::action_label(&self.entries[index], false);
         let mut hints = Vec::new();
         if let Some(picker) = &self.picker {
             if picker.is_typing() {
@@ -1892,7 +1961,9 @@ impl Shell {
     fn open_context(&mut self, ui: &AppWindow) {
         let entry = self.focused_entry().map(|i| {
             let id = self.entries[i].id.clone();
+            let themes = self.settings.music == MusicChoice::GameThemes && self.entries[i].kind == AppKind::Game;
             EntryState {
+                theme: themes.then(|| !self.theme_choices.is_off(&id)),
                 title: self.entries[i].title.clone(),
                 pinned: self.collection.is_pinned(&id),
                 hidden: self.collection.is_hidden(&id),
@@ -1947,6 +2018,23 @@ impl Shell {
             ContextAction::Hide => self.collection.hide(&id),
             ContextAction::Show => self.collection.show(&id),
             ContextAction::Sort => {}
+            ContextAction::ThemeNext | ContextAction::ThemeOff | ContextAction::ThemeOn => {
+                match action {
+                    ContextAction::ThemeNext => self.theme_choices.next(&id),
+                    _ => self.theme_choices.set_off(&id, action == ContextAction::ThemeOff),
+                }
+                if let Some(path) = &self.theme_choices_path
+                    && let Err(err) = self.theme_choices.save(path)
+                {
+                    eprintln!("Cannot save the theme music choices ({}): {err}", path.display());
+                }
+                // The new choice plays (or stops) without waiting for the focus to settle again
+                if let Some((_, since)) = &mut self.theme_focus {
+                    *since -= Duration::from_secs(1);
+                }
+                self.update_ambience(ui);
+                return;
+            }
         }
         if let Some(path) = &self.collection_path
             && let Err(err) = self.collection.save(path)
@@ -2328,8 +2416,9 @@ impl Shell {
         let launch = self.game_options.get(&id).wrap(&entry.launch, self.output_size(ui));
         match launch::spawn(&launch) {
             Ok(handle) => {
+                let install = matches!(entry.launch, Launch::SteamInstall(_));
                 let (app_id, app, stop, owner) = match entry.launch {
-                    Launch::Steam(steam_id) => (
+                    Launch::Steam(steam_id) | Launch::SteamInstall(steam_id) => (
                         steam_id,
                         RunningApp::steam(steam_id, now),
                         Stop::Steam(steam_id),
@@ -2348,7 +2437,7 @@ impl Shell {
                 };
                 if let Some(compositor) = &mut self.compositor {
                     let steam_app_id = match entry.launch {
-                        Launch::Steam(steam_id) => Some(steam_id),
+                        Launch::Steam(steam_id) | Launch::SteamInstall(steam_id) => Some(steam_id),
                         _ => None,
                     };
                     compositor.send(&ShellMessage::Launched {
@@ -2366,12 +2455,24 @@ impl Shell {
                     owner,
                     has_window: false,
                     show_steam: false,
+                    install,
                     last_front: 0,
                 });
-                ui.set_launch_status(tr("Starting …").into());
                 ui.set_launch_busy(true);
                 ui.set_launching(true);
-                self.set_running_flag(&id, true);
+                if install {
+                    // Steam's install dialog is the point: show it at once (on a desktop it is a
+                    // window of its own anyway)
+                    let can_show =
+                        self.gamescope.is_some() || self.compositor.as_ref().is_some_and(Compositor::show_steam);
+                    if can_show {
+                        self.show_steam_for(ui, app_id);
+                    }
+                    ui.set_launch_status(tr("Steam asks where to install it …").into());
+                } else {
+                    ui.set_launch_status(tr("Starting …").into());
+                    self.set_running_flag(&id, true);
+                }
                 self.record_launch(index);
                 self.pending_front.push(id.clone());
                 if self.settings.animations && (self.gamescope.is_some() || self.compositor.is_some()) {
@@ -2515,20 +2616,38 @@ impl Shell {
         if finished.is_empty() {
             return;
         }
-        self.running.retain(|r| !finished.iter().any(|(_, app_id)| *app_id == r.app_id));
         for (entry_id, app_id) in &finished {
-            if let Some(compositor) = &mut self.compositor {
-                compositor.send(&ShellMessage::Exited { app_id: *app_id });
-            }
-            self.set_running_flag(entry_id, false);
-            if self.dialog.as_ref().is_some_and(|d| d.buttons().iter().any(|b| b.tag.quits(entry_id))) {
-                self.close_dialog(ui);
-            }
-            if self.foreground == Some(*app_id) {
-                self.show_shell(ui);
-            }
+            self.end_running(ui, entry_id, *app_id);
         }
         self.refresh(ui);
+    }
+
+    /// Forgets a launched app whose processes are gone, or an install whose dialog is done.
+    fn end_running(&mut self, ui: &AppWindow, entry_id: &str, app_id: u32) {
+        self.running.retain(|r| r.app_id != app_id);
+        if let Some(compositor) = &mut self.compositor {
+            compositor.send(&ShellMessage::Exited { app_id });
+        }
+        self.set_running_flag(entry_id, false);
+        if self.dialog.as_ref().is_some_and(|d| d.buttons().iter().any(|b| b.tag.quits(entry_id))) {
+            self.close_dialog(ui);
+        }
+        if self.foreground == Some(app_id) {
+            self.show_shell(ui);
+        }
+    }
+
+    /// Steam's install dialog was answered or closed (`steam_id`: its download started).
+    fn end_installs(&mut self, ui: &AppWindow, done: impl Fn(&Running) -> bool) {
+        let ended: Vec<(String, u32)> =
+            self.running.iter().filter(|r| r.install && done(r)).map(|r| (r.entry_id.clone(), r.app_id)).collect();
+        for (entry_id, app_id) in &ended {
+            self.end_running(ui, entry_id, *app_id);
+        }
+        if !ended.is_empty() {
+            self.stop_mouse_mode();
+            self.refresh(ui);
+        }
     }
 
     /// A Steam game has no window for a while: the Steam client's windows are hidden, so the launch
@@ -2543,7 +2662,16 @@ impl Shell {
                 && r.app.age(now) >= STEAM_HELP_AFTER
         };
         let help = self.running.iter().find(waiting).map(|r| r.app_id).filter(|_| can_show && ui.get_launching());
-        if help.is_some() {
+        // Steam processes the game's shaders before it starts it, which can take minutes
+        let starting = |r: &&Running| {
+            Some(r.app_id) == self.foreground && r.app.is_steam() && !r.install && !r.has_window && !r.show_steam
+        };
+        let shaders = ui.get_launching()
+            && self.running.iter().find(starting).is_some_and(|r| steam::shader_processing().contains(&r.app_id));
+        if shaders {
+            ui.set_launch_status(tr("Steam is processing shaders …").into());
+            ui.set_launch_busy(true);
+        } else if help.is_some() {
             ui.set_launch_status(tr("Steam is preparing the game …").into());
             ui.set_launch_busy(true);
         }
@@ -2554,6 +2682,10 @@ impl Shell {
     /// Hands the Steam client's windows to the game being launched, in front of the launch screen.
     fn show_steam(&mut self, ui: &AppWindow) {
         let Some(app_id) = self.steam_help.take() else { return };
+        self.show_steam_for(ui, app_id);
+    }
+
+    fn show_steam_for(&mut self, ui: &AppWindow, app_id: u32) {
         if let Some(running) = self.running.iter_mut().find(|r| r.app_id == app_id) {
             running.show_steam = true;
         }
@@ -2596,6 +2728,7 @@ impl Shell {
         let mut modes_changed = false;
         let mut screenshot = None;
         let mut window_list = None;
+        let mut installs_done = Vec::new();
         for message in compositor.poll() {
             match message {
                 CompositorMessage::WindowList { windows } => window_list = Some(windows),
@@ -2618,6 +2751,8 @@ impl Shell {
                 CompositorMessage::AppGone { app_id } => {
                     if let Some(running) = self.running.iter_mut().find(|r| r.app_id == app_id) {
                         running.has_window = false;
+                        // Steam's install dialog closed
+                        installs_done.extend(running.install.then_some(app_id));
                     }
                 }
                 // The keyboard's Guide key, reserved by the compositor (Story 7.5)
@@ -2631,6 +2766,9 @@ impl Shell {
                 CompositorMessage::ScreenshotDone { path, error } => screenshot = Some((path, error)),
                 _ => {}
             }
+        }
+        if !installs_done.is_empty() {
+            self.end_installs(ui, |r| installs_done.contains(&r.app_id));
         }
         if let (Some(windows), Some(quick)) = (window_list, &mut self.quick) {
             quick.set_windows(&windows);
@@ -2739,7 +2877,7 @@ impl Shell {
         tile.title = entry.title.as_str().into();
         tile.monogram = entry.monogram().into();
         tile.kind = tiles::kind_label(entry.kind).into();
-        tile.action_label = tiles::action_label(entry.kind, tile.running).into();
+        tile.action_label = tiles::action_label(entry, tile.running).into();
         tile.subtitle =
             if tile.running { tr("Running now").into() } else { tiles::subtitle(entry, tiles::today()).into() };
     }

@@ -18,6 +18,10 @@ pub enum ContextAction {
     Quit,
     /// Switch the library sort; the menu stays open.
     Sort,
+    /// Theme music (with "Game themes"): the next search result, or none for this game
+    ThemeNext,
+    ThemeOff,
+    ThemeOn,
 }
 
 /// What the entry currently is; the menu items follow from it.
@@ -27,6 +31,8 @@ pub struct EntryState {
     pub pinned: bool,
     pub hidden: bool,
     pub running: bool,
+    /// With "Game themes", for games: whether its theme music is on
+    pub theme: Option<bool>,
 }
 
 pub struct ContextMenu {
@@ -56,6 +62,11 @@ impl ContextMenu {
                 actions.push(ContextAction::Hide);
             }
             actions.push(ContextAction::GameOptions);
+            match entry.theme {
+                Some(true) => actions.extend([ContextAction::ThemeNext, ContextAction::ThemeOff]),
+                Some(false) => actions.push(ContextAction::ThemeOn),
+                None => {}
+            }
             if entry.running {
                 actions.push(ContextAction::Quit);
             }
@@ -106,6 +117,9 @@ impl ContextMenu {
                     ContextAction::GameOptions => ("▣", tr("Gamescope options…").to_string()),
                     ContextAction::Quit => ("■", tr("Quit").to_string()),
                     ContextAction::Sort => ("⇅", trf("Sort: {}", &[&sort.label()])),
+                    ContextAction::ThemeNext => ("♫", tr("Other theme music").to_string()),
+                    ContextAction::ThemeOff => ("♫", tr("No theme music").to_string()),
+                    ContextAction::ThemeOn => ("♫", tr("Theme music on").to_string()),
                 };
                 ContextItem { symbol: symbol.into(), label: label.into() }
             })
@@ -118,7 +132,7 @@ mod tests {
     use super::*;
 
     fn entry(pinned: bool, hidden: bool, running: bool) -> Option<EntryState> {
-        Some(EntryState { id: "steam:730".into(), title: "CS2".into(), pinned, hidden, running })
+        Some(EntryState { id: "steam:730".into(), title: "CS2".into(), pinned, hidden, running, theme: None })
     }
 
     #[test]
@@ -129,6 +143,9 @@ mod tests {
         assert_eq!(ContextMenu::new(entry(false, true, false), true).actions, [Show, GameOptions, Sort]);
         assert_eq!(ContextMenu::new(None, true).actions, [Sort]);
         assert!(ContextMenu::new(None, false).is_empty());
+        let mut themed = entry(false, false, false);
+        themed.as_mut().unwrap().theme = Some(true);
+        assert_eq!(ContextMenu::new(themed, false).actions, [Pin, Hide, GameOptions, ThemeNext, ThemeOff]);
     }
 
     #[test]

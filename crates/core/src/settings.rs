@@ -115,16 +115,19 @@ pub enum MusicChoice {
     Ambient,
     /// Files from the music folder (`$XDG_DATA_HOME/consoleui/music`)
     Folder,
+    /// The theme music of the focused game, searched on YouTube (`consoleui_core::themes`)
+    GameThemes,
 }
 
 impl MusicChoice {
-    pub const ALL: [MusicChoice; 3] = [Self::Off, Self::Ambient, Self::Folder];
+    pub const ALL: [MusicChoice; 4] = [Self::Off, Self::Ambient, Self::Folder, Self::GameThemes];
 
     pub fn label(self) -> &'static str {
         match self {
             Self::Off => tr("Off"),
             Self::Ambient => tr("Ambient"),
             Self::Folder => tr("My music"),
+            Self::GameThemes => tr("Game themes"),
         }
     }
 }
@@ -447,7 +450,7 @@ mod tests {
         assert_eq!(settings.music, MusicChoice::Ambient);
         settings.change(Setting::Music, false);
         settings.change(Setting::Music, false);
-        assert_eq!(settings.music, MusicChoice::Folder);
+        assert_eq!(settings.music, MusicChoice::GameThemes);
         // Sub-pages change no value
         settings.change(Setting::Wifi, true);
         assert_eq!(settings.glyphs, GlyphChoice::PlayStation);

@@ -66,6 +66,83 @@ fn to_entry(root: &Path, manifest: Manifest) -> AppEntry {
     }
 }
 
+/// Steam games of the account that are not installed: the ones the user played before (the
+/// client's `localconfig.vdf` lists them with their last start), named by `appinfo.vdf`. Games
+/// bought and never started are not in these files; that needs the Web API.
+pub fn discover_not_installed(root: &Path, installed: &HashSet<u32>) -> Vec<AppEntry> {
+    let infos = crate::steam_appinfo::read(&root.join("appcache/appinfo.vdf"));
+    if infos.is_empty() {
+        return Vec::new();
+    }
+    let mut played: HashMap<u32, Option<u64>> = HashMap::new();
+    for dir in user_dirs(root) {
+        let Ok(content) = fs::read_to_string(dir.join("config/localconfig.vdf")) else { continue };
+        for (app_id, last) in played_apps(&content) {
+            let known = played.entry(app_id).or_insert(last);
+            *known = (*known).max(last);
+        }
+    }
+    let mut entries: Vec<AppEntry> = played
+        .into_iter()
+        .filter(|(app_id, _)| !installed.contains(app_id))
+        .filter_map(|(app_id, last)| {
+            let info = infos.get(&app_id).filter(|info| info.kind == "game")?;
+            let id = format!("steam:{app_id}");
+            let (accent, accent2) = palette_for(&id);
+            Some(AppEntry {
+                artwork: artwork(root, app_id),
+                id,
+                title: info.name.trim().to_string(),
+                description: "Steam".into(),
+                names: Names::Fixed,
+                kind: AppKind::Game,
+                accent,
+                accent2,
+                launch: Launch::SteamInstall(app_id),
+                last_used: last,
+            })
+        })
+        .collect();
+    entries.sort_by(|a, b| a.id.cmp(&b.id));
+    entries
+}
+
+/// The account that logged in last (`config/loginusers.vdf`), else every account on the machine.
+fn user_dirs(root: &Path) -> Vec<PathBuf> {
+    let users = root.join("userdata");
+    let recent = fs::read_to_string(root.join("config/loginusers.vdf")).ok().and_then(|content| {
+        let doc = vdf::parse(&content).ok()?;
+        let (id, _) = doc
+            .get("users")?
+            .entries()
+            .iter()
+            .find(|(_, user)| user.get("MostRecent").and_then(vdf::Value::as_str) == Some("1"))?;
+        // SteamID64 → the account ID that names the folder
+        let account = id.parse::<u64>().ok()?.checked_sub(76_561_197_960_265_728)?;
+        Some(users.join(account.to_string()))
+    });
+    match recent.filter(|dir| dir.is_dir()) {
+        Some(dir) => vec![dir],
+        None => fs::read_dir(&users).into_iter().flatten().flatten().map(|entry| entry.path()).collect(),
+    }
+}
+
+/// App IDs in `UserLocalConfigStore/Software/Valve/Steam/apps`, with the last start.
+fn played_apps(content: &str) -> Vec<(u32, Option<u64>)> {
+    let Ok(doc) = vdf::parse(content) else { return Vec::new() };
+    let apps = ["UserLocalConfigStore", "Software", "Valve", "Steam", "apps"]
+        .iter()
+        .try_fold(&doc, |value, key| value.get(key));
+    let Some(apps) = apps else { return Vec::new() };
+    apps.entries()
+        .iter()
+        .filter_map(|(id, app)| {
+            let last = app.get("LastPlayed").and_then(vdf::Value::as_str).and_then(|t| t.parse().ok());
+            Some((id.parse().ok()?, last.filter(|&t: &u64| t > 0)))
+        })
+        .collect()
+}
+
 /// Processes of Steam games: Steam puts `SteamAppId` into the environment of every game process
 /// (also under Proton/Wine). Steam itself, its helper processes and the shell do not count.
 fn game_processes() -> io::Result<Vec<(u32, u32)>> {
@@ -78,7 +155,8 @@ fn game_processes() -> io::Result<Vec<(u32, u32)>> {
         }
         let dir = entry.path();
         let comm = fs::read_to_string(dir.join("comm")).unwrap_or_default();
-        if matches!(comm.trim(), "steam" | "steamwebhelper") {
+        // Steam's shader processing is not the game yet
+        if matches!(comm.trim(), "steam" | "steamwebhelper") || comm.starts_with("fossilize") {
             continue;
         }
         // Only processes of the own user are readable; all others drop out here.
@@ -92,6 +170,29 @@ fn game_processes() -> io::Result<Vec<(u32, u32)>> {
 
 /// App IDs of all Steam games that currently have processes. More reliable than `RunningAppID` in
 /// `~/.steam/registry.vdf`, which Steam often resets only minutes after the game ended.
+/// Games whose shaders Steam is processing right now: its `fossilize_replay` works on
+/// `steamapps/shadercache/<appid>/...`. Steam reports no progress, only that it happens.
+pub fn shader_processing() -> HashSet<u32> {
+    let Ok(dir) = fs::read_dir("/proc") else { return HashSet::new() };
+    dir.flatten()
+        .filter(|entry| entry.file_name().to_str().is_some_and(|name| name.bytes().all(|b| b.is_ascii_digit())))
+        .filter(|entry| fs::read_to_string(entry.path().join("comm")).is_ok_and(|comm| comm.starts_with("fossilize")))
+        .filter_map(|entry| fs::read(entry.path().join("cmdline")).ok())
+        .filter_map(|cmdline| shader_app_id(&cmdline))
+        .collect()
+}
+
+fn shader_app_id(cmdline: &[u8]) -> Option<u32> {
+    let mut args = cmdline.split(|&b| b == 0).map(String::from_utf8_lossy);
+    if !args.next()?.ends_with("fossilize_replay") {
+        return None;
+    }
+    args.find_map(|arg| {
+        let (_, rest) = arg.split_once("/shadercache/")?;
+        rest.split('/').next()?.parse().ok()
+    })
+}
+
 pub fn running_games() -> HashSet<u32> {
     game_processes().map(|p| p.into_iter().map(|(_, app_id)| app_id).collect()).unwrap_or_default()
 }
@@ -283,6 +384,25 @@ mod tests {
         // A game that starts updating is not announced
         let busy = state(&[(1, "Old", false)]);
         assert_eq!(download_changes(&state(&[(1, "Old", true)]), &busy), (vec![], vec![]));
+    }
+
+    #[test]
+    fn shader_processing_names_the_game() {
+        let cmdline = b"/home/u/.local/share/Steam/ubuntu12_64/fossilize_replay\0--master-process\0/home/u/.local/share/Steam/steamapps/shadercache/1091500/fozpipelinesv6/steamapprun_pipeline_cache.foz\0";
+        assert_eq!(shader_app_id(cmdline), Some(1091500));
+        assert_eq!(shader_app_id(b"/usr/bin/cat\0/x/shadercache/1/y\0"), None);
+        assert_eq!(shader_app_id(b"fossilize_replay\0--help\0"), None);
+    }
+
+    #[test]
+    fn played_apps_come_from_the_local_config() {
+        let content = r#""UserLocalConfigStore" { "Software" { "Valve" { "Steam" { "apps" {
+            "400" { "LastPlayed" "1700000000" "Playtime" "12" }
+            "7" { "cloud" { "last_sync_state" "synchronized" } }
+        } } } } }"#;
+        let mut apps = played_apps(content);
+        apps.sort();
+        assert_eq!(apps, [(7, None), (400, Some(1_700_000_000))]);
     }
 
     #[test]

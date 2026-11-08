@@ -279,7 +279,8 @@ fn worker(shared: &Shared, results: &mpsc::Sender<Done>) {
 }
 
 fn decode(path: &Path) -> Option<Decoded> {
-    let image = image::open(path).map_err(|err| eprintln!("Cannot read hero {}: {err}", path.display())).ok()?;
+    let image =
+        crate::loader::open_image(path).map_err(|err| eprintln!("Cannot read hero {}: {err}", path.display())).ok()?;
     let (w, h) = MAX_SIZE;
     let image = if image.width() > w || image.height() > h { image.thumbnail(w, h) } else { image };
     let blurred = image::imageops::blur(&image.thumbnail(BLUR_SIZE.0, BLUR_SIZE.1).into_rgba8(), BLUR_SIGMA);

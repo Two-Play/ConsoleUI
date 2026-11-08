@@ -22,6 +22,8 @@ pub enum Launch {
     /// Dummy entries: only the animation, no process.
     None,
     Steam(u32),
+    /// A Steam game of the account that is not installed: Steam asks where to install it
+    SteamInstall(u32),
     /// Program and arguments, already without `.desktop` field codes.
     Command(Vec<String>),
 }
@@ -69,6 +71,11 @@ pub struct AppEntry {
 }
 
 impl AppEntry {
+    /// Not a Steam game that still has to be installed.
+    pub fn installed(&self) -> bool {
+        !matches!(self.launch, Launch::SteamInstall(_))
+    }
+
     /// First alphanumeric character of the title in upper case (for placeholder covers).
     pub fn monogram(&self) -> String {
         self.title.chars().find(|c| c.is_alphanumeric()).map(|c| c.to_uppercase().collect()).unwrap_or_default()
@@ -179,6 +186,8 @@ pub enum LibraryFilter {
     Apps,
     /// Only the hidden entries, to show them again
     Hidden,
+    /// Steam games of the account that are not installed (the other filters leave them out)
+    NotInstalled,
 }
 
 impl LibraryFilter {
@@ -186,7 +195,8 @@ impl LibraryFilter {
         match self {
             Self::All => Self::Games,
             Self::Games => Self::Apps,
-            Self::Apps => Self::Hidden,
+            Self::Apps => Self::NotInstalled,
+            Self::NotInstalled => Self::Hidden,
             Self::Hidden => Self::All,
         }
     }
@@ -197,15 +207,18 @@ impl LibraryFilter {
             Self::Games => tr("Games"),
             Self::Apps => tr("Apps"),
             Self::Hidden => tr("Hidden"),
+            Self::NotInstalled => tr("Not installed"),
         }
     }
 
     fn matches(self, entry: &AppEntry, collection: &Collection) -> bool {
         let hidden = collection.is_hidden(&entry.id);
+        let installed = entry.installed();
         match self {
-            Self::All => !hidden,
-            Self::Games => !hidden && entry.kind == AppKind::Game,
-            Self::Apps => !hidden && entry.kind == AppKind::App,
+            Self::All => !hidden && installed,
+            Self::Games => !hidden && installed && entry.kind == AppKind::Game,
+            Self::Apps => !hidden && installed && entry.kind == AppKind::App,
+            Self::NotInstalled => !hidden && !installed,
             Self::Hidden => hidden,
         }
     }
@@ -368,8 +381,20 @@ mod tests {
         assert_eq!(library_view(&apps, LibraryFilter::Games, LibrarySort::Alphabetical, &none), [1, 0]);
         assert_eq!(library_view(&apps, LibraryFilter::Apps, LibrarySort::Alphabetical, &none), [3, 2]);
         assert_eq!(library_view(&apps, LibraryFilter::Hidden, LibrarySort::Recent, &none), Vec::<usize>::new());
-        assert_eq!(LibraryFilter::Apps.next(), LibraryFilter::Hidden);
+        assert_eq!(LibraryFilter::Apps.next(), LibraryFilter::NotInstalled);
+        assert_eq!(LibraryFilter::NotInstalled.next(), LibraryFilter::Hidden);
         assert_eq!(LibraryFilter::Hidden.next(), LibraryFilter::All);
+    }
+
+    #[test]
+    fn games_to_install_have_their_own_filter_and_stay_out_of_home() {
+        let mut apps = dummy_library(3);
+        apps[1].launch = Launch::SteamInstall(400);
+        let none = Collection::default();
+        assert_eq!(library_view(&apps, LibraryFilter::All, LibrarySort::Recent, &none), [0, 2]);
+        assert_eq!(library_view(&apps, LibraryFilter::Games, LibrarySort::Recent, &none), [0, 2]);
+        assert_eq!(library_view(&apps, LibraryFilter::NotInstalled, LibrarySort::Recent, &none), [1]);
+        assert_eq!(crate::home_view(&apps, &none, 10), [0, 2]);
     }
 
     #[test]

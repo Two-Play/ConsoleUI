@@ -6,6 +6,8 @@
 //!   `pw-cat --raw` process in small chunks; it fades in and out over [`FADE`].
 //! - My music: `pw-cat` plays the files of the music folder one after another (shuffled); it is
 //!   paused with `SIGSTOP` and resumed with `SIGCONT`.
+//! - Game themes: `ffmpeg` decodes the focused game's theme (from the cache, see `themes.rs`) and
+//!   it goes to `pw-cat --raw` like the ambient loop, so it fades in, out and over to the next.
 
 use std::io::Write;
 use std::path::PathBuf;
@@ -23,11 +25,15 @@ const FADE: Duration = Duration::from_millis(1500);
 const VOLUME: f32 = 0.7;
 /// Frames written per chunk; the pipe and `pw-cat` buffer a few of them.
 const CHUNK: usize = 2400;
+/// Fade of a game's theme: shorter than the ambient one, the focus moves on quickly
+const THEME_FADE: Duration = Duration::from_millis(900);
 
 enum Control {
     Choice(MusicChoice),
     Track(Option<String>),
     Active(bool),
+    /// The theme of the focused game, with "Game themes"
+    Theme(Option<PathBuf>),
 }
 
 pub struct Music {
@@ -35,13 +41,14 @@ pub struct Music {
     choice: MusicChoice,
     track: Option<String>,
     active: bool,
+    theme: Option<PathBuf>,
 }
 
 impl Music {
     pub fn start() -> Self {
         let (sender, receiver) = mpsc::channel();
         std::thread::spawn(move || run(receiver));
-        Self { sender, choice: MusicChoice::Off, track: None, active: false }
+        Self { sender, choice: MusicChoice::Off, track: None, active: false, theme: None }
     }
 
     /// What should play (`track`: the one file of the music folder to repeat, else all shuffled),
@@ -60,6 +67,14 @@ impl Music {
             let _ = self.sender.send(Control::Active(active));
         }
     }
+
+    /// The theme to play with "Game themes"; `None` fades the current one out.
+    pub fn set_theme(&mut self, theme: Option<PathBuf>) {
+        if theme != self.theme {
+            self.theme = theme.clone();
+            let _ = self.sender.send(Control::Theme(theme));
+        }
+    }
 }
 
 fn run(receiver: Receiver<Control>) {
@@ -68,9 +83,11 @@ fn run(receiver: Receiver<Control>) {
     let mut active = false;
     let mut ambient: Option<Ambient> = None;
     let mut folder: Option<Folder> = None;
+    let mut theme_file: Option<PathBuf> = None;
+    let mut theme: Option<Theme> = None;
     loop {
         // Writing the ambient loop paces itself on the pipe; otherwise wait for news.
-        let writing = ambient.as_ref().is_some_and(|a| active || a.gain > 0.0);
+        let writing = ambient.as_ref().is_some_and(|a| active || a.gain > 0.0) || theme.is_some();
         let control = if writing {
             match receiver.try_recv() {
                 Ok(control) => Some(control),
@@ -92,7 +109,11 @@ fn run(receiver: Receiver<Control>) {
                 folder = None;
             }
             Some(Control::Active(new)) => active = new,
+            Some(Control::Theme(new)) => theme_file = new,
             None => {}
+        }
+        if choice != MusicChoice::GameThemes {
+            theme = None;
         }
 
         if choice != MusicChoice::Ambient {
@@ -126,6 +147,25 @@ fn run(receiver: Receiver<Control>) {
                 }
                 if let Some(player) = &mut folder {
                     player.update(active);
+                }
+            }
+            MusicChoice::GameThemes => {
+                let wanted = theme_file.as_ref().filter(|_| active);
+                if let Some(player) = &mut theme {
+                    // Another game: this one fades out first, then the next one starts
+                    let keep = wanted == Some(&player.file);
+                    if !player.write_chunk(keep) || (!keep && player.gain == 0.0) {
+                        theme = None;
+                    }
+                }
+                if theme.is_none()
+                    && let Some(file) = wanted
+                {
+                    theme = Theme::start(file);
+                    if theme.is_none() {
+                        // Unplayable: do not try it again on every turn
+                        theme_file = None;
+                    }
                 }
             }
         }
@@ -182,6 +222,96 @@ impl Drop for Ambient {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
+    }
+}
+
+/// A game's theme: `ffmpeg` decodes it to raw PCM, on repeat, and it goes to `pw-cat --raw`
+struct Theme {
+    file: PathBuf,
+    player: Child,
+    stdin: ChildStdin,
+    decoder: Child,
+    gain: f32,
+}
+
+impl Theme {
+    fn start(file: &std::path::Path) -> Option<Self> {
+        let rate = SAMPLE_RATE.to_string();
+        let mut player = Command::new("pw-cat")
+            .args(["--playback", "--raw", "--format", "s16", "--rate", &rate, "--channels", "2"])
+            .args(["--latency", "100ms", "--media-role", "Music", "-"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|err| eprintln!("Music not available (pw-cat): {err}"))
+            .ok()?;
+        let stdin = player.stdin.take()?;
+        let decoder = match decode(file) {
+            Ok(decoder) => decoder,
+            Err(err) => {
+                eprintln!("Theme music needs ffmpeg: {err}");
+                let _ = player.kill();
+                let _ = player.wait();
+                return None;
+            }
+        };
+        Some(Self { file: file.to_path_buf(), player, stdin, decoder, gain: 0.0 })
+    }
+
+    /// Writes the next chunk while fading towards `on`; false if `pw-cat` is gone.
+    fn write_chunk(&mut self, on: bool) -> bool {
+        use std::io::Read;
+        let mut pcm = vec![0u8; CHUNK * 4];
+        let mut filled = 0;
+        while filled < pcm.len() {
+            let read = self.decoder.stdout.as_mut().map_or(Ok(0), |out| out.read(&mut pcm[filled..]));
+            match read {
+                Ok(0) | Err(_) => {
+                    // The end: again from the start (the rest of this chunk stays silent)
+                    let _ = self.decoder.kill();
+                    let _ = self.decoder.wait();
+                    match decode(&self.file) {
+                        Ok(decoder) => self.decoder = decoder,
+                        Err(_) => return false,
+                    }
+                    break;
+                }
+                Ok(count) => filled += count,
+            }
+        }
+        let step = 1.0 / (THEME_FADE.as_secs_f32() * SAMPLE_RATE as f32);
+        let mut bytes = Vec::with_capacity(pcm.len());
+        for frame in pcm.as_chunks::<4>().0 {
+            self.gain = if on { (self.gain + step).min(1.0) } else { (self.gain - step).max(0.0) };
+            let gain = (self.gain * std::f32::consts::FRAC_PI_2).sin() * VOLUME;
+            for sample in frame.as_chunks::<2>().0 {
+                let value = (i16::from_le_bytes([sample[0], sample[1]]) as f32 * gain) as i16;
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        self.stdin.write_all(&bytes).and_then(|()| self.stdin.flush()).is_ok()
+    }
+}
+
+fn decode(file: &std::path::Path) -> std::io::Result<Child> {
+    let rate = SAMPLE_RATE.to_string();
+    Command::new("ffmpeg")
+        .args(["-v", "quiet", "-i"])
+        .arg(file)
+        .args(["-f", "s16le", "-ar", &rate, "-ac", "2", "-"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+}
+
+impl Drop for Theme {
+    fn drop(&mut self) {
+        for child in [&mut self.decoder, &mut self.player] {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
     }
 }
 

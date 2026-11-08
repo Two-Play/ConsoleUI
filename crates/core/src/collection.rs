@@ -88,8 +88,11 @@ impl Collection {
 pub fn home_view(entries: &[AppEntry], collection: &Collection, count: usize) -> Vec<usize> {
     let mut view: Vec<usize> =
         collection.pinned.iter().filter_map(|id| entries.iter().position(|e| &e.id == id)).collect();
-    let rest =
-        (0..entries.len()).filter(|&i| !collection.is_pinned(&entries[i].id) && !collection.is_hidden(&entries[i].id));
+    // A game that is not installed is in the library, not among the recent ones
+    let rest = (0..entries.len()).filter(|&i| {
+        let entry = &entries[i];
+        !collection.is_pinned(&entry.id) && !collection.is_hidden(&entry.id) && entry.installed()
+    });
     let free = count.saturating_sub(view.len());
     view.extend(rest.take(free));
     view

@@ -31,6 +31,7 @@ fn tile(title: &str, monogram: &str, accent: Color) -> AppTile {
         accent,
         running: monogram == "M",
         pinned: monogram == "B",
+        not_installed: monogram == "C",
     }
 }
 
