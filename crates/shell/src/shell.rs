@@ -22,7 +22,9 @@ use consoleui_core::ownership::{self, FIRST_DESKTOP_APP_ID, Owner, SHELL_APP_ID}
 use consoleui_core::placement::KeyboardPlacement;
 use consoleui_core::profile_picker::{PickerOutcome, ProfilePicker};
 use consoleui_core::profiles::{self, ProfilePaths, Profiles};
-use consoleui_core::protocol::{BlurRegion, CompositorMessage, Rect, ShellMessage, Transition, WindowRole};
+use consoleui_core::protocol::{
+    BlurRegion, CompositorMessage, DisplayInfo, Rect, ShellMessage, Transition, WindowRole,
+};
 use consoleui_core::running::{MIN_HOLD, Phase, RunningApp, STEAM_HELP_AFTER};
 use consoleui_core::settings::{BackgroundChoice, GlyphChoice, Setting, Settings};
 use consoleui_core::sound::Sound;
@@ -1074,6 +1076,16 @@ impl Shell {
                         action != Action::Left,
                     );
                 }
+                if setting == Setting::Display {
+                    let displays = self.compositor.as_ref().map(Compositor::displays).unwrap_or_default();
+                    let names: Vec<String> = displays.iter().map(|display| display.name.clone()).collect();
+                    self.settings.display = consoleui_core::settings::cycle_display(
+                        &names,
+                        self.settings.display.as_deref(),
+                        action != Action::Left,
+                    );
+                    self.send_output_settings();
+                }
                 if setting == Setting::Resolution {
                     let sizes = self.compositor.as_ref().map(Compositor::modes).unwrap_or_default();
                     self.settings.resolution = consoleui_core::settings::cycle_resolution(
@@ -1163,7 +1175,8 @@ impl Shell {
     fn settings_list(&self) -> Vec<Setting> {
         let modes = self.compositor.as_ref().is_some_and(|compositor| !compositor.modes().is_empty());
         let vrr = self.compositor.as_ref().is_some_and(Compositor::vrr);
-        self.settings.rows(self.compositor.is_some(), modes, vrr)
+        let displays = self.compositor.as_ref().is_some_and(|compositor| compositor.displays().len() > 1);
+        self.settings.rows(self.compositor.is_some(), modes, vrr, displays)
     }
 
     /// Names of the files in the music folder
@@ -1342,11 +1355,15 @@ impl Shell {
         }
     }
 
-    /// Tells our compositor the resolution (`None`: the monitor's preferred mode) and whether to use
+    /// Tells our compositor the monitor and resolution (`None`: automatic) and whether to use
     /// variable refresh rate.
     /// Waits for the output's modes, which also come after a new monitor was plugged in.
     fn send_output_settings(&mut self) {
         let (size, enabled) = (self.settings.resolution, self.settings.vrr);
+        let name = self.settings.display.clone();
+        if let Some(compositor) = self.compositor.as_mut().filter(|compositor| !compositor.displays().is_empty()) {
+            compositor.send(&ShellMessage::Display { name });
+        }
         if let Some(compositor) = self.compositor.as_mut().filter(|compositor| !compositor.modes().is_empty()) {
             compositor.send(&ShellMessage::Resolution { size });
             compositor.send(&ShellMessage::Vrr { enabled });
@@ -1372,6 +1389,21 @@ impl Shell {
                         Some(keymap) => trf("Automatic: {}", &[&keymap]).into(),
                         None => self.settings.value_label(setting).into(),
                     },
+                    Setting::Display => {
+                        let displays = self.compositor.as_ref().map(Compositor::displays).unwrap_or_default();
+                        let label = |display: &DisplayInfo| match display.description.as_str() {
+                            "" => display.name.clone(),
+                            description => format!("{description} ({})", display.name),
+                        };
+                        let chosen = self.settings.display.as_deref();
+                        match chosen.and_then(|name| displays.iter().find(|display| display.name == name)) {
+                            Some(display) => label(display).into(),
+                            None => match displays.iter().find(|display| display.active) {
+                                Some(display) => trf("Automatic: {}", &[&label(display)]).into(),
+                                None => tr("Automatic").into(),
+                            },
+                        }
+                    }
                     Setting::Resolution => match (self.settings.resolution, output) {
                         (Some(size), _) => size_label(size).into(),
                         (None, Some(size)) => trf("Automatic: {}", &[&size_label(size)]).into(),
@@ -2591,7 +2623,7 @@ impl Shell {
                 // The keyboard's Guide key, reserved by the compositor (Story 7.5)
                 CompositorMessage::Guide => guide = true,
                 CompositorMessage::Keymap { .. } | CompositorMessage::Output { .. } => rows_changed = true,
-                CompositorMessage::Modes { .. } => {
+                CompositorMessage::Modes { .. } | CompositorMessage::Displays { .. } => {
                     rows_changed = true;
                     modes_changed = true;
                 }

@@ -12,7 +12,7 @@ use std::io::{self, Read, Write};
 use std::os::unix::net::UnixStream;
 
 use consoleui_core::protocol::{
-    self, BlurRegion, CompositorMessage, LineReader, ShellMessage, Target, Transition, WindowRole,
+    self, BlurRegion, CompositorMessage, DisplayInfo, LineReader, ShellMessage, Target, Transition, WindowRole,
 };
 
 /// Title of `OverlayWindow` (`ui/overlay.slint`); the compositor recognizes the window by it.
@@ -35,6 +35,8 @@ pub struct Compositor {
     modes: Vec<(u32, u32)>,
     /// The monitor can do variable refresh rate
     vrr: bool,
+    /// Connected monitors; empty when nested
+    displays: Vec<DisplayInfo>,
     /// Keymap the compositor reports for the seat keyboard, e.g. `de (nodeadkeys)`
     keymap: Option<String>,
     /// Blur regions last sent per window role (Story 7.13)
@@ -65,6 +67,7 @@ impl Compositor {
             overlay: false,
             features: Vec::new(),
             modes: Vec::new(),
+            displays: Vec::new(),
             vrr: false,
             keymap: None,
             blur: Vec::new(),
@@ -156,6 +159,10 @@ impl Compositor {
         &self.modes
     }
 
+    pub fn displays(&self) -> &[DisplayInfo] {
+        &self.displays
+    }
+
     pub fn vrr(&self) -> bool {
         self.vrr
     }
@@ -181,6 +188,7 @@ impl Compositor {
         while let Some(message) = self.reader.next_message::<CompositorMessage>() {
             match &message {
                 CompositorMessage::Output { width, height } => self.output = Some((*width, *height)),
+                CompositorMessage::Displays { displays } => self.displays = displays.clone(),
                 CompositorMessage::Modes { sizes, vrr } => {
                     self.modes = sizes.clone();
                     self.vrr = *vrr;

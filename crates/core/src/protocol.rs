@@ -113,6 +113,19 @@ pub struct WindowInfo {
     pub preview: Option<String>,
 }
 
+/// A connected monitor (Story 7.11).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DisplayInfo {
+    /// The connector, e.g. `HDMI-A-1`
+    pub name: String,
+    /// Maker and model from the EDID, e.g. "Dell U2720Q"; empty if it does not say
+    #[serde(default)]
+    pub description: String,
+    /// It shows the console now
+    #[serde(default)]
+    pub active: bool,
+}
+
 /// Shell → compositor
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type")]
@@ -179,6 +192,13 @@ pub enum ShellMessage {
         #[serde(default)]
         size: Option<(u32, u32)>,
     },
+    /// The monitor from the settings row "Screen" (Story 7.11), `None` for the automatic choice.
+    /// The shell sends it after [`CompositorMessage::Displays`] and on every change; a monitor
+    /// that is not connected is taken as soon as it is plugged in.
+    Display {
+        #[serde(default)]
+        name: Option<String>,
+    },
     /// The gamepad acts as a mouse from now on, or not any more (with [`FEATURE_VIRTUAL_POINTER`]);
     /// at the start the pointer goes to the middle of the screen.
     PointerMode { active: bool },
@@ -235,6 +255,8 @@ pub enum CompositorMessage {
         #[serde(default)]
         vrr: bool,
     },
+    /// The connected monitors (sent on connect and when they change; never when nested).
+    Displays { displays: Vec<DisplayInfo> },
     /// Result of [`ShellMessage::Screenshot`]
     ScreenshotDone {
         path: String,

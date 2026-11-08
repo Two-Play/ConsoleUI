@@ -220,7 +220,8 @@ Cargo workspace (edition 2024, `default-members` = the shell):
   first window content as its first frame, so the splash goes straight to the shell's identical boot screen.
   `drm.rs` also sends clients dmabuf feedback with a scanout tranche (Story 7.8; the log says `direct scanout on/off`),
   turns VRR on while `Policy::wants_vrr` holds and the shell's setting allows it (Story 7.9; `ShellMessage::Vrr`, then a
-  commit goes out at once instead of at the next timer) and moves to a preferred monitor when it is plugged in (Story 7.11).
+  commit goes out at once instead of at the next timer) and moves to a preferred monitor when it is plugged in (Story 7.11; the shell's "Screen" row chooses it with
+  `ShellMessage::Display`, `drm.rs` lists the connected ones with `CompositorMessage::Displays`).
   `modes.rs` is the Smithay-free choice of the output mode for the "Resolution" setting (`ShellMessage::Resolution`;
   `drm.rs` reports the sizes with `CompositorMessage::Modes`, so the row exists only on a real display).
   `policy.rs` is the Smithay-free, unit-tested window policy (owner shell/app/unknown, front, stacking,

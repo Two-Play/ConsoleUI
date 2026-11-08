@@ -1306,3 +1306,9 @@ msgstr "Videos"
 
 msgid "{}: pause, left and right: seek, {}: stop"
 msgstr "{}: Pause, links und rechts: spulen, {}: Stopp"
+
+msgid "Screen"
+msgstr "Bildschirm"
+
+msgid "Which connected screen shows the console"
+msgstr "Welcher angeschlossene Bildschirm die Konsole zeigt"

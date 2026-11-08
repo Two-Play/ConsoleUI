@@ -163,6 +163,8 @@ pub struct State {
     pub blur: bool,
     /// The monitor the DRM backend should use (`--output`, Story 7.11)
     pub preferred_output: Option<String>,
+    /// `--output` or `CONSOLEUI_OUTPUT`: the choice when the shell's "Screen" row is automatic
+    pub cli_output: Option<String>,
     pub control: Control,
     pub shell: Option<ShellProcess>,
     pub screenshots: Vec<ScreenshotRequest>,
@@ -301,6 +303,7 @@ impl State {
             blur_cache: BlurCache::default(),
             blur: true,
             preferred_output: None,
+            cli_output: None,
             control,
             shell: None,
             screenshots: Vec::new(),
@@ -613,6 +616,10 @@ impl State {
             }
             ShellMessage::Resolution { size } => {
                 self.set_output_resolution(size);
+                Vec::new()
+            }
+            ShellMessage::Display { name } => {
+                self.set_display(name);
                 Vec::new()
             }
             ShellMessage::PointerMode { active } => {

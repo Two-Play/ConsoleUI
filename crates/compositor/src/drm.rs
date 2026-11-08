@@ -47,7 +47,7 @@ use smithay_drm_extras::display_info;
 use smithay_drm_extras::drm_scanner::{DrmScanEvent, DrmScanner};
 use tracing::{error, info, warn};
 
-use consoleui_core::protocol::CompositorMessage;
+use consoleui_core::protocol::{CompositorMessage, DisplayInfo};
 
 use crate::backend::Backend;
 use crate::modes::{self, ModeInfo};
@@ -181,6 +181,7 @@ pub fn run(options: &Options) -> Result<i32, Box<dyn std::error::Error>> {
     };
     let mut state = State::new(display, event_loop.handle(), event_loop.get_signal(), Backend::Drm(Box::new(data)))?;
     state.preferred_output = options.output.clone();
+    state.cli_output = options.output.clone();
 
     for (device_id, path) in udev.device_list() {
         if state.drm().is_some_and(|d| d.device.is_none() && d.gpu_path == path)
@@ -401,6 +402,26 @@ impl State {
         if !lost && let Some(connector) = changed {
             self.drm_connector_modes_changed(&connector);
         }
+        self.drm_choose_output(plugged);
+        self.announce_displays();
+    }
+
+    /// The "Screen" row of the shell (Story 7.11): this monitor from now on, also when it is
+    /// plugged in later; `None` goes back to `--output` and the automatic choice.
+    pub fn set_display(&mut self, name: Option<String>) {
+        let preferred = name.or_else(|| self.cli_output.clone());
+        if preferred == self.preferred_output {
+            return;
+        }
+        info!("preferred output: {}", preferred.as_deref().unwrap_or("automatic"));
+        self.preferred_output = preferred;
+        self.drm_choose_output(true);
+        self.announce_displays();
+    }
+
+    /// Takes the monitor `pick_output` wants. One in use stays unless `switch` (a monitor was
+    /// plugged in, or the choice changed).
+    fn drm_choose_output(&mut self, switch: bool) {
         let preferred = self.preferred_output.clone();
         let Some(gpu) = self.drm().and_then(|d| d.device.as_mut()) else { return };
         let candidates: Vec<_> = gpu.scanner.crtcs().map(|(info, crtc)| (info.clone(), crtc)).collect();
@@ -410,13 +431,13 @@ impl State {
         else {
             return;
         };
-        // A monitor we prefer was plugged in while another one is in use (Story 7.11)
+        // A monitor we prefer was plugged in or chosen while another one is in use (Story 7.11)
         let current = gpu
             .surface
             .as_ref()
             .map(|surface| surface.connector)
             .or_else(|| gpu.pending.as_ref().map(|pending| pending.connector.handle()));
-        if plugged && current.is_some_and(|current| current != connector.handle()) {
+        if switch && current.is_some_and(|current| current != connector.handle()) {
             info!("switching to the output {}", connector_name(&connector));
             self.drop_drm_surface();
         } else if current.is_some() {
@@ -509,6 +530,30 @@ impl State {
             self.loop_handle.remove(token);
         }
         self.schedule_drm_render(Duration::ZERO);
+    }
+
+    /// Tells the shell which monitors are connected, for its "Screen" row.
+    fn announce_displays(&mut self) {
+        let Some(gpu) = self.drm().and_then(|d| d.device.as_ref()) else { return };
+        let current = gpu
+            .surface
+            .as_ref()
+            .map(|surface| surface.connector)
+            .or_else(|| gpu.pending.as_ref().map(|pending| pending.connector.handle()));
+        let device = gpu.manager.device();
+        let displays = gpu
+            .scanner
+            .crtcs()
+            .map(|(info, _)| {
+                let edid = display_info::for_connector(device, info.handle());
+                let parts = edid.map(|edid| [edid.make(), edid.model()]).unwrap_or_default();
+                let description = parts.into_iter().flatten().collect::<Vec<_>>().join(" ");
+                DisplayInfo { name: connector_name(info), description, active: Some(info.handle()) == current }
+            })
+            .collect();
+        let message = CompositorMessage::Displays { displays };
+        self.control.set_greeting(message.clone());
+        self.control.broadcast(&message);
     }
 
     fn announce_modes(&mut self) {

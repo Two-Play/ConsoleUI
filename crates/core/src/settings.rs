@@ -152,6 +152,9 @@ pub struct Settings {
     /// Layout of the physical keyboard in our compositor (the on-screen keyboard follows the
     /// language instead)
     pub keyboard_layout: KeyboardLayout,
+    /// The monitor in our compositor (a connector name such as `HDMI-A-1`); `None` is the
+    /// automatic choice
+    pub display: Option<String>,
     /// Output size in our compositor; `None` is the monitor's preferred mode
     pub resolution: Option<(u32, u32)>,
     /// Variable refresh rate while a game is in front, in our compositor
@@ -174,6 +177,7 @@ impl Default for Settings {
             glyphs: GlyphChoice::default(),
             language: LanguageChoice::default(),
             keyboard_layout: KeyboardLayout::default(),
+            display: None,
             resolution: None,
             vrr: false,
         }
@@ -205,6 +209,8 @@ pub enum Setting {
     Language,
     /// Only under our compositor, which applies it to the seat keyboard
     KeyboardLayout,
+    /// Only with several monitors under our compositor, which switches to it (Story 7.11)
+    Display,
     /// Only on a real display under our compositor, which switches the mode (Story 5.5)
     Resolution,
     /// Only when the monitor can do it under our compositor (Story 7.9)
@@ -218,7 +224,7 @@ pub enum Setting {
 }
 
 impl Setting {
-    pub const ALL: [Setting; 18] = [
+    pub const ALL: [Setting; 19] = [
         Self::Accent,
         Self::Animations,
         Self::Background,
@@ -232,6 +238,7 @@ impl Setting {
         Self::Glyphs,
         Self::Language,
         Self::KeyboardLayout,
+        Self::Display,
         Self::Resolution,
         Self::Vrr,
         Self::Wifi,
@@ -259,6 +266,7 @@ impl Setting {
             Self::Glyphs => tr("Button symbols"),
             Self::Language => tr("Language"),
             Self::KeyboardLayout => tr("Keyboard layout"),
+            Self::Display => tr("Screen"),
             Self::Resolution => tr("Resolution"),
             Self::Vrr => tr("Variable refresh rate"),
             Self::Wifi => tr("Wi-Fi"),
@@ -282,6 +290,7 @@ impl Setting {
             Self::Glyphs => tr("Symbols in the button hints"),
             Self::Language => tr("Language of the interface"),
             Self::KeyboardLayout => tr("Layout of the connected keyboard"),
+            Self::Display => tr("Which connected screen shows the console"),
             Self::Resolution => tr("Output resolution of the screen"),
             Self::Vrr => tr("The screen follows the frame rate of the game (VRR)"),
             Self::Wifi => tr("Show and join networks"),
@@ -308,17 +317,27 @@ pub fn cycle_resolution(sizes: &[(u32, u32)], current: Option<(u32, u32)>, forwa
     cycle(&all, current, forward)
 }
 
+/// Next or previous choice of the "Screen" row: automatic (`None`), then the connected monitors.
+/// A saved monitor that is not connected right now counts as automatic.
+pub fn cycle_display(names: &[String], current: Option<&str>, forward: bool) -> Option<String> {
+    let all: Vec<Option<&str>> = std::iter::once(None).chain(names.iter().map(|name| Some(name.as_str()))).collect();
+    let current = current.filter(|current| names.iter().any(|name| name == current));
+    cycle(&all, current, forward).map(str::to_string)
+}
+
 impl Settings {
     /// The rows of the settings page: the keyboard layout only where it has an effect (in our
     /// compositor; gamescope and the desktop use the layout of their own session), the resolution
     /// only when the compositor reports modes, variable refresh rate only when the monitor can do it,
-    /// the animation style unless the background is classic, the track only for "My music".
-    pub fn rows(&self, keyboard_layout: bool, resolution: bool, vrr: bool) -> Vec<Setting> {
+    /// the animation style unless the background is classic, the track only for "My music", the
+    /// screen only when there is more than one.
+    pub fn rows(&self, keyboard_layout: bool, resolution: bool, vrr: bool, display: bool) -> Vec<Setting> {
         Setting::ALL
             .into_iter()
             .filter(|&row| match row {
                 Setting::KeyboardLayout => keyboard_layout,
                 Setting::Resolution => resolution,
+                Setting::Display => display,
                 Setting::Vrr => vrr,
                 Setting::AnimationStyle | Setting::AnimationColors => self.background != BackgroundChoice::Classic,
                 Setting::MusicTrack => self.music == MusicChoice::Folder,
@@ -365,7 +384,7 @@ impl Settings {
             Setting::Sounds => on_off(self.sounds),
             Setting::Music => self.music.label(),
             // Names a file or a mode: the shell has the list
-            Setting::MusicTrack | Setting::Resolution => "",
+            Setting::MusicTrack | Setting::Resolution | Setting::Display => "",
             Setting::Vrr => on_off(self.vrr),
             Setting::Glyphs => self.glyphs.label(),
             Setting::Language => self.language.label(),
@@ -393,8 +412,13 @@ impl Settings {
                 self.keyboard_layout = cycle(&KeyboardLayout::ALL, self.keyboard_layout, forward);
             }
             // The shell steps through the music folder (`music::cycle_track`) and the output's
-            // modes (`cycle_resolution`)
-            Setting::MusicTrack | Setting::Resolution | Setting::Wifi | Setting::Bluetooth | Setting::Updates => {}
+            // modes (`cycle_resolution`) and monitors (`cycle_display`)
+            Setting::MusicTrack
+            | Setting::Resolution
+            | Setting::Display
+            | Setting::Wifi
+            | Setting::Bluetooth
+            | Setting::Updates => {}
         }
     }
 }
@@ -441,12 +465,25 @@ mod tests {
     }
 
     #[test]
+    fn display_row_and_cycle() {
+        let settings = Settings::default();
+        assert!(!settings.rows(true, true, true, false).contains(&Setting::Display));
+        assert!(settings.rows(true, true, true, true).contains(&Setting::Display));
+        let names = ["eDP-1".to_string(), "HDMI-A-1".to_string()];
+        assert_eq!(cycle_display(&names, None, true).as_deref(), Some("eDP-1"));
+        assert_eq!(cycle_display(&names, Some("HDMI-A-1"), true), None);
+        assert_eq!(cycle_display(&names, None, false).as_deref(), Some("HDMI-A-1"));
+        // Unplugged: the next step starts from automatic
+        assert_eq!(cycle_display(&names, Some("DP-2"), true).as_deref(), Some("eDP-1"));
+    }
+
+    #[test]
     fn resolution_row_and_cycle() {
         let settings = Settings::default();
-        assert!(!settings.rows(true, false, false).contains(&Setting::Resolution));
-        assert!(!settings.rows(true, true, false).contains(&Setting::Vrr));
-        assert!(settings.rows(true, true, true).contains(&Setting::Vrr));
-        assert!(settings.rows(false, true, false).contains(&Setting::Resolution));
+        assert!(!settings.rows(true, false, false, false).contains(&Setting::Resolution));
+        assert!(!settings.rows(true, true, false, false).contains(&Setting::Vrr));
+        assert!(settings.rows(true, true, true, false).contains(&Setting::Vrr));
+        assert!(settings.rows(false, true, false, false).contains(&Setting::Resolution));
         let sizes = [(1920, 1080), (1280, 720)];
         assert_eq!(cycle_resolution(&sizes, None, true), Some((1920, 1080)));
         assert_eq!(cycle_resolution(&sizes, Some((1280, 720)), true), None);
@@ -458,20 +495,20 @@ mod tests {
     #[test]
     fn keyboard_layout_row_only_in_our_compositor() {
         let settings = Settings::default();
-        assert!(!settings.rows(false, false, false).contains(&Setting::KeyboardLayout));
-        assert_eq!(settings.rows(false, false, false).len(), Setting::ALL.len() - 4);
-        assert!(settings.rows(true, false, false).contains(&Setting::KeyboardLayout));
+        assert!(!settings.rows(false, false, false, false).contains(&Setting::KeyboardLayout));
+        assert_eq!(settings.rows(false, false, false, false).len(), Setting::ALL.len() - 5);
+        assert!(settings.rows(true, false, false, false).contains(&Setting::KeyboardLayout));
     }
 
     #[test]
     fn track_and_style_rows_depend_on_their_parent() {
         let mut settings = Settings::default();
-        assert!(!settings.rows(false, false, false).contains(&Setting::MusicTrack));
+        assert!(!settings.rows(false, false, false, false).contains(&Setting::MusicTrack));
         settings.music = MusicChoice::Folder;
-        assert!(settings.rows(false, false, false).contains(&Setting::MusicTrack));
-        assert!(settings.rows(false, false, false).contains(&Setting::AnimationStyle));
+        assert!(settings.rows(false, false, false, false).contains(&Setting::MusicTrack));
+        assert!(settings.rows(false, false, false, false).contains(&Setting::AnimationStyle));
         settings.background = BackgroundChoice::Classic;
-        assert!(!settings.rows(false, false, false).contains(&Setting::AnimationStyle));
+        assert!(!settings.rows(false, false, false, false).contains(&Setting::AnimationStyle));
         settings.change(Setting::AnimationStyle, true);
         assert_eq!(settings.shader, Style::Plasma);
         settings.change(Setting::AnimationColors, false);
