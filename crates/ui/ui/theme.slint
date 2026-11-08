@@ -31,6 +31,8 @@ export global Theme {
     out property <length> radius-panel: 24px;
 
     in-out property <duration> focus-duration: 220ms;
+    // A breathing halo around the selection (setting "Focus glow"); off: a calm outline
+    in-out property <bool> focus-glow: false;
     in-out property <duration> background-duration: 500ms;
     in-out property <duration> pulse-duration: 120ms;
     in-out property <duration> launch-duration: 450ms;

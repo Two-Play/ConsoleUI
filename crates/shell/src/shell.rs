@@ -1193,6 +1193,7 @@ impl Shell {
         let apply_theme = |theme: Theme| {
             theme.set_accent(accent);
             theme.set_focus_duration(durations[0]);
+            theme.set_focus_glow(self.settings.focus_glow);
             theme.set_background_duration(durations[1]);
             theme.set_pulse_duration(durations[2].max(1));
             theme.set_launch_duration(durations[3]);
@@ -1282,6 +1283,7 @@ impl Shell {
         Published {
             accent: self.settings.accent.rgb(),
             animations: self.settings.animations,
+            focus_glow: self.settings.focus_glow,
             sounds: self.settings.sounds,
             profile: self.profiles.get(&self.profile).map(|p| p.name.clone()).unwrap_or_default(),
         }

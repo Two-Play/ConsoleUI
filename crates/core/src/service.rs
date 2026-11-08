@@ -2,7 +2,7 @@
 //! read from the profile files, and from any language. The shell answers it in `src/service.rs`,
 //! the SDK reads it in `consoleui_app::session`.
 //!
-//! Properties: `AccentColor` (`#rrggbb`), `Animations`, `Sounds`, `ProfileName`.
+//! Properties: `AccentColor` (`#rrggbb`), `Animations`, `FocusGlow`, `Sounds`, `ProfileName`.
 //! Methods: `Toast(title, text)`.
 
 pub const NAME: &str = "org.consoleui.Shell1";

@@ -107,6 +107,7 @@ macro_rules! slint_bridge {
             let durations = session.durations();
             theme.set_accent(::slint::Color::from_rgb_u8(r, g, b));
             theme.set_focus_duration(durations[0]);
+            theme.set_focus_glow(session.settings.focus_glow);
             theme.set_background_duration(durations[1]);
             theme.set_pulse_duration(durations[2].max(1));
             theme.set_launch_duration(durations[3]);

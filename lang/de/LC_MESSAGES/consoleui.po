@@ -1402,3 +1402,9 @@ msgstr "Das Plugin antwortet nicht"
 
 msgid "Turn on {}?"
 msgstr "{} einschalten?"
+
+msgid "Focus glow"
+msgstr "Leuchtende Auswahl"
+
+msgid "A soft light breathes around the selection"
+msgstr "Ein sanftes Licht atmet um die Auswahl"

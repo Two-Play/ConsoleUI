@@ -14,6 +14,7 @@ use zbus::fdo::{RequestNameFlags, RequestNameReply};
 pub struct Published {
     pub accent: [u8; 3],
     pub animations: bool,
+    pub focus_glow: bool,
     pub sounds: bool,
     pub profile: String,
 }
@@ -49,6 +50,11 @@ impl Server {
     #[zbus(property)]
     fn animations(&self) -> bool {
         self.read(|p| p.animations)
+    }
+
+    #[zbus(property)]
+    fn focus_glow(&self) -> bool {
+        self.read(|p| p.focus_glow)
     }
 
     #[zbus(property)]
@@ -128,6 +134,9 @@ fn announce(connection: &Connection, published: &Mutex<Published>, changes: Rece
             }
             if now.animations != last.animations {
                 server.animations_changed(emitter).await?;
+            }
+            if now.focus_glow != last.focus_glow {
+                server.focus_glow_changed(emitter).await?;
             }
             if now.sounds != last.sounds {
                 server.sounds_changed(emitter).await?;

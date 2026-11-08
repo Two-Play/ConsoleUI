@@ -1,5 +1,7 @@
 import { KeyCap, NetRow, NetView } from "types.slint";
 import { Theme } from "@consoleui/theme.slint";
+import { FocusFill } from "@consoleui/focusfill.slint";
+import { FocusRing } from "@consoleui/focusring.slint";
 
 // Wi-Fi signal as four bars
 component SignalBars inherits Rectangle {
@@ -125,9 +127,11 @@ export component NetworkPage inherits Rectangle {
             clip: true;
 
             for row[i] in root.view.rows: card := Rectangle {
+                // Marked like the settings list: outline and a light wash, the text keeps its color
                 property <bool> is-focused: i == root.view.focused;
-                property <color> fg: self.is-focused ? Theme.base : Theme.text;
-                property <color> fg-dim: self.is-focused ? Theme.base.with-alpha(0.7) : Theme.text-dim;
+                property <color> mark: row.armed ? Theme.danger : Theme.accent;
+                property <color> fg: Theme.text;
+                property <color> fg-dim: Theme.text-dim;
                 x: root.margin;
                 y: i * root.pitch - root.scroll;
                 animate y {
@@ -137,10 +141,24 @@ export component NetworkPage inherits Rectangle {
                 width: root.card-width;
                 height: root.row-height;
                 border-radius: Theme.radius-card * root.s;
-                background: self.is-focused ? (row.armed ? Theme.danger : Theme.accent) : Theme.surface;
-                animate background { duration: Theme.focus-duration; }
+                background: Theme.surface;
                 border-width: !self.is-focused && (row.gamepad || row.armed) ? 2px : 0;
                 border-color: row.armed ? Theme.danger : Theme.accent.with-alpha(0.6);
+
+                FocusFill {
+                    width: 100%;
+                    height: 100%;
+                    border-radius: card.border-radius;
+                    focused: card.is-focused;
+                    fill: card.mark.with-alpha(0.16);
+                }
+
+                FocusRing {
+                    border-radius: card.border-radius;
+                    focused: card.is-focused;
+                    highlight: card.mark;
+                    s: root.s;
+                }
 
                 // Symbol on the left: Wi-Fi bars, controller graphic or text symbol
                 Rectangle {
@@ -158,7 +176,7 @@ export component NetworkPage inherits Rectangle {
                         width: 40px * root.s;
                         height: 40px * root.s;
                         source: @image-url("icons/gamepad.svg");
-                        colorize: card.is-focused ? Theme.base : Theme.accent;
+                        colorize: Theme.accent;
                     }
 
                     if row.bars == 0 && !row.gamepad: Text {
@@ -187,7 +205,7 @@ export component NetworkPage inherits Rectangle {
 
                     Text {
                         text: row.detail;
-                        color: row.busy && !card.is-focused ? Theme.accent : card.fg-dim;
+                        color: row.busy ? Theme.accent : card.fg-dim;
                         font-size: 17px * root.s;
                         overflow: elide;
                     }
@@ -205,13 +223,13 @@ export component NetworkPage inherits Rectangle {
                         width: badge.preferred-width + 24px * root.s;
                         height: 34px * root.s;
                         border-radius: self.height / 2;
-                        background: card.is-focused ? Theme.base.with-alpha(0.15) : Theme.accent.with-alpha(0.2);
+                        background: Theme.accent.with-alpha(0.2);
 
                         badge := Text {
                             width: 100%;
                             height: 100%;
                             text: "● " + @tr("Connected");
-                            color: card.is-focused ? Theme.base : Theme.accent;
+                            color: Theme.accent;
                             font-size: 16px * root.s;
                             font-weight: 700;
                             horizontal-alignment: center;

@@ -246,9 +246,9 @@ Cargo workspace (edition 2024, `default-members` = the shell):
   and lists the crate as dependency and build dependency. New reusable components go here, not into the
   shell; the shell's `types.slint` re-exports the shared types so Rust keeps seeing them from `main.slint`.
   `ui/focusfill.slint` (`FocusFill`) and `ui/focusring.slint` (`FocusRing`) are the focus look of list entries,
-  cards and buttons: an accent outline (`FocusRing`) with two highlights that travel around it, opposite each other
-  with long fading tails, slowly and calmly (driven by `animation-tick()` only while focused and only with
-  animations on), plus a light accent wash (`FocusFill`) that trails the focus: the outline moves at once, the wash
+  cards and buttons: an accent outline (`FocusRing`; with the setting "Focus glow", `Theme.focus-glow`, a soft halo
+  breathes around it like on a PS5, also around the tiles, driven by `animation-tick()` only then; travelling
+  highlights with tails were tried twice and dropped as too busy), plus a light accent wash (`FocusFill`) that trails the focus: the outline moves at once, the wash
   fades in with ease-out-quint after a short delay (`level`); the text keeps its color. For a strong fill give
   `FocusFill` an opaque `fill` and let the text blend with `Theme.base.mix(Theme.text, level)` (`mix` weights the
   receiver). A liquid "sloshing" fill was tried and dropped.

@@ -97,6 +97,10 @@ fn read_from_shell(settings: &mut Settings) -> zbus::Result<()> {
     settings.accent = Accent::ALL.into_iter().find(|a| Some(a.rgb()) == rgb).unwrap_or(settings.accent);
     settings.animations = shell.get_property("Animations")?;
     settings.sounds = shell.get_property("Sounds")?;
+    // Newer than the others: a shell without it keeps the profile's value
+    if let Ok(glow) = shell.get_property("FocusGlow") {
+        settings.focus_glow = glow;
+    }
     Ok(())
 }
 

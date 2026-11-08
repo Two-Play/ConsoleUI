@@ -169,6 +169,25 @@ export component Tile inherits Rectangle {
         }
     }
 
+    // With "Focus glow": a soft halo breathes around the ring, like the selection on a PS5
+    property <bool> halo: root.focused && root.ring && Theme.focus-glow;
+    property <float> breath: root.halo && Theme.focus-duration > 0ms
+        ? 0.5 + 0.5 * Math.sin(animation-tick() / 2800ms * 360deg)
+        : 0.6;
+
+    if root.halo: Rectangle {
+        for i in 4: Rectangle {
+            property <length> grow: root.ring-gap + max(2px, root.width * 0.018) + (i + 1) * max(2px, root.width * 0.016);
+            x: -self.grow;
+            y: -self.grow;
+            width: root.width + 2 * self.grow;
+            height: root.height + 2 * self.grow;
+            border-radius: root.border-radius + self.grow;
+            border-width: max(2px, root.width * 0.018);
+            border-color: Theme.accent.with-alpha((0.36 - i * 0.08) * (0.35 + 0.65 * root.breath));
+        }
+    }
+
     // Ripple after a press
     if root.ripple < 1: Rectangle {
         property <length> grow: root.width * 0.22 * root.ripple;

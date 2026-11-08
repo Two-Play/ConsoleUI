@@ -103,6 +103,7 @@ and `Sounds::follow` there.
 |---|---|---|
 | `AccentColor` | property, `s` | `#rrggbb` of the active profile |
 | `Animations`, `Sounds` | properties, `b` | The user's settings |
+| `FocusGlow` | property, `b` | The halo around the selection; `apply_theme` puts it into `Theme.focus-glow` |
 | `ProfileName` | property, `s` | Name of the active profile |
 | `Toast(title, text)` | method, `ss` | Shows a toast |
 | `RefreshLibrary()` | method | Looks for apps that were installed or removed |

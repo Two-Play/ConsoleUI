@@ -156,6 +156,8 @@ impl MusicChoice {
 pub struct Settings {
     pub accent: Accent,
     pub animations: bool,
+    /// A breathing halo around the selection, like on a PS5 (off: a calm outline)
+    pub focus_glow: bool,
     pub background: BackgroundChoice,
     /// Look of the animated background
     pub shader: Style,
@@ -191,6 +193,7 @@ impl Default for Settings {
         Self {
             accent: Accent::default(),
             animations: true,
+            focus_glow: false,
             background: BackgroundChoice::default(),
             shader: Style::default(),
             palette: Palette::default(),
@@ -215,6 +218,8 @@ impl Default for Settings {
 pub enum Setting {
     Accent,
     Animations,
+    /// The halo around the selection
+    FocusGlow,
     /// Artwork or the animated background
     Background,
     /// Look of the animated background
@@ -254,9 +259,10 @@ pub enum Setting {
 }
 
 impl Setting {
-    pub const ALL: [Setting; 21] = [
+    pub const ALL: [Setting; 22] = [
         Self::Accent,
         Self::Animations,
+        Self::FocusGlow,
         Self::Background,
         Self::AnimationStyle,
         Self::AnimationColors,
@@ -287,6 +293,7 @@ impl Setting {
         match self {
             Self::Accent => tr("Accent color"),
             Self::Animations => tr("Animations"),
+            Self::FocusGlow => tr("Focus glow"),
             Self::Background => tr("Background"),
             Self::AnimationStyle => tr("Animation style"),
             Self::AnimationColors => tr("Animation colors"),
@@ -313,6 +320,7 @@ impl Setting {
         match self {
             Self::Accent => tr("Color of selection and buttons"),
             Self::Animations => tr("Transitions and motion"),
+            Self::FocusGlow => tr("A soft light breathes around the selection"),
             Self::Background => tr("Game artwork or an animated background"),
             Self::AnimationStyle => tr("Look of the animated background"),
             Self::AnimationColors => tr("Colors of the animated background"),
@@ -425,6 +433,7 @@ impl Settings {
         match setting {
             Setting::Accent => self.accent.label(),
             Setting::Animations => on_off(self.animations),
+            Setting::FocusGlow => on_off(self.focus_glow),
             Setting::Background => self.background.label(),
             Setting::AnimationStyle => self.shader.label(),
             Setting::AnimationColors => self.palette.label(),
@@ -448,6 +457,7 @@ impl Settings {
         match setting {
             Setting::Accent => self.accent = cycle(&Accent::ALL, self.accent, forward),
             Setting::Animations => self.animations = !self.animations,
+            Setting::FocusGlow => self.focus_glow = !self.focus_glow,
             Setting::Background => self.background = cycle(&BackgroundChoice::ALL, self.background, forward),
             Setting::AnimationStyle => self.shader = cycle(&Style::ALL, self.shader, forward),
             Setting::AnimationColors => self.palette = cycle(&Palette::ALL, self.palette, forward),
