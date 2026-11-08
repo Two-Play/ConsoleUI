@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Lutris
+Comment=Games from Lutris in the library
+Comment[de]=Spiele aus Lutris in der Bibliothek
+Icon=lutris
+Exec=consoleui-plugin-lutris
+NoDisplay=true
+X-ConsoleUI-Plugin=org.consoleui.plugins.Lutris
+X-ConsoleUI-Plugin-Provides=library;

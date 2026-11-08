@@ -305,6 +305,15 @@ Cargo workspace (edition 2024, `default-members` = the shell):
   `$XDG_DATA_HOME/consoleui/media-positions`. Scripted checks: pass a scratch folder as the first argument and `MPV_HOME` with
   `ao=null` in `mpv.conf` for silence; in the VM also `vo=wlshm` (mpv's default output aborts there without a GPU) and a VP9
   video (no H.264 decoder in the guest).
+- Plugins (Epic 9, contract `docs/plugins.md`): `consoleui_core::plugins` finds them (desktop entries with
+  `X-ConsoleUI-Plugin`), turns their entries into `AppEntry`s (`plugin:<plugin>:<entry>`) and holds the panel model
+  (`PanelView`: input, values); `crates/shell/src/plugins.rs` is the host thread on the bus (starts the plugins that
+  are on, `Entries`, `Panel`, `Activate`, signals), `src/shell/plugins.rs` the glue (library merge, quick menu cards,
+  the panel in the main or overlay window with `ControlPanel` from the `ui` crate, the settings list). `crates/plugins`
+  holds the plugins that come with ConsoleUI (Lutris, power profile), on purpose without the ConsoleUI crates;
+  `--fake` changes nothing. Scripted checks: desktop entries in a scratch `XDG_DATA_HOME/applications` with absolute
+  `Exec` paths, a private bus (`dbus-run-session`); a plugin inherits the scratch `XDG_DATA_HOME` (Lutris then finds
+  no games: give it the real one in `Exec`).
 - `crates/shell` (binary `consoleui`): Slint UI plus glue.
   - `src/compositor.rs`: counterpart of `gamescope.rs`, active when `CONSOLEUI_COMPOSITOR` is set (takes
     precedence over gamescope). Sends `Hello`/`Launched`/`Exited`/`Focus`/`Overlay`/`KeyboardLayout`/`Resolution`/`SaveScreenshot`;

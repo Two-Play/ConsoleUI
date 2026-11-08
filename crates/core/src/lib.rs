@@ -26,6 +26,7 @@ pub mod notification;
 pub mod osk;
 pub mod ownership;
 pub mod placement;
+pub mod plugins;
 pub mod pointer;
 pub mod profile_picker;
 pub mod profiles;

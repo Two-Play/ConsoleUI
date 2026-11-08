@@ -3,7 +3,7 @@
 #   "ConsoleUI"                  gamescope session (session/consoleui-session)
 #   "ConsoleUI (own compositor)" Epic 7 compositor (session/consoleui-compositor-session), only
 #                                if the compositor was built
-# Build first as a normal user:  cargo build --release -p consoleui -p consoleui-store -p consoleui-files -p consoleui-media
+# Build first as a normal user:  cargo build --release -p consoleui -p consoleui-store -p consoleui-files -p consoleui-media -p consoleui-plugins
 #   and for the compositor:      dev/toolbox.sh run cargo build --release -p consoleui-compositor
 #   (or everything in the toolbox: dev/toolbox.sh run cargo build --release --workspace)
 # Then:                          sudo session/install.sh
@@ -67,5 +67,16 @@ if [ -x "$media" ]; then
     command -v mpv >/dev/null || echo "The media player needs mpv to play anything."
 else
     echo "No media player build; skipped it (cargo build --release -p consoleui-media)."
+fi
+plugins="${CONSOLEUI_PLUGINS_BUILD:-$root/target/release}"
+[ -x "$plugins/consoleui-plugin-lutris" ] || plugins="$root/target/toolbox/release"
+if [ -x "$plugins/consoleui-plugin-lutris" ]; then
+    for plugin in consoleui-plugin-lutris consoleui-plugin-power; do
+        install -Dm755 "$plugins/$plugin" "/usr/local/bin/$plugin"
+        install -Dm644 "$root/crates/plugins/data/$plugin.desktop" "/usr/share/applications/$plugin.desktop"
+    done
+    echo "Installed the plugins (turn them on in the settings)."
+else
+    echo "No plugin build; skipped them (cargo build --release -p consoleui-plugins)."
 fi
 echo "Done. Log out and pick the session on the login screen."

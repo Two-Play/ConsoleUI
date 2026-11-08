@@ -1,0 +1,177 @@
+import { Theme } from "theme.slint";
+import { ControllerStyle, Hint, PanelRow } from "types.slint";
+import { GlassPanel } from "glass.slint";
+import { HintBar } from "glyph.slint";
+import { FocusFill } from "focusfill.slint";
+import { FocusRing } from "focusring.slint";
+import { Spinner } from "spinner.slint";
+
+// A panel of controls over a dimmed backdrop: title and rows (toggles, sliders, choices, buttons,
+// info lines). The shell shows plugin panels with it (Epic 9) and the plugin list of the settings.
+// State and input live in `consoleui_core::plugins::PanelView`; Rust fills the properties.
+export component ControlPanel inherits Rectangle {
+    in property <bool> open;
+    in property <string> title;
+    in property <string> subtitle;
+    in property <[PanelRow]> rows;
+    in property <int> focused;
+    // No answer from the plugin yet
+    in property <bool> loading;
+    in property <[Hint]> hints;
+    in property <ControllerStyle> style;
+    in property <float> s: 1;
+
+    callback row-clicked(int);
+
+    property <length> pad: 40px * root.s;
+    property <length> row-height: 84px * root.s;
+    property <length> pitch: root.row-height + 10px * root.s;
+    // At most this many rows show; the list scrolls with the focus
+    property <int> visible-rows: 6;
+    property <length> list-height: max(1, min(root.rows.length, root.visible-rows)) * root.pitch;
+    property <length> scroll: max(0px, min((root.focused + 1) * root.pitch - root.list-height, root.rows.length * root.pitch - root.list-height));
+    animate scroll {
+        duration: Theme.focus-duration;
+        easing: ease-out-quart;
+    }
+
+    // Where the card is in this window, for the compositor's backdrop blur (Story 7.13)
+    out property <length> panel-x: panel.x;
+    out property <length> panel-y: panel.y;
+    out property <length> panel-width: panel.width;
+    out property <length> panel-height: panel.height;
+    out property <length> panel-radius: panel.border-radius;
+
+    Rectangle {
+        width: 100%;
+        height: 100%;
+        background: Theme.scrim;
+        opacity: root.open ? 1 : 0;
+        animate opacity { duration: Theme.page-duration; }
+    }
+
+    panel := GlassPanel {
+        opacity: root.open ? 1 : 0;
+        visible: self.opacity > 0.01;
+        animate opacity { duration: Theme.page-duration; }
+        width: 820px * root.s;
+        height: content.preferred-height;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        border-radius: Theme.radius-panel * root.s;
+
+        content := VerticalLayout {
+            padding: root.pad;
+            spacing: 18px * root.s;
+
+            VerticalLayout {
+                spacing: 4px * root.s;
+
+                Text {
+                    text: root.title;
+                    color: Theme.text;
+                    font-size: 34px * root.s;
+                    font-weight: 800;
+                    overflow: elide;
+                }
+
+                if root.subtitle != "": Text {
+                    text: root.subtitle;
+                    color: Theme.text-dim;
+                    font-size: 19px * root.s;
+                    wrap: word-wrap;
+                }
+            }
+
+            list := Rectangle {
+                height: root.loading ? 120px * root.s : root.list-height;
+                clip: true;
+
+                if root.loading: Spinner {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    size: 44px * root.s;
+                    s: root.s;
+                }
+
+                for row[i] in root.loading ? [] : root.rows: card := Rectangle {
+                    property <bool> is-focused: i == root.focused;
+                    y: i * root.pitch - root.scroll;
+                    height: root.row-height;
+                    border-radius: Theme.radius-card * root.s;
+                    background: Theme.surface;
+
+                    FocusFill {
+                        width: 100%;
+                        height: 100%;
+                        border-radius: card.border-radius;
+                        focused: card.is-focused;
+                    }
+
+                    FocusRing {
+                        border-radius: card.border-radius;
+                        focused: card.is-focused;
+                        s: root.s;
+                    }
+
+                    TouchArea {
+                        clicked => { root.row-clicked(i); }
+                    }
+
+                    VerticalLayout {
+                        x: 28px * root.s;
+                        width: parent.width * 0.55;
+                        y: (parent.height - self.height) / 2;
+                        height: self.preferred-height;
+                        spacing: 3px * root.s;
+
+                        Text {
+                            text: row.label;
+                            color: Theme.text;
+                            font-size: 23px * root.s;
+                            font-weight: 700;
+                            overflow: elide;
+                        }
+
+                        if row.detail != "": Text {
+                            text: row.detail;
+                            color: Theme.text-dim;
+                            font-size: 16px * root.s;
+                            overflow: elide;
+                        }
+                    }
+
+                    Text {
+                        x: parent.width - self.width - 28px * root.s;
+                        width: parent.width * 0.4;
+                        height: 100%;
+                        horizontal-alignment: right;
+                        vertical-alignment: center;
+                        text: row.button ? "›"
+                            : (row.adjustable && card.is-focused ? "◀  " : "") + row.value + (row.adjustable && card.is-focused ? "  ▶" : "");
+                        color: row.adjustable || row.button ? Theme.text : Theme.text-dim;
+                        font-size: 21px * root.s;
+                        font-weight: 600;
+                        overflow: elide;
+                    }
+
+                    // Sliders show where they are
+                    if row.level >= 0: Rectangle {
+                        x: 28px * root.s;
+                        y: parent.height - 10px * root.s;
+                        width: (parent.width - 56px * root.s) * row.level / 100;
+                        height: 3px * root.s;
+                        border-radius: self.height / 2;
+                        background: Theme.accent;
+                    }
+                }
+            }
+
+            HintBar {
+                hints: root.hints;
+                style: root.style;
+                s: root.s;
+            }
+        }
+    }
+}

@@ -39,6 +39,7 @@ use slint::{ComponentHandle, Image, Model, ModelRc, SharedPixelBuffer, VecModel}
 
 use crate::backdrop::{Backdrop, Look};
 mod mouse;
+mod plugins;
 mod typing;
 mod updates;
 
@@ -87,6 +88,8 @@ enum DialogTag {
     Quick(QuickAction),
     /// Install everything on the update page
     InstallUpdates,
+    /// Turn on the plugin with this ID after the note about what it can (Epic 9)
+    EnablePlugin(String),
     /// Turn on "Game themes" (here) after the note about YouTube (Story 6.12)
     GameThemes(ThemeMusic),
     Close,
@@ -214,6 +217,8 @@ pub struct Shell {
     theme_choices_path: Option<PathBuf>,
     /// Searches theme music; started the first time it is needed
     theme_fetcher: Option<crate::themes::Fetcher>,
+    /// Plugins: what is installed and on, their host thread and an open panel (Epic 9)
+    plugins: plugins::Plugins,
     /// The game the focus rests on, and since when (a theme waits until the focus settles)
     theme_focus: Option<(String, Instant)>,
     /// Hero images, decoded in the background and cached with a limit
@@ -328,7 +333,7 @@ struct Feedback {
     /// Focus and values of the game options panel
     game_options: Option<(usize, GameOptions)>,
     launching: bool,
-    focus: [usize; 8],
+    focus: [usize; 9],
     home_area: HomeArea,
     query_len: usize,
     settings: Settings,
@@ -422,6 +427,7 @@ impl Shell {
             theme_choices_path: None,
             theme_fetcher: None,
             theme_focus: None,
+            plugins: plugins::Plugins::default(),
             heroes: Heroes::new(ui),
             running: Vec::new(),
             next_app_id: FIRST_DESKTOP_APP_ID,
@@ -508,6 +514,7 @@ impl Shell {
         self.collection = self.collection_path.as_deref().map(Collection::load).unwrap_or_default();
         self.theme_choices_path = paths.as_ref().map(|p| p.theme_music.clone());
         self.theme_choices = self.theme_choices_path.as_deref().map(ThemeChoices::load).unwrap_or_default();
+        self.run_plugins(paths.as_ref().map(|p| p.plugins.clone()));
         self.game_options_path = paths.map(|p| p.game_options);
         self.game_options = self.game_options_path.as_deref().map(GameOptionsStore::load).unwrap_or_default();
         for entry in &mut self.entries {
@@ -818,7 +825,7 @@ impl Shell {
         Feedback {
             screen: self.screen,
             quick_open: self.quick.is_some(),
-            context_open: self.context.is_some() || self.game_options_panel.is_some(),
+            context_open: self.context.is_some() || self.game_options_panel.is_some() || self.plugins.panel.is_some(),
             game_options: self.game_options_panel.as_ref().map(|p| (p.focused(), p.options())),
             launching: ui.get_launching(),
             focus: [
@@ -830,6 +837,7 @@ impl Shell {
                 self.quick.as_ref().map_or(0, QuickMenu::focus_key),
                 usize::from(self.search_area == SearchArea::Results),
                 self.context.as_ref().map_or(0, ContextMenu::focused),
+                self.panel_focus(),
             ],
             home_area: self.home_area,
             query_len: self.query.len(),
@@ -942,6 +950,12 @@ impl Shell {
         }
         if self.dialog.is_some() {
             self.apply_dialog(ui, action);
+            // A panel waits under a dialog it opened
+            self.show_panel(ui);
+            return;
+        }
+        if self.plugins.panel.is_some() {
+            self.apply_panel(ui, action);
             return;
         }
         if self.quick.is_some() {
@@ -1081,6 +1095,7 @@ impl Shell {
             Action::Up => self.settings_row -= 1,
             Action::Down => self.settings_row = (self.settings_row + 1).min(rows.len() - 1),
             Action::Confirm if setting == Setting::Updates => self.open_updates(ui),
+            Action::Confirm if setting == Setting::Plugins => self.open_plugin_list(ui),
             Action::Confirm if setting.opens_page() => {
                 let page = if setting == Setting::Wifi { Page::Wifi } else { Page::Bluetooth };
                 let requests = self.network.pages.open(page);
@@ -1448,6 +1463,7 @@ impl Shell {
                     Setting::Wifi => self.network.pages.summary(Page::Wifi).into(),
                     Setting::Bluetooth => self.network.pages.summary(Page::Bluetooth).into(),
                     Setting::Updates => self.updates.page.summary().into(),
+                    Setting::Plugins => self.plugins.summary().into(),
                     // Shows what "Automatic" resolved to, e.g. "Automatic: de (nodeadkeys)"
                     Setting::KeyboardLayout if self.settings.keyboard_layout == KeyboardLayout::Auto => match &keymap {
                         Some(keymap) => trf("Automatic: {}", &[&keymap]).into(),
@@ -2195,7 +2211,9 @@ impl Shell {
         let profile = self.profiles.get(&self.profile).map(|p| p.name.clone()).unwrap_or_default();
         let switcher = self.switcher(in_front);
         let mouse = self.offers_mouse_mode() && self.mouse_mode.is_none();
-        self.quick = Some(QuickMenu::new(foreground, profile, switcher, mouse, self.media_player.clone()));
+        let mut quick = QuickMenu::new(foreground, profile, switcher, mouse, self.media_player.clone());
+        quick.add_plugins(self.plugins.panels());
+        self.quick = Some(quick);
         self.previews.clear();
         // The previews follow with the next frame of the compositor; until then the row shows covers.
         if let Some(compositor) = self.compositor.as_mut().filter(|compositor| compositor.window_list()) {
@@ -2261,6 +2279,8 @@ impl Shell {
                 let dialog = self.quick_dialog(&action);
                 self.show_dialog(ui, dialog);
             }
+            // A plugin's panel opens above the menu, which comes back when it closes
+            QuickOutcome::Run(QuickAction::Plugin(id)) => self.open_plugin_panel(ui, &id),
             QuickOutcome::Run(action) => {
                 self.close_quick(ui);
                 self.run_quick(ui, action);
@@ -2296,6 +2316,7 @@ impl Shell {
             {
                 match action {
                     QuickAction::Resume(app_id) => self.bring_to_front(ui, app_id, None),
+                    QuickAction::Plugin(id) => self.open_plugin_panel(ui, &id),
                     QuickAction::Switch { app_id, window } => self.switch_to(ui, app_id, window),
                     QuickAction::Home => {
                         // Home first, so the app shrinks into its tile there.
@@ -3001,6 +3022,7 @@ impl Shell {
                         self.run_quick(ui, action);
                     }
                     DialogTag::InstallUpdates => self.install_updates(ui),
+                    DialogTag::EnablePlugin(id) => self.enable_plugin(ui, &id),
                     DialogTag::GameThemes(wanted) => {
                         self.settings.theme_music = wanted;
                         if let Some(path) = &self.settings_path

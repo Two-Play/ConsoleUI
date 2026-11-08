@@ -883,6 +883,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "consoleui-plugins"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde_json",
+ "zbus",
+]
+
+[[package]]
 name = "consoleui-sdk"
 version = "0.1.0"
 dependencies = [

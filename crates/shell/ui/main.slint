@@ -1,5 +1,5 @@
 import { Theme } from "@consoleui/theme.slint";
-import { AppTile, ContextItem, ControllerStyle, GlyphButton, Hint, KeyCap, NavAction, NetRow, NetView, NetworkState, ProfileTile, ProfileView, QuickItem, Screen, SettingRow, SwitcherItem } from "types.slint";
+import { AppTile, ContextItem, ControllerStyle, GlyphButton, Hint, KeyCap, NavAction, NetRow, NetView, NetworkState, ProfileTile, ProfileView, PanelRow, QuickItem, Screen, SettingRow, SwitcherItem } from "types.slint";
 import { StatusBar } from "@consoleui/statusbar.slint";
 import { TabBar } from "@consoleui/tabbar.slint";
 import { ButtonGlyph, HintBar } from "@consoleui/glyph.slint";
@@ -9,6 +9,7 @@ import { SearchPage } from "search.slint";
 import { QuickMenu } from "quickmenu.slint";
 import { ContextMenu } from "@consoleui/contextmenu.slint";
 import { Dialog } from "@consoleui/dialog.slint";
+import { ControlPanel } from "@consoleui/controlpanel.slint";
 import { KeyboardPanel } from "@consoleui/keyboardpanel.slint";
 import { GameOptionsPanel } from "gameoptions.slint";
 import { OverlayWindow } from "overlay.slint";
@@ -21,7 +22,7 @@ import { HeroLayer } from "hero.slint";
 import { ProfilePage } from "profiles.slint";
 import { Glass, GlassPanel } from "@consoleui/glass.slint";
 
-export { AppTile, ContextItem, ControllerStyle, GlyphButton, Hint, KeyCap, NavAction, NetRow, NetView, NetworkState, ProfileTile, ProfileView, QuickItem, Screen, SettingRow, SwitcherItem, OverlayWindow, NotificationWindow, Theme, Glass }
+export { AppTile, ContextItem, ControllerStyle, GlyphButton, Hint, KeyCap, NavAction, NetRow, NetView, NetworkState, ProfileTile, ProfileView, PanelRow, QuickItem, Screen, SettingRow, SwitcherItem, OverlayWindow, NotificationWindow, Theme, Glass }
 
 export component AppWindow inherits Window {
     title: "ConsoleUI";
@@ -123,6 +124,14 @@ export component AppWindow inherits Window {
     in property <string> game-options-footer;
 
     // Modal alert/confirmation dialog, e.g. before quitting a running app
+    // A plugin panel from the quick menu, or the plugin list of the settings (Epic 9)
+    in property <bool> panel-open;
+    in property <string> panel-title;
+    in property <string> panel-subtitle;
+    in property <[PanelRow]> panel-rows;
+    in property <int> panel-focused;
+    in property <bool> panel-loading;
+    in property <[Hint]> panel-hints;
     in property <bool> dialog-open;
     in property <string> dialog-title;
     in property <string> dialog-text;
@@ -155,6 +164,7 @@ export component AppWindow inherits Window {
     callback row-clicked(int);
     callback dialog-clicked(int);
     callback quick-clicked(int);
+    callback panel-clicked(int);
     callback app-clicked(int);
     // Keyboard input in the search; returns whether the character was taken.
     callback typed(string) -> bool;
@@ -680,6 +690,21 @@ export component AppWindow inherits Window {
             s: root.s;
             card-clicked(i) => { root.quick-clicked(i); }
             app-clicked(i) => { root.app-clicked(i); }
+        }
+
+        ControlPanel {
+            width: 100%;
+            height: 100%;
+            open: root.panel-open;
+            title: root.panel-title;
+            subtitle: root.panel-subtitle;
+            rows: root.panel-rows;
+            focused: root.panel-focused;
+            loading: root.panel-loading;
+            hints: root.panel-hints;
+            style: root.controller-style;
+            s: root.s;
+            row-clicked(i) => { root.panel-clicked(i); }
         }
 
         Toast {

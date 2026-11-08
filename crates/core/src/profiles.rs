@@ -69,6 +69,8 @@ pub struct ProfilePaths {
     pub settings: PathBuf,
     /// Which theme music plays per game
     pub theme_music: PathBuf,
+    /// The plugins that are on (Epic 9)
+    pub plugins: PathBuf,
 }
 
 impl ProfilePaths {
@@ -80,6 +82,7 @@ impl ProfilePaths {
             game_options: dir.join("game_options.json"),
             settings: dir.join("settings.json"),
             theme_music: dir.join("theme_music.json"),
+            plugins: dir.join("plugins.json"),
             dir,
         }
     }

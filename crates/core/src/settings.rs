@@ -249,10 +249,12 @@ pub enum Setting {
     Wifi,
     /// Opens the Bluetooth page (Story 5.4)
     Bluetooth,
+    /// Opens the plugin list (Epic 9)
+    Plugins,
 }
 
 impl Setting {
-    pub const ALL: [Setting; 20] = [
+    pub const ALL: [Setting; 21] = [
         Self::Accent,
         Self::Animations,
         Self::Background,
@@ -273,11 +275,12 @@ impl Setting {
         Self::Wifi,
         Self::Bluetooth,
         Self::Updates,
+        Self::Plugins,
     ];
 
     /// Rows that open a sub-page instead of changing a value
     pub fn opens_page(self) -> bool {
-        matches!(self, Self::Wifi | Self::Bluetooth | Self::Updates)
+        matches!(self, Self::Wifi | Self::Bluetooth | Self::Updates | Self::Plugins)
     }
 
     pub fn label(self) -> &'static str {
@@ -302,6 +305,7 @@ impl Setting {
             Self::Wifi => tr("Wi-Fi"),
             Self::Bluetooth => tr("Bluetooth"),
             Self::Updates => tr("Updates"),
+            Self::Plugins => tr("Plugins"),
         }
     }
 
@@ -327,6 +331,7 @@ impl Setting {
             Self::Wifi => tr("Show and join networks"),
             Self::Bluetooth => tr("Pair controllers and other devices"),
             Self::Updates => tr("Search for and install system updates"),
+            Self::Plugins => tr("Games and controls from other programs"),
         }
     }
 }
@@ -434,7 +439,7 @@ impl Settings {
             Setting::Glyphs => self.glyphs.label(),
             Setting::Language => self.language.label(),
             Setting::KeyboardLayout => self.keyboard_layout.label(),
-            Setting::Wifi | Setting::Bluetooth | Setting::Updates => "",
+            Setting::Wifi | Setting::Bluetooth | Setting::Updates | Setting::Plugins => "",
         }
     }
 
@@ -464,7 +469,8 @@ impl Settings {
             | Setting::Display
             | Setting::Wifi
             | Setting::Bluetooth
-            | Setting::Updates => {}
+            | Setting::Updates
+            | Setting::Plugins => {}
         }
     }
 }

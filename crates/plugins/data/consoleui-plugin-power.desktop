@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Power
+Name[de]=Energie
+Comment=The power profile in the quick menu
+Comment[de]=Das Energieprofil im Schnellmenü
+Icon=battery
+Exec=consoleui-plugin-power
+NoDisplay=true
+X-ConsoleUI-Plugin=org.consoleui.plugins.Power
+X-ConsoleUI-Plugin-Provides=panel;

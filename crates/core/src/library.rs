@@ -10,8 +10,9 @@ use crate::history::History;
 use crate::i18n::{self, Language, tr, tr_noop, trf, trn};
 use crate::search::normalize;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AppKind {
+    #[default]
     Game,
     App,
 }

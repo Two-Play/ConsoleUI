@@ -26,6 +26,7 @@ mod network;
 mod notifications;
 mod options;
 mod perf;
+mod plugins;
 mod profiles;
 mod quick;
 mod service;
@@ -337,6 +338,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         move || {
             if let Some(ui) = ui.upgrade() {
                 shell.borrow_mut().poll_network(&ui);
+                shell.borrow_mut().poll_plugins(&ui);
                 shell.borrow_mut().poll_updates(&ui);
             }
         }
@@ -407,6 +409,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         ui.window().set_fullscreen(true);
     }
     ui.run()?;
+    // Plugins end with the shell (Epic 9)
+    shell.borrow_mut().stop_plugins();
     Ok(())
 }
 

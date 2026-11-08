@@ -31,6 +31,8 @@ pub enum QuickAction {
     Brightness,
     Power(PowerAction),
     Logout,
+    /// The panel of a plugin (Epic 9), by plugin ID
+    Plugin(String),
 }
 
 impl QuickAction {
@@ -64,6 +66,8 @@ pub struct QuickMenu {
     switcher: Switcher,
     /// The focus is in that row
     in_switcher: bool,
+    /// Names of the plugins with a card
+    plugin_names: Vec<(String, String)>,
 }
 
 /// What should happen after an input in the quick menu
@@ -116,9 +120,18 @@ impl QuickMenu {
             profile,
             switcher,
             in_switcher,
+            plugin_names: Vec::new(),
         };
         menu.set_media(media);
         menu
+    }
+
+    /// Cards for the panels of plugins (ID, name), before the power actions.
+    pub fn add_plugins(&mut self, plugins: Vec<(String, String)>) {
+        let at = self.actions.iter().position(|a| matches!(a, QuickAction::Power(_))).unwrap_or(self.actions.len());
+        let cards = plugins.iter().map(|(id, _)| QuickAction::Plugin(id.clone()));
+        self.actions.splice(at..at, cards);
+        self.plugin_names = plugins;
     }
 
     /// A player appeared, changed or went away: the card follows, the focus stays where it is.
@@ -282,6 +295,10 @@ impl QuickMenu {
                     QuickAction::Power(PowerAction::Reboot) => ("↻", tr("Restart"), String::new()),
                     QuickAction::Power(PowerAction::PowerOff) => ("⏻", tr("Power off"), String::new()),
                     QuickAction::Logout => ("⇥", tr("Sign out"), tr("Quit shell").to_string()),
+                    QuickAction::Plugin(id) => {
+                        let name = self.plugin_names.iter().find(|(p, _)| p == id).map_or(id.as_str(), |(_, n)| n);
+                        ("◇", name, tr("Plugin").to_string())
+                    }
                 };
                 let level = match (action, self.volume) {
                     (QuickAction::Volume, Some(volume)) if !volume.muted => volume.percent.into(),

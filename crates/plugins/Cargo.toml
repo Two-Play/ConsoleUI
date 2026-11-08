@@ -1,0 +1,12 @@
+[package]
+name = "consoleui-plugins"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Plugins that come with ConsoleUI (Epic 9): Lutris games in the library, the power profile in the quick menu"
+
+# On purpose without the ConsoleUI crates: a plugin only needs the bus contract (docs/plugins.md)
+[dependencies]
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+serde_json = "1"
+zbus = "5.19"

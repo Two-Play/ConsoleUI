@@ -42,6 +42,15 @@ pub fn spawn_artwork(entries: Vec<AppEntry>) -> mpsc::Receiver<Vec<LoadedEntry>>
     receiver
 }
 
+/// Decodes the artwork of entries that came from elsewhere (plugins, Epic 9).
+pub fn spawn_decode(entries: Vec<AppEntry>, artwork: bool) -> mpsc::Receiver<Vec<LoadedEntry>> {
+    let (sender, receiver) = mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = sender.send(decode_all(entries, artwork));
+    });
+    receiver
+}
+
 /// What changed in the library since the last look.
 pub struct LibraryChanges {
     pub new: Vec<LoadedEntry>,

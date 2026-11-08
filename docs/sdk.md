@@ -1,5 +1,7 @@
 # Building apps for ConsoleUI
 
+Plugins, which add to the shell itself (library sources, quick menu panels), are described in `docs/plugins.md`.
+
 An app built on the SDK looks like the rest of the console, follows the user's accent color and animation
 settings, and runs in two places without any change: in a window on any Linux desktop and fullscreen in the
 console session. The status of the SDK and what is still missing is in `BACKLOG.md`, Epic 8.

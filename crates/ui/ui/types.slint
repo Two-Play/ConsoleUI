@@ -54,6 +54,19 @@ export struct KeyCap {
 }
 
 // Row of a settings list
+// A row of a `ControlPanel` (plugin panels, Epic 9)
+export struct PanelRow {
+    label: string,
+    detail: string,
+    value: string,
+    // Toggle, slider or choice: ◀ ▶ change it
+    adjustable: bool,
+    // Confirm presses it
+    button: bool,
+    // Sliders: 0-100 for the bar, otherwise -1
+    level: int,
+}
+
 export struct SettingRow {
     label: string,
     description: string,

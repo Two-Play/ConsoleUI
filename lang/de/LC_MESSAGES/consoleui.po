@@ -1360,3 +1360,45 @@ msgstr "Startbildschirm und Bibliothek"
 
 msgid "The music of the game in focus, found on YouTube"
 msgstr "Die Musik des gewählten Spiels, gefunden auf YouTube"
+
+msgid "Adds games and starts them"
+msgstr "Fügt Spiele hinzu und startet sie"
+
+msgid "{} comes from its author, not from ConsoleUI. It can: {}."
+msgstr "{} stammt von seinem Autor, nicht von ConsoleUI. Es kann: {}."
+
+msgid "Controls in the quick menu"
+msgstr "Bedienelemente im Schnellmenü"
+
+msgid "Games and controls from other programs"
+msgstr "Spiele und Bedienelemente aus anderen Programmen"
+
+msgid "It starts programs on this computer when you open its games."
+msgstr "Es startet Programme auf diesem Computer, wenn du seine Spiele öffnest."
+
+msgid "None installed"
+msgstr "Keine installiert"
+
+msgid "No plugins installed"
+msgstr "Keine Plugins installiert"
+
+msgid "{} of {} on"
+msgstr "{} von {} an"
+
+msgid "Plugin"
+msgstr "Plugin"
+
+msgid "Plugins"
+msgstr "Plugins"
+
+msgid "Plugins come as packages, like apps"
+msgstr "Plugins kommen als Pakete, wie Apps"
+
+msgid "Plugins come from their authors. Turn on only the ones you trust."
+msgstr "Plugins stammen von ihren Autoren. Schalte nur die ein, denen du vertraust."
+
+msgid "The plugin does not answer"
+msgstr "Das Plugin antwortet nicht"
+
+msgid "Turn on {}?"
+msgstr "{} einschalten?"

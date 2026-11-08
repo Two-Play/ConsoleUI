@@ -188,6 +188,22 @@ permissions, distribution. `consoleui-ui` and `consoleui-app` are the first two.
 
 ---
 
+## Epic 9 – Plugins
+
+Plugins add to the shell itself, where apps (Epic 8) are programs of their own. Anyone may write them, closed ones
+too: the contract is a D-Bus interface (`org.consoleui.Plugin1`, `docs/plugins.md`) that does not depend on the
+ConsoleUI crates. A plugin is a process of its own (a crash does not take the shell along, a Flatpak sandbox works),
+found by its desktop entry (`X-ConsoleUI-Plugin`), started only once the user turned it on.
+
+| ID | Story | Points |
+|---|---|---|
+| 9.1 | **Done.** Library sources: a plugin's entries (`Entries()`, `EntriesChanged`) join the library, search and history like the shell's own and start through the shell (scope, windows, quitting). First plugin: Lutris (`consoleui-plugin-lutris`, `lutris --list-games --json`) | 5 |
+| 9.2 | **Done.** Quick menu panels: a card per plugin, its panel (`Panel()`, `Activate`, `PanelChanged`) drawn by the shell with the design system's `ControlPanel` (toggle, slider, choice, button, info), over a game too. First plugin: the power profile (`consoleui-plugin-power`, `org.freedesktop.UPower.PowerProfiles`) | 5 |
+| 9.3 | **Done.** Settings row "Plugins": every installed plugin with a switch, per profile (`plugins.json`); turning one on asks first and says what it can (starting programs for library plugins). Plugins end with the shell and with their session | 3 |
+| 9.4 | A plugin template in the SDK (`dev/new-plugin.sh`) and Flatpak packaging of plugins | 3 |
+| 9.5 | Plugins in the store (8.9), with what they can before the install | 3 |
+| 9.6 | More extension points: own settings pages, notifications and background services, artwork sources (SteamGridDB), theme music sources | 8 |
+
 ## Sprint plan (proposal)
 
 | Sprint | Goal | Stories |

@@ -44,6 +44,10 @@ pub struct DesktopEntry {
     pub cover: Option<String>,
     pub hero: Option<String>,
     pub logo: Option<String>,
+    /// `X-ConsoleUI-Plugin`: the bus name of a plugin (Epic 9, `docs/plugins.md`); never an app
+    pub plugin: Option<String>,
+    /// `X-ConsoleUI-Plugin-Provides`: `library`, `panel`
+    pub plugin_provides: Vec<String>,
 }
 
 /// A localized key (`Name`, `Name[de]`, `Name[de_DE]`, …). Only the variants of the languages the
@@ -100,6 +104,7 @@ impl DesktopEntry {
     fn is_console_friendly(&self) -> bool {
         let wanted = !self.no_display && wanted_categories(&self.categories);
         self.entry_type == "Application"
+            && self.plugin.is_none()
             && !self.hidden
             && !self.terminal
             && (self.console_app || wanted)
@@ -159,6 +164,28 @@ fn to_app_entry(entry: DesktopEntry, data_dirs: &[PathBuf], theme: &str, langs: 
         last_used: None,
         id,
     }
+}
+
+/// The desktop entries in the `applications` directories, the first location of an ID winning (as
+/// for the apps), parsed.
+pub fn all_entries(data_dirs: &[PathBuf]) -> Vec<DesktopEntry> {
+    let mut seen = HashSet::new();
+    let mut entries = Vec::new();
+    for dir in data_dirs {
+        for (id, path) in desktop_files(&dir.join("applications")) {
+            if seen.insert(id.clone())
+                && let Some(entry) = fs::read_to_string(&path).ok().and_then(|c| parse(&id, &c))
+            {
+                entries.push(entry);
+            }
+        }
+    }
+    entries
+}
+
+/// The icon theme the user picked, for [`icons::find`].
+pub fn current_icon_theme() -> String {
+    icon_theme()
 }
 
 /// All `.desktop` files below `root`. The ID of `kde/foo.desktop` is `kde-foo.desktop`.
@@ -246,6 +273,11 @@ pub fn parse(id: &str, content: &str) -> Option<DesktopEntry> {
         cover: plain("X-ConsoleUI-Cover"),
         hero: plain("X-ConsoleUI-Hero"),
         logo: plain("X-ConsoleUI-Logo"),
+        plugin: plain("X-ConsoleUI-Plugin").filter(|name| !name.is_empty()),
+        plugin_provides: values
+            .get("X-ConsoleUI-Plugin-Provides")
+            .map(|v| v.split(';').filter(|c| !c.is_empty()).map(str::to_string).collect())
+            .unwrap_or_default(),
     })
 }
 
