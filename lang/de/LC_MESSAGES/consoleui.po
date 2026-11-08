@@ -1336,3 +1336,18 @@ msgstr "Keine Titelmusik"
 
 msgid "Theme music on"
 msgstr "Titelmusik an"
+
+msgid "Install {} to hear the theme music of your games."
+msgstr "Installiere {}, um die Titelmusik deiner Spiele zu hören."
+
+msgid "Game themes need more programs"
+msgstr "Für Spielmusik fehlen Programme"
+
+msgid "For each game the console searches YouTube for its title and downloads the music with yt-dlp, into the cache of this computer. YouTube learns which games you look at."
+msgstr "Für jedes Spiel sucht die Konsole auf YouTube nach seinem Namen und lädt die Musik mit yt-dlp in den Zwischenspeicher dieses Computers. YouTube erfährt dabei, welche Spiele du dir ansiehst."
+
+msgid "Game themes come from YouTube"
+msgstr "Spielmusik kommt von YouTube"
+
+msgid "{} (needs {})"
+msgstr "{} (braucht {})"

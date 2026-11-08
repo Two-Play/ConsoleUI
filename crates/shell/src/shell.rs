@@ -87,6 +87,8 @@ enum DialogTag {
     Quick(QuickAction),
     /// Install everything on the update page
     InstallUpdates,
+    /// Turn on "Game themes" after the note about YouTube (Story 6.12)
+    GameThemes,
     Close,
 }
 
@@ -1114,7 +1116,13 @@ impl Shell {
                     );
                     self.send_output_settings();
                 }
+                let music_before = self.settings.music;
                 self.settings.change(setting, action != Action::Left);
+                if setting == Setting::Music && self.settings.music == MusicChoice::GameThemes {
+                    // Only after a note: it needs programs, and it talks to YouTube
+                    self.settings.music = music_before;
+                    self.ask_game_themes(ui);
+                }
                 if setting == Setting::Vrr {
                     self.send_output_settings();
                 }
@@ -1137,6 +1145,25 @@ impl Shell {
             Action::Back => self.screen = Screen::Home,
             _ => {}
         }
+    }
+
+    /// "Game themes" needs `yt-dlp` and `ffmpeg`, and it sends the titles of the games to YouTube:
+    /// without the programs it says what is missing, with them it asks before it turns on.
+    fn ask_game_themes(&mut self, ui: &AppWindow) {
+        let missing = missing_theme_programs();
+        if !missing.is_empty() {
+            let text = trf("Install {} to hear the theme music of your games.", &[&missing.join(", ")]);
+            self.show_alert(ui, tr("Game themes need more programs"), &text);
+            return;
+        }
+        let text = tr(
+            "For each game the console searches YouTube for its title and downloads the music with yt-dlp, into the cache of this computer. YouTube learns which games you look at.",
+        );
+        let buttons = vec![
+            DialogButton { label: tr("Cancel").into(), tag: DialogTag::Close },
+            DialogButton { label: tr("Turn on").into(), tag: DialogTag::GameThemes },
+        ];
+        self.show_dialog(ui, Dialog::new(tr("Game themes come from YouTube"), text, buttons, 1));
     }
 
     /// Pushes settings to the UI: accent color, animation durations, settings rows.
@@ -1442,6 +1469,14 @@ impl Shell {
                         (None, Some(size)) => trf("Automatic: {}", &[&size_label(size)]).into(),
                         (None, None) => tr("Automatic").into(),
                     },
+                    Setting::Music if self.settings.music == MusicChoice::GameThemes => {
+                        match missing_theme_programs().as_slice() {
+                            [] => self.settings.value_label(setting).into(),
+                            missing => {
+                                trf("{} (needs {})", &[&self.settings.value_label(setting), &missing.join(", ")]).into()
+                            }
+                        }
+                    }
                     Setting::MusicTrack => match &self.settings.music_track {
                         Some(name) => name.as_str().into(),
                         None => tr("All, shuffled").into(),
@@ -2958,6 +2993,15 @@ impl Shell {
                         self.run_quick(ui, action);
                     }
                     DialogTag::InstallUpdates => self.install_updates(ui),
+                    DialogTag::GameThemes => {
+                        self.settings.music = MusicChoice::GameThemes;
+                        if let Some(path) = &self.settings_path
+                            && let Err(err) = self.settings.save(path)
+                        {
+                            eprintln!("Cannot save the settings ({}): {err}", path.display());
+                        }
+                        self.apply_settings(ui);
+                    }
                     DialogTag::Close => {}
                 }
             }
@@ -3157,4 +3201,9 @@ fn load_preview(path: &str) -> Option<Image> {
     };
     let (width, height) = preview.dimensions();
     Some(Image::from_rgba8(SharedPixelBuffer::clone_from_slice(preview.as_raw(), width, height)))
+}
+
+/// What "Game themes" needs and this computer does not have.
+fn missing_theme_programs() -> Vec<&'static str> {
+    ["yt-dlp", "ffmpeg"].into_iter().filter(|program| !launch::program_exists(program)).collect()
 }
