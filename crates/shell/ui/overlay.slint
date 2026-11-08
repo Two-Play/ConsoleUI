@@ -1,7 +1,8 @@
-import { ControllerStyle, Hint, KeyCap, NavAction, PanelRow, QuickItem, SwitcherItem } from "types.slint";
+import { ControllerStyle, Hint, KeyCap, NavAction, PanelRow, PlayerState, QuickItem, SwitcherItem } from "types.slint";
 import { QuickMenu } from "quickmenu.slint";
 import { Dialog } from "@consoleui/dialog.slint";
 import { ControlPanel } from "@consoleui/controlpanel.slint";
+import { MediaPlayer } from "@consoleui/mediaplayer.slint";
 import { KeyboardPanel } from "@consoleui/keyboardpanel.slint";
 
 // Own transparent window for the quick menu. In gamescope, Rust sets STEAM_OVERLAY before it is
@@ -26,6 +27,10 @@ export component OverlayWindow inherits Window {
     // A confirmation above the menu (Story 5.1: restart, power off, quit ...), the same dialog as in
     // the main window, which is hidden behind a running app
     // A plugin panel opened from the quick menu (Epic 9)
+    // The player from the quick menu's media card
+    in property <bool> player-open;
+    in property <PlayerState> player;
+    in property <[Hint]> player-hints;
     in property <bool> panel-open;
     in property <string> panel-title;
     in property <string> panel-subtitle;
@@ -63,6 +68,7 @@ export component OverlayWindow inherits Window {
     // The pointer picked a quick menu card or a dialog button
     callback quick-clicked(int);
     callback panel-clicked(int);
+    callback player-clicked(int);
     callback app-clicked(int);
     callback dialog-clicked(int);
 
@@ -122,6 +128,17 @@ export component OverlayWindow inherits Window {
             style: root.controller-style;
             s: root.s;
             row-clicked(i) => { root.panel-clicked(i); }
+        }
+
+        MediaPlayer {
+            width: 100%;
+            height: 100%;
+            open: root.player-open;
+            state: root.player;
+            hints: root.player-hints;
+            style: root.controller-style;
+            s: root.s;
+            button-clicked(i) => { root.player-clicked(i); }
         }
 
         kb := KeyboardPanel {

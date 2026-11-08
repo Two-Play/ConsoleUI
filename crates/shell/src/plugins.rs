@@ -7,7 +7,9 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::{Duration, Instant};
 
 use consoleui_core::launch::{self, ProcessHandle};
-use consoleui_core::plugins::{INTERFACE, ItemKind, PATH, Panel, PanelItem, PluginEntry, PluginInfo, Provides, Value};
+use consoleui_core::plugins::{
+    INTERFACE, ItemKind, PATH, Panel, PanelItem, PluginArtwork, PluginEntry, PluginInfo, Provides, Value,
+};
 use consoleui_core::{AppKind, Launch};
 use zbus::MatchRule;
 use zbus::blocking::{Connection, MessageIterator, Proxy, fdo::DBusProxy};
@@ -21,6 +23,15 @@ pub enum Request {
     /// These plugins are on (the others are stopped)
     Run(Vec<PluginInfo>),
     Panel(String),
+    /// The plugin's own settings page
+    Settings(String),
+    /// Pictures for these entries (ID, title) from the artwork plugins
+    Artwork(Vec<(String, String)>),
+    /// Theme music for this entry (ID, title) from the theme plugins
+    Theme {
+        entry: String,
+        title: String,
+    },
     Activate {
         plugin: String,
         item: String,
@@ -43,6 +54,15 @@ pub enum Event {
     },
     /// The plugin wants its open panel asked again
     PanelChanged(String),
+    Artwork {
+        entry: String,
+        artwork: PluginArtwork,
+    },
+    /// `None`: no theme plugin has music for it
+    Theme {
+        entry: String,
+        path: Option<String>,
+    },
     Failed {
         plugin: String,
         error: String,
@@ -109,7 +129,10 @@ impl Runner {
     fn handle(&mut self, request: Request) {
         match request {
             Request::Run(plugins) => self.run(plugins),
-            Request::Panel(id) => self.panel(&id),
+            Request::Panel(id) => self.panel(&id, "Panel"),
+            Request::Settings(id) => self.panel(&id, "Settings"),
+            Request::Artwork(entries) => self.artwork(&entries),
+            Request::Theme { entry, title } => self.theme(entry, &title),
             Request::Activate { plugin, item, value } => self.activate(&plugin, &item, value),
             Request::Entries(id) => self.entries(&id),
             Request::Stop => {}
@@ -233,15 +256,50 @@ impl Runner {
         }
     }
 
-    fn panel(&self, id: &str) {
+    /// `method`: `Panel` (quick menu) or `Settings` (its settings page); both look the same.
+    fn panel(&self, id: &str, method: &str) {
         let Some(proxy) = self.proxy(id) else { return self.fail(id, "is not running") };
-        match proxy.call::<_, _, (String, Vec<HashMap<String, OwnedValue>>)>("Panel", &()) {
+        match proxy.call::<_, _, (String, Vec<HashMap<String, OwnedValue>>)>(method, &()) {
             Ok((title, items)) => {
                 let panel = Panel { title, items: items.iter().filter_map(parse_item).collect() };
                 let _ = self.events.send(Event::Panel { plugin: id.to_string(), panel });
             }
             Err(err) => self.fail(id, err),
         }
+    }
+
+    /// The running plugins that offer `what`.
+    fn offering(&self, what: Provides) -> Vec<String> {
+        let mut ids: Vec<String> =
+            self.running.values().filter(|r| r.info.provides(what)).map(|r| r.info.id.clone()).collect();
+        ids.sort();
+        ids
+    }
+
+    fn artwork(&self, entries: &[(String, String)]) {
+        let plugins = self.offering(Provides::Artwork);
+        for (entry, title) in entries {
+            // The first plugin with something wins
+            let found = plugins.iter().find_map(|plugin| {
+                let proxy = self.proxy(plugin)?;
+                let pictures: HashMap<String, String> =
+                    proxy.call("Artwork", &(entry.as_str(), title.as_str())).ok()?;
+                let get = |key: &str| pictures.get(key).filter(|v| !v.is_empty()).cloned();
+                let artwork = PluginArtwork { cover: get("cover"), hero: get("hero"), logo: get("logo") };
+                (!artwork.is_empty()).then_some(artwork)
+            });
+            if let Some(artwork) = found {
+                let _ = self.events.send(Event::Artwork { entry: entry.clone(), artwork });
+            }
+        }
+    }
+
+    fn theme(&self, entry: String, title: &str) {
+        let path = self.offering(Provides::Themes).iter().find_map(|plugin| {
+            let path: String = self.proxy(plugin)?.call("Theme", &(entry.as_str(), title)).ok()?;
+            Some(path).filter(|path| !path.is_empty())
+        });
+        let _ = self.events.send(Event::Theme { entry, path });
     }
 
     fn activate(&self, id: &str, item: &str, value: Value) {

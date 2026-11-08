@@ -1,5 +1,5 @@
 import { Theme } from "@consoleui/theme.slint";
-import { AppTile, ContextItem, ControllerStyle, GlyphButton, Hint, KeyCap, NavAction, NetRow, NetView, NetworkState, ProfileTile, ProfileView, PanelRow, QuickItem, Screen, SettingRow, SwitcherItem } from "types.slint";
+import { AppTile, ContextItem, ControllerStyle, GlyphButton, Hint, KeyCap, NavAction, NetRow, NetView, NetworkState, ProfileTile, ProfileView, PanelRow, PlayerState, QuickItem, Screen, SettingRow, SwitcherItem } from "types.slint";
 import { StatusBar } from "@consoleui/statusbar.slint";
 import { TabBar } from "@consoleui/tabbar.slint";
 import { ButtonGlyph, HintBar } from "@consoleui/glyph.slint";
@@ -10,6 +10,7 @@ import { QuickMenu } from "quickmenu.slint";
 import { ContextMenu } from "@consoleui/contextmenu.slint";
 import { Dialog } from "@consoleui/dialog.slint";
 import { ControlPanel } from "@consoleui/controlpanel.slint";
+import { MediaPlayer } from "@consoleui/mediaplayer.slint";
 import { KeyboardPanel } from "@consoleui/keyboardpanel.slint";
 import { GameOptionsPanel } from "gameoptions.slint";
 import { OverlayWindow } from "overlay.slint";
@@ -22,7 +23,7 @@ import { HeroLayer } from "hero.slint";
 import { ProfilePage } from "profiles.slint";
 import { Glass, GlassPanel } from "@consoleui/glass.slint";
 
-export { AppTile, ContextItem, ControllerStyle, GlyphButton, Hint, KeyCap, NavAction, NetRow, NetView, NetworkState, ProfileTile, ProfileView, PanelRow, QuickItem, Screen, SettingRow, SwitcherItem, OverlayWindow, NotificationWindow, Theme, Glass }
+export { AppTile, ContextItem, ControllerStyle, GlyphButton, Hint, KeyCap, NavAction, NetRow, NetView, NetworkState, ProfileTile, ProfileView, PanelRow, PlayerState, QuickItem, Screen, SettingRow, SwitcherItem, OverlayWindow, NotificationWindow, Theme, Glass }
 
 export component AppWindow inherits Window {
     title: "ConsoleUI";
@@ -34,6 +35,8 @@ export component AppWindow inherits Window {
     in property <Screen> screen: Screen.home;
     // Notice at the top right
     in property <bool> toast-shown;
+    in property <image> toast-picture;
+    in property <bool> toast-has-picture;
     in property <string> toast-symbol;
     in property <string> toast-title;
     in property <string> toast-text;
@@ -125,6 +128,10 @@ export component AppWindow inherits Window {
 
     // Modal alert/confirmation dialog, e.g. before quitting a running app
     // A plugin panel from the quick menu, or the plugin list of the settings (Epic 9)
+    // The player from the quick menu's media card
+    in property <bool> player-open;
+    in property <PlayerState> player;
+    in property <[Hint]> player-hints;
     in property <bool> panel-open;
     in property <string> panel-title;
     in property <string> panel-subtitle;
@@ -165,6 +172,7 @@ export component AppWindow inherits Window {
     callback dialog-clicked(int);
     callback quick-clicked(int);
     callback panel-clicked(int);
+    callback player-clicked(int);
     callback app-clicked(int);
     // Keyboard input in the search; returns whether the character was taken.
     callback typed(string) -> bool;
@@ -707,6 +715,17 @@ export component AppWindow inherits Window {
             row-clicked(i) => { root.panel-clicked(i); }
         }
 
+        MediaPlayer {
+            width: 100%;
+            height: 100%;
+            open: root.player-open;
+            state: root.player;
+            hints: root.player-hints;
+            style: root.controller-style;
+            s: root.s;
+            button-clicked(i) => { root.player-clicked(i); }
+        }
+
         Toast {
             x: root.width - root.margin - self.width + (root.toast-shown ? 0 : 60px * s);
             y: 110px * s;
@@ -718,6 +737,8 @@ export component AppWindow inherits Window {
             symbol: root.toast-symbol;
             title: root.toast-title;
             text: root.toast-text;
+            picture: root.toast-picture;
+            has-picture: root.toast-has-picture;
             s: root.s;
         }
 

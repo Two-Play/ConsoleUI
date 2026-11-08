@@ -8,5 +8,6 @@ Exec=my-plugin
 NoDisplay=true
 # The bus name it owns; with Flatpak the app ID, which a sandbox may own without extra rights
 X-ConsoleUI-Plugin=@APP_ID@
-# What it offers: library (entries), panel (quick menu); remove what you do not use
-X-ConsoleUI-Plugin-Provides=library;panel;
+# What it offers: library (entries), panel (quick menu), settings (its page), artwork, themes;
+# remove what you do not use
+X-ConsoleUI-Plugin-Provides=library;panel;settings;

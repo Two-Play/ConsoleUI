@@ -23,6 +23,12 @@ pub const VERSION: u32 = 1;
 pub enum Provides {
     Library,
     Panel,
+    /// Its own settings page (`Settings()`), opened from the plugin list
+    Settings,
+    /// Cover, background and logo for games without them (`Artwork(id, title)`)
+    Artwork,
+    /// Theme music for games (`Theme(id, title)`), asked before YouTube
+    Themes,
 }
 
 impl Provides {
@@ -30,6 +36,9 @@ impl Provides {
         match self {
             Self::Library => tr("Adds games and starts them"),
             Self::Panel => tr("Controls in the quick menu"),
+            Self::Settings => tr("Own settings"),
+            Self::Artwork => tr("Pictures for games"),
+            Self::Themes => tr("Music for games"),
         }
     }
 }
@@ -70,6 +79,9 @@ pub fn discover(data_dirs: &[PathBuf], langs: &[String]) -> Vec<PluginInfo> {
                 .filter_map(|what| match what.as_str() {
                     "library" => Some(Provides::Library),
                     "panel" => Some(Provides::Panel),
+                    "settings" => Some(Provides::Settings),
+                    "artwork" => Some(Provides::Artwork),
+                    "themes" => Some(Provides::Themes),
                     _ => None,
                 })
                 .collect();
@@ -87,6 +99,42 @@ pub fn discover(data_dirs: &[PathBuf], langs: &[String]) -> Vec<PluginInfo> {
         .collect();
     plugins.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()).then(a.id.cmp(&b.id)));
     plugins
+}
+
+/// Pictures a plugin found for an entry (absolute paths or icon names, as in [`PluginEntry`]).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PluginArtwork {
+    pub cover: Option<String>,
+    pub hero: Option<String>,
+    pub logo: Option<String>,
+}
+
+impl PluginArtwork {
+    pub fn is_empty(&self) -> bool {
+        self.cover.is_none() && self.hero.is_none() && self.logo.is_none()
+    }
+
+    /// Fills in what `artwork` lacks, with files the host can read.
+    pub fn fill(&self, artwork: &mut Artwork, data_dirs: &[PathBuf]) {
+        let theme = desktop::current_icon_theme();
+        let resolve = |value: &Option<String>| {
+            let value = value.as_deref().filter(|v| !v.is_empty())?;
+            if value.starts_with('/') {
+                Some(PathBuf::from(value)).filter(|path| path.is_file())
+            } else {
+                icons::find(value, &theme, data_dirs)
+            }
+        };
+        if artwork.cover.is_none() {
+            artwork.cover = resolve(&self.cover);
+        }
+        if artwork.hero.is_none() {
+            artwork.hero = resolve(&self.hero);
+        }
+        if artwork.logo.is_none() {
+            artwork.logo = resolve(&self.logo);
+        }
+    }
 }
 
 /// A library entry of a plugin, as it came over the bus.
@@ -431,6 +479,25 @@ mod tests {
         view.set(Panel { title: "Power".into(), items: again });
         assert_eq!(view.focused, 0);
         assert_eq!(view.apply(Action::Back), PanelOutcome::Close);
+    }
+
+    #[test]
+    fn artwork_fills_only_what_is_missing() {
+        let dir = std::env::temp_dir().join(format!("consoleui-art-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let cover = dir.join("cover.png");
+        std::fs::write(&cover, b"x").unwrap();
+        let mut artwork = Artwork { hero: Some("/own/hero.jpg".into()), ..Artwork::default() };
+        let found = PluginArtwork {
+            cover: Some(cover.display().to_string()),
+            hero: Some(cover.display().to_string()),
+            logo: Some("/does/not/exist.png".into()),
+        };
+        found.fill(&mut artwork, &[]);
+        assert_eq!(artwork.cover.as_deref(), Some(cover.as_path()));
+        assert_eq!(artwork.hero.as_deref(), Some(std::path::Path::new("/own/hero.jpg")), "own pictures stay");
+        assert_eq!(artwork.logo, None, "a path that is not there is left out");
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

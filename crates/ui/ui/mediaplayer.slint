@@ -1,0 +1,194 @@
+import { Theme } from "theme.slint";
+import { ControllerStyle, Hint, PlayerState } from "types.slint";
+import { GlassPanel } from "glass.slint";
+import { HintBar } from "glyph.slint";
+import { ProgressBar } from "progressbar.slint";
+import { FocusRing } from "focusring.slint";
+
+// The player that opens from the media card of the quick menu, like on a PS5: big cover, the
+// track, a progress bar and round buttons (previous, play/pause, next, shuffle). State and input
+// live in `consoleui_core::media::PlayerView`; Rust fills the properties.
+export component MediaPlayer inherits Rectangle {
+    in property <bool> open;
+    in property <PlayerState> state;
+    in property <[Hint]> hints;
+    in property <ControllerStyle> style;
+    in property <float> s: 1;
+
+    callback button-clicked(int);
+
+    property <length> art: 340px * root.s;
+    property <length> pad: 44px * root.s;
+    property <length> button: 84px * root.s;
+
+    // Where the card is in this window, for the compositor's backdrop blur (Story 7.13)
+    out property <length> panel-x: panel.x;
+    out property <length> panel-y: panel.y;
+    out property <length> panel-width: panel.width;
+    out property <length> panel-height: panel.height;
+    out property <length> panel-radius: panel.border-radius;
+
+    Rectangle {
+        width: 100%;
+        height: 100%;
+        background: Theme.scrim;
+        opacity: root.open ? 1 : 0;
+        animate opacity { duration: Theme.page-duration; }
+    }
+
+    panel := GlassPanel {
+        opacity: root.open ? 1 : 0;
+        visible: self.opacity > 0.01;
+        animate opacity { duration: Theme.page-duration; }
+        width: 1040px * root.s;
+        height: root.art + 2 * root.pad + 56px * root.s;
+        x: (parent.width - self.width) / 2;
+        // Rises a little into place when it opens
+        y: (parent.height - self.height) / 2 + (root.open ? 0 : 40px * root.s);
+        animate y { duration: Theme.launch-duration; easing: ease-out-quart; }
+        border-radius: Theme.radius-panel * root.s;
+
+        Rectangle {
+            x: root.pad;
+            y: root.pad;
+            width: root.art;
+            height: root.art;
+            border-radius: Theme.radius-card * root.s;
+            background: Theme.surface;
+            clip: true;
+            drop-shadow-blur: 30px * root.s;
+            drop-shadow-color: #00000080;
+
+            if root.state.has-cover: Image {
+                width: 100%;
+                height: 100%;
+                source: root.state.cover;
+                image-fit: cover;
+            }
+
+            if !root.state.has-cover: Text {
+                width: 100%;
+                height: 100%;
+                text: "♫";
+                color: Theme.text-dim;
+                font-size: 120px * root.s;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+
+        info := VerticalLayout {
+            x: root.pad * 2 + root.art;
+            y: root.pad + 6px * root.s;
+            width: parent.width - root.art - 3 * root.pad;
+            height: self.preferred-height;
+            spacing: 6px * root.s;
+            alignment: start;
+
+            Text {
+                text: root.state.source;
+                color: Theme.accent;
+                font-size: 18px * root.s;
+                font-weight: 700;
+                letter-spacing: 1.5px * root.s;
+            }
+
+            Text {
+                text: root.state.title;
+                color: Theme.text;
+                font-size: 40px * root.s;
+                font-weight: 800;
+                overflow: elide;
+            }
+
+            Text {
+                text: root.state.artist;
+                color: Theme.text;
+                font-size: 24px * root.s;
+                overflow: elide;
+            }
+
+            Text {
+                text: root.state.album;
+                color: Theme.text-dim;
+                font-size: 20px * root.s;
+                overflow: elide;
+            }
+        }
+
+        ProgressBar {
+            x: info.x;
+            y: root.pad + 176px * root.s;
+            width: info.width;
+            value: root.state.progress;
+            fill: Theme.accent;
+            s: root.s;
+        }
+
+        Text {
+            x: info.x;
+            y: root.pad + 192px * root.s;
+            text: root.state.time;
+            color: Theme.text-dim;
+            font-size: 17px * root.s;
+        }
+
+        Text {
+            x: info.x + info.width - self.width;
+            y: root.pad + 192px * root.s;
+            text: root.state.length;
+            color: Theme.text-dim;
+            font-size: 17px * root.s;
+        }
+
+        HorizontalLayout {
+            x: info.x;
+            y: root.pad + root.art - root.button;
+            height: root.button;
+            spacing: 20px * root.s;
+            alignment: start;
+
+            for icon[i] in [@image-url("icons/previous.svg"), root.state.playing ? @image-url("icons/pause.svg") : @image-url("icons/play.svg"), @image-url("icons/next.svg"), @image-url("icons/shuffle.svg")]: Rectangle {
+                property <bool> shown: i < 3 || root.state.has-shuffle;
+                property <bool> enabled: (i != 0 || root.state.can-previous) && (i != 2 || root.state.can-next);
+                property <bool> is-focused: i == root.state.focused;
+                visible: self.shown;
+                width: self.shown ? (i == 1 ? root.button * 1.15 : root.button) : 0px;
+                height: self.width;
+                y: (parent.height - self.height) / 2;
+                border-radius: self.width / 2;
+                background: i == 1 ? Theme.text : (i == 3 && root.state.shuffle ? Theme.accent.with-alpha(0.25) : Theme.surface);
+                opacity: self.enabled ? 1 : 0.4;
+
+                FocusRing {
+                    border-radius: parent.border-radius;
+                    focused: parent.is-focused;
+                    s: root.s;
+                }
+
+                Image {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    width: parent.width * 0.42;
+                    height: self.width;
+                    source: icon;
+                    colorize: i == 1 ? Theme.base : (i == 3 && root.state.shuffle ? Theme.accent : Theme.text);
+                }
+
+                TouchArea {
+                    clicked => { root.button-clicked(i); }
+                }
+            }
+        }
+
+        HintBar {
+            x: root.pad;
+            y: root.pad * 1.6 + root.art;
+            width: parent.width - 2 * root.pad;
+            height: 26px * root.s;
+            hints: root.hints;
+            style: root.style;
+            s: root.s;
+        }
+    }
+}

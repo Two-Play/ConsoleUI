@@ -79,6 +79,8 @@ pub enum QuickOutcome {
     Confirm(QuickAction),
     /// For the player on the media card
     Media(MediaCommand),
+    /// The media card was pressed: the player window opens
+    OpenPlayer,
 }
 
 impl QuickMenu {
@@ -263,7 +265,7 @@ impl QuickMenu {
                 QuickOutcome::Stay
             }
             Action::Confirm if current == QuickAction::Brightness => QuickOutcome::Stay,
-            Action::Confirm if current == QuickAction::Media => QuickOutcome::Media(MediaCommand::PlayPause),
+            Action::Confirm if current == QuickAction::Media => QuickOutcome::OpenPlayer,
             Action::Confirm if current == QuickAction::Volume => {
                 report(system::toggle_mute());
                 self.volume = system::volume();
@@ -396,7 +398,7 @@ mod tests {
     fn the_card_sends_only_what_the_player_can_do() {
         let mut menu = menu(Some(player()));
         focus_card(&mut menu);
-        assert!(matches!(menu.apply(Action::Confirm), QuickOutcome::Media(MediaCommand::PlayPause)));
+        assert!(matches!(menu.apply(Action::Confirm), QuickOutcome::OpenPlayer));
         assert!(matches!(menu.apply(Action::Up), QuickOutcome::Media(MediaCommand::Next)));
         assert!(matches!(menu.apply(Action::Down), QuickOutcome::Stay), "no previous track");
     }

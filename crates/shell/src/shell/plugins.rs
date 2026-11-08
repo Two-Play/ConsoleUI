@@ -2,6 +2,7 @@
 //! the lists, shows their panels from the quick menu and the plugin list of the settings. The bus
 //! side is `crate::plugins`, the model `consoleui_core::plugins`.
 
+use std::collections::HashMap;
 use std::sync::mpsc::Receiver;
 
 use consoleui_core::plugins::{
@@ -23,15 +24,31 @@ pub(super) struct Plugins {
     host: Option<Host>,
     /// Entries of a plugin whose artwork is being decoded
     decoding: Vec<(String, Receiver<Vec<LoadedEntry>>)>,
+    /// Entries whose new pictures from a plugin are being decoded
+    artwork_decoding: Vec<Receiver<Vec<LoadedEntry>>>,
+    /// Entries the artwork plugins were asked about
+    artwork_asked: std::collections::HashSet<String>,
+    /// Answers of the theme plugins (`None`: none had music, YouTube is next)
+    pub theme_answers: HashMap<String, Option<PathBuf>>,
+    theme_asked: std::collections::HashSet<String>,
     pub panel: Option<OpenPanel>,
 }
 
 pub(super) struct OpenPanel {
     /// `None`: the plugin list of the settings
     plugin: Option<String>,
+    /// The plugin's settings page (opened from the list, which comes back when it closes)
+    settings: bool,
     view: PanelView,
     /// Over an app: in the overlay window
     in_overlay: bool,
+}
+
+impl OpenPanel {
+    /// A click on row `index`.
+    pub fn focus(&mut self, index: usize) {
+        self.view.focused = index.min(self.view.panel.items.len().saturating_sub(1));
+    }
 }
 
 impl Plugins {
@@ -40,6 +57,11 @@ impl Plugins {
     }
 
     /// The plugins that are on and have a panel, for the quick menu's cards.
+    /// A plugin that is on offers `what`.
+    pub fn any_active(&self, what: Provides) -> bool {
+        self.settings.active(&self.infos).iter().any(|info| info.provides(what))
+    }
+
     pub fn panels(&self) -> Vec<(String, String)> {
         let active = self.settings.active(&self.infos);
         active
@@ -80,6 +102,49 @@ impl Shell {
             return;
         }
         plugins.host.get_or_insert_with(Host::start).send(Request::Run(active));
+        // A plugin that was turned on may know pictures or music the others did not
+        plugins.artwork_asked.clear();
+        plugins.theme_asked.clear();
+        plugins.theme_answers.clear();
+        self.ask_artwork();
+    }
+
+    /// Asks the artwork plugins about the games without a cover (each once).
+    pub(super) fn ask_artwork(&mut self) {
+        if !self.plugins.any_active(Provides::Artwork) {
+            return;
+        }
+        let wanted: Vec<(String, String)> = self
+            .entries
+            .iter()
+            .filter(|e| e.kind == AppKind::Game && e.artwork.cover.is_none())
+            .filter(|e| !self.plugins.artwork_asked.contains(&e.id))
+            .map(|e| (e.id.clone(), e.title.clone()))
+            .collect();
+        if wanted.is_empty() {
+            return;
+        }
+        self.plugins.artwork_asked.extend(wanted.iter().map(|(id, _)| id.clone()));
+        if let Some(host) = &self.plugins.host {
+            host.send(Request::Artwork(wanted));
+        }
+    }
+
+    /// Theme music of a plugin for this game: `Some` once a plugin has it. Until the plugins
+    /// answered, `Err(())` says to wait; `Ok(None)` lets YouTube try.
+    pub(super) fn plugin_theme(&mut self, id: &str, title: &str) -> Result<Option<PathBuf>, ()> {
+        if !self.plugins.any_active(Provides::Themes) {
+            return Ok(None);
+        }
+        if let Some(answer) = self.plugins.theme_answers.get(id) {
+            return Ok(answer.clone());
+        }
+        if self.plugins.theme_asked.insert(id.to_string())
+            && let Some(host) = &self.plugins.host
+        {
+            host.send(Request::Theme { entry: id.to_string(), title: title.to_string() });
+        }
+        Err(())
     }
 
     /// When the shell quits: the plugins it started end with it.
@@ -111,6 +176,28 @@ impl Shell {
         for (plugin, loaded) in decoded {
             self.merge_plugin_entries(ui, &plugin, loaded);
         }
+        let mut pictures = Vec::new();
+        self.plugins.artwork_decoding.retain(|rx| match rx.try_recv() {
+            Ok(loaded) => {
+                pictures.extend(loaded);
+                false
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => true,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => false,
+        });
+        if !pictures.is_empty() {
+            let today = tiles::today();
+            for loaded in pictures {
+                let Some(index) = self.entries.iter().position(|e| e.id == loaded.entry.id) else { continue };
+                let running = self.tiles[index].running;
+                self.tiles[index] = tiles::to_tile(&loaded, index, today);
+                self.tiles[index].running = running;
+                self.entries[index].artwork = loaded.entry.artwork;
+                self.relabel_tile(index);
+            }
+            self.heroes.invalidate();
+            self.refresh(ui);
+        }
         let events: Vec<Event> = self.plugins.host.iter().flat_map(|host| host.events.try_iter()).collect();
         for event in events {
             match event {
@@ -132,11 +219,22 @@ impl Shell {
                     }
                 }
                 Event::PanelChanged(plugin) => {
-                    if self.plugins.panel.as_ref().is_some_and(|open| open.plugin.as_ref() == Some(&plugin))
-                        && let Some(host) = &self.plugins.host
-                    {
-                        host.send(Request::Panel(plugin));
+                    let open = self.plugins.panel.as_ref().filter(|open| open.plugin.as_ref() == Some(&plugin));
+                    if let (Some(open), Some(host)) = (open, &self.plugins.host) {
+                        host.send(if open.settings { Request::Settings(plugin) } else { Request::Panel(plugin) });
                     }
+                }
+                Event::Artwork { entry, artwork } => {
+                    let Some(index) = self.entries.iter().position(|e| e.id == entry) else { continue };
+                    let mut updated = self.entries[index].clone();
+                    artwork.fill(&mut updated.artwork, &xdg::data_dirs());
+                    if updated.artwork != self.entries[index].artwork {
+                        self.plugins.artwork_decoding.push(loader::spawn_decode(vec![updated], self.settings.artwork));
+                    }
+                }
+                Event::Theme { entry, path } => {
+                    let path = path.map(PathBuf::from).filter(|path| path.is_file());
+                    self.plugins.theme_answers.insert(entry, path);
                 }
                 Event::Failed { plugin, error } => {
                     let name = self.plugins.info(&plugin).map_or(plugin.clone(), |info| info.name.clone());
@@ -202,6 +300,7 @@ impl Shell {
         if let Some(id) = keep {
             self.focus_entry(&id);
         }
+        self.ask_artwork();
     }
 
     /// For the navigation sounds: where the focus is in an open panel
@@ -213,8 +312,12 @@ impl Shell {
     pub(super) fn open_plugin_panel(&mut self, ui: &AppWindow, plugin: &str) {
         let Some(name) = self.plugins.info(plugin).map(|info| info.name.clone()) else { return };
         let in_overlay = self.quick.is_some() && self.overlay_window().is_some();
-        self.plugins.panel =
-            Some(OpenPanel { plugin: Some(plugin.into()), view: PanelView::loading(&name), in_overlay });
+        self.plugins.panel = Some(OpenPanel {
+            plugin: Some(plugin.into()),
+            settings: false,
+            view: PanelView::loading(&name),
+            in_overlay,
+        });
         if let Some(host) = &self.plugins.host {
             host.send(Request::Panel(plugin.into()));
         }
@@ -226,7 +329,7 @@ impl Shell {
         self.plugins.infos = discover();
         let mut view = PanelView::loading(tr("Plugins"));
         view.set(self.plugin_list());
-        self.plugins.panel = Some(OpenPanel { plugin: None, view, in_overlay: false });
+        self.plugins.panel = Some(OpenPanel { plugin: None, settings: false, view, in_overlay: false });
         self.show_panel(ui);
     }
 
@@ -256,10 +359,28 @@ impl Shell {
     }
 
     pub(super) fn apply_panel(&mut self, ui: &AppWindow, action: Action) {
+        // ≡ on a plugin of the list opens its settings page
+        if action == Action::Menu
+            && let Some(id) = self.list_plugin_with_settings()
+        {
+            return self.open_plugin_settings(ui, &id);
+        }
         let Some(open) = self.plugins.panel.as_mut() else { return };
         match open.view.apply(action) {
             PanelOutcome::Nothing => return,
             PanelOutcome::Moved => {}
+            PanelOutcome::Close if open.settings => {
+                // Back to the list, on the same plugin
+                let plugin = open.plugin.clone();
+                self.close_panel(ui);
+                self.open_plugin_list(ui);
+                if let Some(open) = self.plugins.panel.as_mut()
+                    && let Some(at) = open.view.panel.items.iter().position(|item| Some(&item.id) == plugin.as_ref())
+                {
+                    open.view.focused = at;
+                }
+                return self.show_panel(ui);
+            }
             PanelOutcome::Close => return self.close_panel(ui),
             PanelOutcome::Activate { item, value } => match open.plugin.clone() {
                 Some(plugin) => {
@@ -269,6 +390,25 @@ impl Shell {
                 }
                 None => self.switch_plugin(ui, &item, value == Value::Bool(true)),
             },
+        }
+        self.show_panel(ui);
+    }
+
+    /// The focused plugin of the open list, if it is on and has a settings page.
+    fn list_plugin_with_settings(&self) -> Option<String> {
+        let open = self.plugins.panel.as_ref().filter(|open| open.plugin.is_none())?;
+        let id = &open.view.panel.items.get(open.view.focused)?.id;
+        let info = self.plugins.info(id)?;
+        (info.provides(Provides::Settings) && self.plugins.settings.is_enabled(id)).then(|| id.clone())
+    }
+
+    fn open_plugin_settings(&mut self, ui: &AppWindow, plugin: &str) {
+        let Some(name) = self.plugins.info(plugin).map(|info| info.name.clone()) else { return };
+        self.close_panel(ui);
+        let view = PanelView::loading(&name);
+        self.plugins.panel = Some(OpenPanel { plugin: Some(plugin.into()), settings: true, view, in_overlay: false });
+        if let Some(host) = &self.plugins.host {
+            host.send(Request::Settings(plugin.into()));
         }
         self.show_panel(ui);
     }
@@ -353,7 +493,10 @@ impl Shell {
             }
             _ => {}
         }
-        hints.push(hint(GlyphButton::Back, tr("Close")));
+        if self.list_plugin_with_settings().is_some() {
+            hints.push(hint(GlyphButton::Menu, tr("Settings")));
+        }
+        hints.push(hint(GlyphButton::Back, if open.settings { tr("Back") } else { tr("Close") }));
         let subtitle = match &open.plugin {
             None => tr("Plugins come from their authors. Turn on only the ones you trust."),
             Some(_) => "",

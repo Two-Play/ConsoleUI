@@ -1190,8 +1190,8 @@ msgstr "Vergrößern"
 msgid "Next / previous"
 msgstr "Nächster / vorheriger Titel"
 
-msgid "Play / pause"
-msgstr "Wiedergabe / Pause"
+msgid "Open player"
+msgstr "Player öffnen"
 
 msgid "A folder cannot go into itself."
 msgstr "Ein Ordner kann nicht in sich selbst liegen."
@@ -1408,3 +1408,15 @@ msgstr "Leuchtende Auswahl"
 
 msgid "A soft light breathes around the selection"
 msgstr "Ein sanftes Licht atmet um die Auswahl"
+
+msgid "Own settings"
+msgstr "Eigene Einstellungen"
+
+msgid "Pictures for games"
+msgstr "Bilder für Spiele"
+
+msgid "Music for games"
+msgstr "Musik für Spiele"
+
+msgid "Nothing plays"
+msgstr "Gerade läuft nichts"

@@ -157,6 +157,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         let clicks = clicks.clone();
         move |i| clicks(Click::QuickCard(i.max(0) as usize))
     });
+    ui.on_panel_clicked({
+        let clicks = clicks.clone();
+        move |i| clicks(Click::PanelRow(i.max(0) as usize))
+    });
+    ui.on_player_clicked({
+        let clicks = clicks.clone();
+        move |i| clicks(Click::PlayerButton(i.max(0) as usize))
+    });
     if let Some(overlay) = overlay.and_then(|o| o.upgrade()) {
         overlay.on_app_clicked({
             let clicks = clicks.clone();
@@ -169,6 +177,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         overlay.on_dialog_clicked({
             let clicks = clicks.clone();
             move |i| clicks(Click::DialogButton(i.max(0) as usize))
+        });
+        overlay.on_panel_clicked({
+            let clicks = clicks.clone();
+            move |i| clicks(Click::PanelRow(i.max(0) as usize))
+        });
+        overlay.on_player_clicked({
+            let clicks = clicks.clone();
+            move |i| clicks(Click::PlayerButton(i.max(0) as usize))
         });
         overlay.on_action({
             let ui = ui.as_weak();

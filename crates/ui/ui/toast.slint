@@ -7,6 +7,9 @@ export component Toast inherits GlassPanel {
     in property <string> symbol;
     in property <string> title;
     in property <string> text;
+    // A cover instead of the symbol, e.g. for "now playing"
+    in property <image> picture;
+    in property <bool> has-picture;
     in property <float> s: 1;
 
     width: 440px * root.s;
@@ -23,7 +26,23 @@ export component Toast inherits GlassPanel {
         padding-right: 22px * root.s;
         spacing: 18px * root.s;
 
-        Text {
+        if root.has-picture: Rectangle {
+            horizontal-stretch: 0;
+            width: 58px * root.s;
+            height: 58px * root.s;
+            y: (parent.height - self.height) / 2;
+            border-radius: Theme.radius-card * 0.6 * root.s;
+            clip: true;
+
+            Image {
+                width: 100%;
+                height: 100%;
+                source: root.picture;
+                image-fit: cover;
+            }
+        }
+
+        if !root.has-picture: Text {
             horizontal-stretch: 0;
             text: root.symbol;
             color: Theme.accent;

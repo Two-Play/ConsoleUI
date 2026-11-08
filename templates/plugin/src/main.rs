@@ -1,7 +1,9 @@
 //! My Plugin: a plugin for ConsoleUI. The contract is `docs/plugins.md` in the ConsoleUI repository:
 //! the shell starts this program once the user turned it on, then asks `Entries()` for library
-//! entries and `Panel()` for the quick menu panel, and calls `Activate` when the user changes
-//! something. Remove the half you do not need (and its word in `X-ConsoleUI-Plugin-Provides`).
+//! entries, `Panel()` for the quick menu panel and `Settings()` for its settings page, and calls
+//! `Activate` when the user changes something. Remove what you do not need (and its word in
+//! `X-ConsoleUI-Plugin-Provides`). `docs/plugins.md` also has `Artwork` (pictures for games) and
+//! `Theme` (theme music); a toast goes through the shell's `org.consoleui.Shell1` `Toast` method.
 //!
 //! `cargo run` serves it on your session bus; with a ConsoleUI shell running, turn it on under
 //! Settings → Plugins after installing the desktop entry (see README.md).
@@ -30,6 +32,7 @@ fn dict<'a>(pairs: impl IntoIterator<Item = (&'static str, Value<'a>)>) -> Dict 
 
 /// What the panel shows; a real plugin reads and changes the system here.
 struct State {
+    notify: bool,
     enabled: bool,
     level: f64,
     mode: String,
@@ -103,6 +106,20 @@ impl Plugin {
         ("My Plugin".to_string(), items)
     }
 
+    /// Its own settings page, opened with ≡ from Settings → Plugins; built like the panel, the
+    /// changes arrive in `activate` as well (keep the IDs apart).
+    fn settings(&self) -> (String, Vec<Dict>) {
+        let state = self.state.lock().unwrap();
+        let items = vec![dict([
+            ("id", Value::from("notify")),
+            ("kind", Value::from("toggle")),
+            ("label", Value::from("Notify me")),
+            ("detail", Value::from("Show a toast when something happens")),
+            ("value", Value::from(state.notify)),
+        ])];
+        ("My Plugin settings".to_string(), items)
+    }
+
     /// The user changed item `id`; the shell already shows the new value.
     fn activate(&self, id: String, value: OwnedValue, #[zbus(signal_emitter)] emitter: SignalEmitter<'_>) {
         let mut state = self.state.lock().unwrap();
@@ -110,6 +127,7 @@ impl Plugin {
             "enabled" => state.enabled = bool::try_from(value).unwrap_or(state.enabled),
             "level" => state.level = f64::try_from(value).unwrap_or(state.level),
             "mode" => state.mode = String::try_from(value).unwrap_or_default(),
+            "notify" => state.notify = bool::try_from(value).unwrap_or(state.notify),
             "press" => {
                 state.presses += 1;
                 drop(state);
@@ -136,7 +154,7 @@ impl Plugin {
 }
 
 fn main() -> zbus::Result<()> {
-    let state = State { enabled: true, level: 50.0, mode: "Normal".into(), presses: 0 };
+    let state = State { notify: false, enabled: true, level: 50.0, mode: "Normal".into(), presses: 0 };
     let connection =
         connection::Builder::session()?.name(BUS_NAME)?.serve_at(PATH, Plugin { state: Mutex::new(state) })?.build()?;
     // Ends with the session: when the bus is gone, nothing needs this process any more

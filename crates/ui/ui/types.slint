@@ -54,6 +54,25 @@ export struct KeyCap {
 }
 
 // Row of a settings list
+// What the `MediaPlayer` shows
+export struct PlayerState {
+    cover: image,
+    has-cover: bool,
+    source: string,
+    title: string,
+    artist: string,
+    album: string,
+    playing: bool,
+    progress: float,
+    time: string,
+    length: string,
+    focused: int,
+    can-previous: bool,
+    can-next: bool,
+    has-shuffle: bool,
+    shuffle: bool,
+}
+
 // A row of a `ControlPanel` (plugin panels, Epic 9)
 export struct PanelRow {
     label: string,

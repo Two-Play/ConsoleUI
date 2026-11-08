@@ -3,7 +3,11 @@
 A plugin adds to the shell itself, where an app (see `docs/sdk.md`) is a program of its own. Plugins can
 
 - **add games and apps to the library** (another launcher, emulators, ...), and
-- **show a panel in the quick menu** (controls the shell draws: toggles, sliders, choices, buttons, info lines).
+- **show a panel in the quick menu** (controls the shell draws: toggles, sliders, choices, buttons, info lines),
+- **have a settings page** of their own, built the same way,
+- **find pictures** for games that have no cover, and **theme music** for games, before the shell asks YouTube,
+- **run in the background** while the shell runs and show **toasts** through the shell's own service
+  (`org.consoleui.Shell1`, method `Toast(title, text)`, see `docs/sdk.md`).
 
 A plugin is a program of its own that talks to the shell over the session bus. That keeps the shell stable when a
 plugin crashes, lets a plugin run in a Flatpak sandbox, and works from any language. The bus interface below is the
@@ -45,7 +49,7 @@ Exec=consoleui-plugin-lutris
 NoDisplay=true
 # The bus name it owns while it runs; with Flatpak it must start with the app ID
 X-ConsoleUI-Plugin=org.consoleui.plugins.Lutris
-# What it offers: library, panel
+# What it offers: library, panel, settings, artwork, themes
 X-ConsoleUI-Plugin-Provides=library;
 ```
 
@@ -69,6 +73,9 @@ Object `/org/consoleui/Plugin1`, interface `org.consoleui.Plugin1`, on the plugi
 | `Panel()` | method → `(saa{sv})` | Title and items of the quick menu panel (only with `panel`) |
 | `Activate(s id, v value)` | method | The user changed or pressed item `id`; `value` as listed below |
 | `PanelChanged` | signal | The shell asks for `Panel()` again while the panel is open |
+| `Settings()` | method → `(saa{sv})` | Its settings page, like a panel (only with `settings`); ≡ in the plugin list opens it, the changes arrive in `Activate` too |
+| `Artwork(s id, s title)` | method → `a{ss}` | `cover`, `hero`, `logo` for a game without a cover (only with `artwork`); empty when it has none. `id` is the shell's entry ID (`steam:400`, `desktop:…`, `plugin:…`) |
+| `Theme(s id, s title)` | method → `s` | A theme music file for the game (only with `themes`), asked before YouTube; empty when it has none |
 | `Quit()` | method, optional | The plugin was turned off and should exit |
 
 Unknown keys are ignored, missing optional keys take their default, so both sides can grow.

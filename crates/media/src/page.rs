@@ -444,6 +444,8 @@ impl Page {
             MediaCommand::PlayPause => Control::PlayPause,
             MediaCommand::Next => Control::Next,
             MediaCommand::Previous => playback.previous(),
+            // The app tells the bus it cannot seek and has no shuffle, so these do not come
+            MediaCommand::Seek(_) | MediaCommand::Shuffle(_) => return None,
         })
     }
 }

@@ -371,7 +371,13 @@ Cargo workspace (edition 2024, `default-members` = the shell):
   - `src/gamepad.rs`: gilrs polling → `Action`s (only devices with an SDL mapping); PS/Guide → `Action::Guide`.
   - `src/gamescope.rs`: X11 control of gamescope (tagging windows, baselayer, preparing the overlay and
     notification windows).
-  - `src/media.rs`: MPRIS on its own thread, asked only while the quick menu is open (`Shell::poll_media`); `consoleui_core::media` picks the player. The quick menu's media card shows it, `examples/fake_mpris.rs` is a stand-in player that prints its commands.
+  - `src/media.rs`: MPRIS on its own thread, asked only while the quick menu or the player window is open
+    (`Shell::poll_media`); `consoleui_core::media` picks the player. ✕ on the quick menu's media card opens the player
+    window (`src/shell/player.rs`, `MediaPlayer` from the `ui` crate, `PlayerView`: previous, play/pause, next, shuffle,
+    L1/R1 seek), in the overlay window over a game. Covers (`mpris:artUrl`) are fetched with `curl` into
+    `$XDG_CACHE_HOME/consoleui/art`. A second thread listens for `PropertiesChanged` and announces a new track with a
+    toast that shows the cover ("Notifications" setting). `examples/fake_mpris.rs` is a stand-in player (cover as first
+    argument) that prints its commands; use it on a private bus, never the user's real Spotify.
   - `src/quick.rs`: quick menu ("Steuerzentrale") items and input handling, with the window switcher row
     above the cards when there is something to switch to (Story 4.7). In gamescope it is shown in
     `OverlayWindow` (`ui/overlay.slint`, transparent, gets `STEAM_OVERLAY` and is remapped before first

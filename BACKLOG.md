@@ -92,6 +92,7 @@ Schätzung in Story Points (SP): 1, 2, 3, 5, 8, 13. Ein Sprint dauert 2 Wochen.
 | 4.5 | Processes run in their own systemd scope (`systemd-run --user --scope`), so crashes and quitting work cleanly | 3 |
 | 4.6 | Quick menu as an overlay above running games (volume, brightness, back to the shell, quit the game). Brightness only on screens with a backlight, the card is hidden otherwise | 8 (spike 0.3) |
 | 4.8 | **Done.** Media card in the quick menu: while a player (browser, music app) has something loaded over MPRIS, a card shows the track and artist; confirm plays or pauses, up and down skip | 3 |
+| 4.9 | **Done.** Player like on a PS5: ✕ on the media card opens a player window (cover, track, album, progress, previous/play/pause/next/shuffle, L1/R1 seek), also over a game; a new track of Spotify or any MPRIS player pops up as a toast with its cover | 3 |
 | 4.7 | **Done.** Window switcher in the quick menu: a row with every running app, most recently used first, one card per window with a live preview (our compositor; artwork in gamescope and on the desktop). ✕ switches, □ quits, ✕ right after opening goes to the previous app | 5 |
 
 ## Epic 5 – System & settings
@@ -203,7 +204,7 @@ found by its desktop entry (`X-ConsoleUI-Plugin`), started only once the user tu
 | 9.3 | **Done.** Settings row "Plugins": every installed plugin with a switch, per profile (`plugins.json`); turning one on asks first and says what it can (starting programs for library plugins). Plugins end with the shell and with their session | 3 |
 | 9.4 | **Done.** Plugin template `templates/plugin` (CC0, so plugins may use any license; only `zbus`): an example with a library entry and a panel of every item kind, desktop entry, Flatpak manifest without permissions, README. `dev/new-plugin.sh <name>` creates one; checked built, linted, on the bus, as a Flatpak and turned on in the shell | 3 |
 | 9.5 | Plugins in the store (8.9), with what they can before the install | 3 |
-| 9.6 | More extension points: own settings pages, notifications and background services, artwork sources (SteamGridDB), theme music sources | 8 |
+| 9.6 | **Done.** More extension points: a plugin's own settings page (`Settings()`, ≡ in the plugin list), pictures for games without a cover (`Artwork`, asked once per game, e.g. for SteamGridDB), theme music before YouTube (`Theme`); background work and toasts already go through the shell's service (documented). Checked with a probe plugin made from the template | 8 |
 
 ## Sprint plan (proposal)
 

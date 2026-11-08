@@ -39,6 +39,7 @@ use slint::{ComponentHandle, Image, Model, ModelRc, SharedPixelBuffer, VecModel}
 
 use crate::backdrop::{Backdrop, Look};
 mod mouse;
+mod player;
 mod plugins;
 mod typing;
 mod updates;
@@ -77,6 +78,10 @@ pub enum Click {
     DialogButton(usize),
     QuickCard(usize),
     SwitcherCard(usize),
+    /// A row of a plugin panel or the plugin list
+    PanelRow(usize),
+    /// A button of the player window
+    PlayerButton(usize),
 }
 
 /// What a button of the modal dialog does.
@@ -262,6 +267,10 @@ pub struct Shell {
     media: Option<Media>,
     /// What the media card showed last
     media_player: Option<Player>,
+    /// The player window from the media card
+    player: Option<player::OpenPlayer>,
+    /// A picture for the next toast ("now playing")
+    next_toast_picture: Option<slint::Image>,
     /// An app asked to start this entry; waits for the library if it is new
     pending_launch: Option<String>,
     /// The library changed while a look at it was running
@@ -448,6 +457,8 @@ impl Shell {
             service: None,
             media: None,
             media_player: None,
+            player: None,
+            next_toast_picture: None,
             pending_launch: None,
             look_again: false,
             downloads_rx: None,
@@ -606,6 +617,7 @@ impl Shell {
     /// gamescope or our compositor, it appears in the notification window above it, otherwise in
     /// the main window.
     pub fn toast(&mut self, ui: &AppWindow, symbol: &str, title: &str, text: &str) {
+        let picture = self.next_toast_picture.take();
         let generation = self.toast_generation.get() + 1;
         self.toast_generation.set(generation);
         let over_app = !self.shell_in_front(ui);
@@ -614,6 +626,8 @@ impl Shell {
             notification.set_symbol(symbol.into());
             notification.set_title_text(title.into());
             notification.set_text(text.into());
+            notification.set_has_picture(picture.is_some());
+            notification.set_picture(picture.clone().unwrap_or_default());
             if notification.window().is_visible() {
                 notification.set_shown(true);
             } else {
@@ -637,6 +651,8 @@ impl Shell {
             ui.set_toast_symbol(symbol.into());
             ui.set_toast_title(title.into());
             ui.set_toast_text(text.into());
+            ui.set_toast_has_picture(picture.is_some());
+            ui.set_toast_picture(picture.unwrap_or_default());
             ui.set_toast_shown(true);
         }
         let weak = ui.as_weak();
@@ -825,7 +841,10 @@ impl Shell {
         Feedback {
             screen: self.screen,
             quick_open: self.quick.is_some(),
-            context_open: self.context.is_some() || self.game_options_panel.is_some() || self.plugins.panel.is_some(),
+            context_open: self.context.is_some()
+                || self.game_options_panel.is_some()
+                || self.plugins.panel.is_some()
+                || self.player.is_some(),
             game_options: self.game_options_panel.as_ref().map(|p| (p.focused(), p.options())),
             launching: ui.get_launching(),
             focus: [
@@ -878,6 +897,16 @@ impl Shell {
     /// tile, row, card or button does what ✕ does. While a menu or panel is open other clicks do
     /// nothing; the dialog and the quick menu take theirs.
     pub fn click(&mut self, ui: &AppWindow, click: Click) {
+        if let Click::PlayerButton(index) = click {
+            return self.click_player(ui, index);
+        }
+        if let Click::PanelRow(index) = click {
+            if let Some(open) = self.plugins.panel.as_mut() {
+                open.focus(index);
+                self.apply(ui, Action::Confirm);
+            }
+            return;
+        }
         if let Click::DialogButton(index) = click {
             if let Some(dialog) = &mut self.dialog {
                 dialog.focus(index);
@@ -952,6 +981,10 @@ impl Shell {
             self.apply_dialog(ui, action);
             // A panel waits under a dialog it opened
             self.show_panel(ui);
+            return;
+        }
+        if self.player.is_some() {
+            self.apply_player(ui, action);
             return;
         }
         if self.plugins.panel.is_some() {
@@ -1522,15 +1555,21 @@ impl Shell {
     /// Runs on a timer: takes over responses of the network thread and shows toasts.
     /// Keeps the media card current while the quick menu is open.
     fn poll_media(&mut self, ui: &AppWindow) {
-        let open = self.quick.is_some();
+        let open = self.quick.is_some() || self.player.is_some();
         let Some(media) = self.media.as_mut() else { return };
         media.watch(open);
-        let Some(player) = media.player.try_iter().last() else { return };
+        let announced: Vec<Player> = media.announced.try_iter().collect();
+        let update = media.player.try_iter().last();
+        if let Some(player) = announced.last() {
+            self.announce_track(ui, player);
+        }
+        let Some(player) = update else { return };
         self.media_player = player.clone();
         if let Some(quick) = self.quick.as_mut() {
             quick.set_media(player);
             self.show_quick(ui, true);
         }
+        self.show_player(ui);
     }
 
     pub fn poll_network(&mut self, ui: &AppWindow) {
@@ -1816,8 +1855,14 @@ impl Shell {
         if file.is_file() {
             return settled.then_some(file);
         }
+        // A theme plugin comes before YouTube (Story 9.6)
+        let (id, title) = (entry.id.clone(), entry.title.clone());
+        match self.plugin_theme(&id, &title) {
+            Ok(Some(path)) => return settled.then_some(path),
+            Err(()) => return None,
+            Ok(None) => {}
+        }
         if !theme_music::failed_marker(&file).exists() {
-            let title = entry.title.clone();
             self.theme_fetcher.get_or_insert_with(crate::themes::Fetcher::start).request(&title, result, &file);
         }
         None
@@ -2283,6 +2328,8 @@ impl Shell {
             }
             // A plugin's panel opens above the menu, which comes back when it closes
             QuickOutcome::Run(QuickAction::Plugin(id)) => self.open_plugin_panel(ui, &id),
+            // The player opens above the menu, which comes back when it closes
+            QuickOutcome::OpenPlayer => self.open_player(ui),
             QuickOutcome::Run(action) => {
                 self.close_quick(ui);
                 self.run_quick(ui, action);
