@@ -105,6 +105,28 @@ impl BackgroundChoice {
     }
 }
 
+/// Where the theme music of the focused game plays (Story 6.12, see [`crate::themes`])
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ThemeMusic {
+    #[default]
+    Off,
+    Home,
+    HomeAndLibrary,
+}
+
+impl ThemeMusic {
+    pub const ALL: [ThemeMusic; 3] = [Self::Off, Self::Home, Self::HomeAndLibrary];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Off => tr("Off"),
+            Self::Home => tr("Home screen"),
+            Self::HomeAndLibrary => tr("Home screen and library"),
+        }
+    }
+}
+
 /// Background music on the home screen (see [`crate::music`])
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -115,19 +137,16 @@ pub enum MusicChoice {
     Ambient,
     /// Files from the music folder (`$XDG_DATA_HOME/consoleui/music`)
     Folder,
-    /// The theme music of the focused game, searched on YouTube (`consoleui_core::themes`)
-    GameThemes,
 }
 
 impl MusicChoice {
-    pub const ALL: [MusicChoice; 4] = [Self::Off, Self::Ambient, Self::Folder, Self::GameThemes];
+    pub const ALL: [MusicChoice; 3] = [Self::Off, Self::Ambient, Self::Folder];
 
     pub fn label(self) -> &'static str {
         match self {
             Self::Off => tr("Off"),
             Self::Ambient => tr("Ambient"),
             Self::Folder => tr("My music"),
-            Self::GameThemes => tr("Game themes"),
         }
     }
 }
@@ -150,6 +169,9 @@ pub struct Settings {
     pub music: MusicChoice,
     /// File name of the track to play on repeat from the music folder (`None`: all, shuffled)
     pub music_track: Option<String>,
+    /// On the home screen the theme music of the focused game plays over the background music
+    /// (searched on YouTube, `consoleui_core::themes`, Story 6.12)
+    pub theme_music: ThemeMusic,
     pub glyphs: GlyphChoice,
     pub language: LanguageChoice,
     /// Layout of the physical keyboard in our compositor (the on-screen keyboard follows the
@@ -177,6 +199,7 @@ impl Default for Settings {
             sounds: true,
             music: MusicChoice::default(),
             music_track: None,
+            theme_music: ThemeMusic::Off,
             glyphs: GlyphChoice::default(),
             language: LanguageChoice::default(),
             keyboard_layout: KeyboardLayout::default(),
@@ -207,6 +230,8 @@ pub enum Setting {
     Music,
     /// Which file of the music folder plays (only with "My music")
     MusicTrack,
+    /// Theme music of the focused game on the home screen (Story 6.12)
+    GameThemes,
     Glyphs,
     /// Story 6.6
     Language,
@@ -227,7 +252,7 @@ pub enum Setting {
 }
 
 impl Setting {
-    pub const ALL: [Setting; 19] = [
+    pub const ALL: [Setting; 20] = [
         Self::Accent,
         Self::Animations,
         Self::Background,
@@ -238,6 +263,7 @@ impl Setting {
         Self::Sounds,
         Self::Music,
         Self::MusicTrack,
+        Self::GameThemes,
         Self::Glyphs,
         Self::Language,
         Self::KeyboardLayout,
@@ -266,6 +292,7 @@ impl Setting {
             Self::Sounds => tr("Sounds"),
             Self::Music => tr("Background music"),
             Self::MusicTrack => tr("Music track"),
+            Self::GameThemes => tr("Game themes"),
             Self::Glyphs => tr("Button symbols"),
             Self::Language => tr("Language"),
             Self::KeyboardLayout => tr("Keyboard layout"),
@@ -290,6 +317,7 @@ impl Setting {
             Self::Sounds => tr("Sounds while navigating"),
             Self::Music => tr("Plays while the home screen is in front"),
             Self::MusicTrack => tr("One file on repeat, or all shuffled"),
+            Self::GameThemes => tr("The music of the game in focus, found on YouTube"),
             Self::Glyphs => tr("Symbols in the button hints"),
             Self::Language => tr("Language of the interface"),
             Self::KeyboardLayout => tr("Layout of the connected keyboard"),
@@ -357,12 +385,25 @@ impl Settings {
     /// A missing or broken file gives the defaults.
     pub fn load(path: &Path) -> Self {
         match fs::read_to_string(path) {
-            Ok(content) => serde_json::from_str(&content).unwrap_or_else(|err| {
+            Ok(content) => Self::parse(&content).unwrap_or_else(|err| {
                 eprintln!("Settings {} are invalid and ignored: {err}", path.display());
                 Self::default()
             }),
             Err(_) => Self::default(),
         }
+    }
+
+    /// Also reads the files of a short-lived version that had "Game themes" as a choice of the
+    /// background music: that is the ambient loop plus the own row now.
+    fn parse(content: &str) -> serde_json::Result<Self> {
+        let mut value: serde_json::Value = serde_json::from_str(content)?;
+        if let Some(object) = value.as_object_mut()
+            && object.get("music").and_then(serde_json::Value::as_str) == Some("game_themes")
+        {
+            object.insert("music".into(), "ambient".into());
+            object.insert("theme_music".into(), "home".into());
+        }
+        serde_json::from_value(value)
     }
 
     pub fn save(&self, path: &Path) -> io::Result<()> {
@@ -389,6 +430,7 @@ impl Settings {
             // Names a file or a mode: the shell has the list
             Setting::MusicTrack | Setting::Resolution | Setting::Display => "",
             Setting::Vrr => on_off(self.vrr),
+            Setting::GameThemes => self.theme_music.label(),
             Setting::Glyphs => self.glyphs.label(),
             Setting::Language => self.language.label(),
             Setting::KeyboardLayout => self.keyboard_layout.label(),
@@ -408,6 +450,7 @@ impl Settings {
             Setting::Notifications => self.notifications = !self.notifications,
             Setting::Sounds => self.sounds = !self.sounds,
             Setting::Vrr => self.vrr = !self.vrr,
+            Setting::GameThemes => self.theme_music = cycle(&ThemeMusic::ALL, self.theme_music, forward),
             Setting::Music => self.music = cycle(&MusicChoice::ALL, self.music, forward),
             Setting::Glyphs => self.glyphs = cycle(&GlyphChoice::ALL, self.glyphs, forward),
             Setting::Language => self.language = cycle(&LanguageChoice::ALL, self.language, forward),
@@ -450,7 +493,7 @@ mod tests {
         assert_eq!(settings.music, MusicChoice::Ambient);
         settings.change(Setting::Music, false);
         settings.change(Setting::Music, false);
-        assert_eq!(settings.music, MusicChoice::GameThemes);
+        assert_eq!(settings.music, MusicChoice::Folder);
         // Sub-pages change no value
         settings.change(Setting::Wifi, true);
         assert_eq!(settings.glyphs, GlyphChoice::PlayStation);
@@ -465,6 +508,15 @@ mod tests {
         settings.change(Setting::KeyboardLayout, true);
         settings.change(Setting::KeyboardLayout, true);
         assert_eq!(settings.keyboard_layout, KeyboardLayout::De);
+    }
+
+    #[test]
+    fn game_themes_from_the_music_choice_become_their_own_row() {
+        let settings = Settings::parse(r#"{"music": "game_themes", "sounds": false}"#).unwrap();
+        assert_eq!(settings.music, MusicChoice::Ambient);
+        assert!(settings.theme_music == ThemeMusic::Home && !settings.sounds);
+        let plain = Settings::parse(r#"{"music": "folder"}"#).unwrap();
+        assert_eq!(plain.theme_music, ThemeMusic::Off);
     }
 
     #[test]

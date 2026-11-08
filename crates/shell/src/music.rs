@@ -6,8 +6,10 @@
 //!   `pw-cat --raw` process in small chunks; it fades in and out over [`FADE`].
 //! - My music: `pw-cat` plays the files of the music folder one after another (shuffled); it is
 //!   paused with `SIGSTOP` and resumed with `SIGCONT`.
-//! - Game themes: `ffmpeg` decodes the focused game's theme (from the cache, see `themes.rs`) and
-//!   it goes to `pw-cat --raw` like the ambient loop, so it fades in, out and over to the next.
+//! - Game themes (own setting): `ffmpeg` decodes the focused game's theme (from the cache, see
+//!   `themes.rs`) and it goes to `pw-cat --raw` like the ambient loop, so it fades in, out and
+//!   over to the next. While it plays the background music fades out (ambient) or pauses (files),
+//!   and comes back when there is no theme.
 
 use std::io::Write;
 use std::path::PathBuf;
@@ -25,6 +27,8 @@ const FADE: Duration = Duration::from_millis(1500);
 const VOLUME: f32 = 0.7;
 /// Frames written per chunk; the pipe and `pw-cat` buffer a few of them.
 const CHUNK: usize = 2400;
+/// Loudness of the themes: a little below what streaming services aim at, under the UI sounds
+const LOUDNESS: &str = "loudnorm=I=-18:TP=-2:LRA=11";
 /// Fade of a game's theme: shorter than the ambient one, the focus moves on quickly
 const THEME_FADE: Duration = Duration::from_millis(900);
 
@@ -32,7 +36,7 @@ enum Control {
     Choice(MusicChoice),
     Track(Option<String>),
     Active(bool),
-    /// The theme of the focused game, with "Game themes"
+    /// The theme of the focused game on the home screen ("Game themes")
     Theme(Option<PathBuf>),
 }
 
@@ -68,7 +72,8 @@ impl Music {
         }
     }
 
-    /// The theme to play with "Game themes"; `None` fades the current one out.
+    /// The theme to play over the background music; `None` fades it out and the background
+    /// music comes back.
     pub fn set_theme(&mut self, theme: Option<PathBuf>) {
         if theme != self.theme {
             self.theme = theme.clone();
@@ -112,10 +117,10 @@ fn run(receiver: Receiver<Control>) {
             Some(Control::Theme(new)) => theme_file = new,
             None => {}
         }
-        if choice != MusicChoice::GameThemes {
-            theme = None;
-        }
 
+        // A theme takes the place of the background music while it plays
+        let wanted_theme = theme_file.clone().filter(|_| active);
+        let background = active && wanted_theme.is_none();
         if choice != MusicChoice::Ambient {
             ambient = None;
         }
@@ -125,12 +130,12 @@ fn run(receiver: Receiver<Control>) {
         match choice {
             MusicChoice::Off => {}
             MusicChoice::Ambient => {
-                if ambient.is_none() && active {
+                if ambient.is_none() && background {
                     ambient = Ambient::start();
                 }
                 if let Some(player) = &mut ambient
-                    && (active || player.gain > 0.0)
-                    && !player.write_chunk(active)
+                    && (background || player.gain > 0.0)
+                    && !player.write_chunk(background)
                 {
                     eprintln!("Music: pw-cat has exited");
                     ambient = None;
@@ -138,7 +143,7 @@ fn run(receiver: Receiver<Control>) {
                 }
             }
             MusicChoice::Folder => {
-                if folder.is_none() && active {
+                if folder.is_none() && background {
                     folder = Folder::new(track.as_deref());
                     if folder.is_none() {
                         eprintln!("Music: no playable files in {:?}", music::music_dir());
@@ -146,27 +151,24 @@ fn run(receiver: Receiver<Control>) {
                     }
                 }
                 if let Some(player) = &mut folder {
-                    player.update(active);
+                    player.update(background);
                 }
             }
-            MusicChoice::GameThemes => {
-                let wanted = theme_file.as_ref().filter(|_| active);
-                if let Some(player) = &mut theme {
-                    // Another game: this one fades out first, then the next one starts
-                    let keep = wanted == Some(&player.file);
-                    if !player.write_chunk(keep) || (!keep && player.gain == 0.0) {
-                        theme = None;
-                    }
-                }
-                if theme.is_none()
-                    && let Some(file) = wanted
-                {
-                    theme = Theme::start(file);
-                    if theme.is_none() {
-                        // Unplayable: do not try it again on every turn
-                        theme_file = None;
-                    }
-                }
+        }
+        if let Some(player) = &mut theme {
+            // Another game: this one fades out first, then the next one starts
+            let keep = wanted_theme.as_ref() == Some(&player.file);
+            if !player.write_chunk(keep) || (!keep && player.gain == 0.0) {
+                theme = None;
+            }
+        }
+        if theme.is_none()
+            && let Some(file) = &wanted_theme
+        {
+            theme = Theme::start(file);
+            if theme.is_none() {
+                // Unplayable: do not try it again on every turn
+                theme_file = None;
             }
         }
     }
@@ -296,9 +298,12 @@ impl Theme {
 
 fn decode(file: &std::path::Path) -> std::io::Result<Child> {
     let rate = SAMPLE_RATE.to_string();
-    Command::new("ffmpeg")
+    let mut command = Command::new("ffmpeg");
+    crate::themes::low_priority(&mut command)
         .args(["-v", "quiet", "-i"])
         .arg(file)
+        // Every theme about as loud as the others (EBU R128), whatever the video was mixed at
+        .args(["-af", LOUDNESS])
         .args(["-f", "s16le", "-ar", &rate, "-ac", "2", "-"])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())

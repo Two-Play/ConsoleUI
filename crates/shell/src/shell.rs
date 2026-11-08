@@ -26,7 +26,7 @@ use consoleui_core::protocol::{
     BlurRegion, CompositorMessage, DisplayInfo, Rect, ShellMessage, Transition, WindowRole,
 };
 use consoleui_core::running::{MIN_HOLD, Phase, RunningApp, STEAM_HELP_AFTER};
-use consoleui_core::settings::{BackgroundChoice, GlyphChoice, MusicChoice, Setting, Settings};
+use consoleui_core::settings::{BackgroundChoice, GlyphChoice, Setting, Settings, ThemeMusic};
 use consoleui_core::sound::Sound;
 use consoleui_core::switcher::{Switcher, SwitcherApp, most_recent_first};
 use consoleui_core::system::{self, PowerAction};
@@ -87,8 +87,8 @@ enum DialogTag {
     Quick(QuickAction),
     /// Install everything on the update page
     InstallUpdates,
-    /// Turn on "Game themes" after the note about YouTube (Story 6.12)
-    GameThemes,
+    /// Turn on "Game themes" (here) after the note about YouTube (Story 6.12)
+    GameThemes(ThemeMusic),
     Close,
 }
 
@@ -1116,12 +1116,16 @@ impl Shell {
                     );
                     self.send_output_settings();
                 }
-                let music_before = self.settings.music;
+                let themes_before = self.settings.theme_music;
                 self.settings.change(setting, action != Action::Left);
-                if setting == Setting::Music && self.settings.music == MusicChoice::GameThemes {
+                if setting == Setting::GameThemes
+                    && themes_before == ThemeMusic::Off
+                    && self.settings.theme_music != ThemeMusic::Off
+                {
                     // Only after a note: it needs programs, and it talks to YouTube
-                    self.settings.music = music_before;
-                    self.ask_game_themes(ui);
+                    let wanted = self.settings.theme_music;
+                    self.settings.theme_music = ThemeMusic::Off;
+                    self.ask_game_themes(ui, wanted);
                 }
                 if setting == Setting::Vrr {
                     self.send_output_settings();
@@ -1149,7 +1153,7 @@ impl Shell {
 
     /// "Game themes" needs `yt-dlp` and `ffmpeg`, and it sends the titles of the games to YouTube:
     /// without the programs it says what is missing, with them it asks before it turns on.
-    fn ask_game_themes(&mut self, ui: &AppWindow) {
+    fn ask_game_themes(&mut self, ui: &AppWindow, wanted: ThemeMusic) {
         let missing = missing_theme_programs();
         if !missing.is_empty() {
             let text = trf("Install {} to hear the theme music of your games.", &[&missing.join(", ")]);
@@ -1161,7 +1165,7 @@ impl Shell {
         );
         let buttons = vec![
             DialogButton { label: tr("Cancel").into(), tag: DialogTag::Close },
-            DialogButton { label: tr("Turn on").into(), tag: DialogTag::GameThemes },
+            DialogButton { label: tr("Turn on").into(), tag: DialogTag::GameThemes(wanted) },
         ];
         self.show_dialog(ui, Dialog::new(tr("Game themes come from YouTube"), text, buttons, 1));
     }
@@ -1469,7 +1473,7 @@ impl Shell {
                         (None, Some(size)) => trf("Automatic: {}", &[&size_label(size)]).into(),
                         (None, None) => tr("Automatic").into(),
                     },
-                    Setting::Music if self.settings.music == MusicChoice::GameThemes => {
+                    Setting::GameThemes if self.settings.theme_music != ThemeMusic::Off => {
                         match missing_theme_programs().as_slice() {
                             [] => self.settings.value_label(setting).into(),
                             missing => {
@@ -1737,7 +1741,14 @@ impl Shell {
     fn update_ambience(&mut self, ui: &AppWindow) {
         let in_front = self.foreground.is_none() && !ui.get_launching() && !ui.get_booting();
         self.music.set(self.settings.music, self.settings.music_track.as_deref(), in_front);
-        let theme = if self.settings.music == MusicChoice::GameThemes && in_front { self.wanted_theme() } else { None };
+        // Only on the home screen; in the library, the settings and without a theme the background
+        // music plays
+        let here = match self.settings.theme_music {
+            ThemeMusic::Off => false,
+            ThemeMusic::Home => self.screen == Screen::Home,
+            ThemeMusic::HomeAndLibrary => matches!(self.screen, Screen::Home | Screen::Library),
+        };
+        let theme = if here && in_front && self.picker.is_none() { self.wanted_theme() } else { None };
         self.music.set_theme(theme);
         let entry = self.focused_entry();
         let has_artwork = self.settings.artwork && entry.is_some_and(|i| self.entries[i].artwork.hero.is_some());
@@ -1763,8 +1774,9 @@ impl Shell {
     /// The cached theme music of the game the focus rests on (with "Game themes"). One that is not
     /// cached yet is searched for; it plays once it is there and the focus is still on the game.
     fn wanted_theme(&mut self) -> Option<PathBuf> {
-        /// Scrolling past a game does not start its music (nor a search)
-        const SETTLE: Duration = Duration::from_millis(700);
+        /// Scrolling past games does not start a player for each of them; the check and the
+        /// search happen at once
+        const SETTLE: Duration = Duration::from_millis(250);
         if let Some(fetcher) = &mut self.theme_fetcher {
             fetcher.poll();
         }
@@ -1773,22 +1785,18 @@ impl Shell {
             self.theme_focus = None;
             return None;
         }
-        match &self.theme_focus {
-            Some((id, since)) if *id == entry.id => {
-                if since.elapsed() < SETTLE {
-                    return None;
-                }
-            }
+        let settled = match &self.theme_focus {
+            Some((id, since)) if *id == entry.id => since.elapsed() >= SETTLE,
             _ => {
                 self.theme_focus = Some((entry.id.clone(), Instant::now()));
-                return None;
+                false
             }
-        }
+        };
         let result = self.theme_choices.result(&entry.id)?;
         let dir = consoleui_core::xdg::cache_home()?.join("consoleui/themes");
         let file = theme_music::cache_file(&dir, &entry.id, result);
         if file.is_file() {
-            return Some(file);
+            return settled.then_some(file);
         }
         if !theme_music::failed_marker(&file).exists() {
             let title = entry.title.clone();
@@ -1996,7 +2004,7 @@ impl Shell {
     fn open_context(&mut self, ui: &AppWindow) {
         let entry = self.focused_entry().map(|i| {
             let id = self.entries[i].id.clone();
-            let themes = self.settings.music == MusicChoice::GameThemes && self.entries[i].kind == AppKind::Game;
+            let themes = self.settings.theme_music != ThemeMusic::Off && self.entries[i].kind == AppKind::Game;
             EntryState {
                 theme: themes.then(|| !self.theme_choices.is_off(&id)),
                 title: self.entries[i].title.clone(),
@@ -2993,8 +3001,8 @@ impl Shell {
                         self.run_quick(ui, action);
                     }
                     DialogTag::InstallUpdates => self.install_updates(ui),
-                    DialogTag::GameThemes => {
-                        self.settings.music = MusicChoice::GameThemes;
+                    DialogTag::GameThemes(wanted) => {
+                        self.settings.theme_music = wanted;
                         if let Some(path) = &self.settings_path
                             && let Err(err) = self.settings.save(path)
                         {

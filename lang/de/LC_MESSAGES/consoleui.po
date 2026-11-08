@@ -1351,3 +1351,12 @@ msgstr "Spielmusik kommt von YouTube"
 
 msgid "{} (needs {})"
 msgstr "{} (braucht {})"
+
+msgid "Home screen"
+msgstr "Startbildschirm"
+
+msgid "Home screen and library"
+msgstr "Startbildschirm und Bibliothek"
+
+msgid "The music of the game in focus, found on YouTube"
+msgstr "Die Musik des gewählten Spiels, gefunden auf YouTube"

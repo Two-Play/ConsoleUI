@@ -41,8 +41,9 @@ pub fn ytdlp_args(query: &str, result: u32, file: &Path) -> Vec<String> {
         (result + 1).to_string(),
         "--match-filter".into(),
         format!("duration < {MAX_SECONDS}"),
+        // Opus is what YouTube has anyway: taking it is a copy, not a new encoding
         "--format".into(),
-        "bestaudio".into(),
+        "bestaudio[acodec=opus]/bestaudio".into(),
         "--extract-audio".into(),
         "--audio-format".into(),
         "opus".into(),

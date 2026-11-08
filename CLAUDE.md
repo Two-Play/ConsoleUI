@@ -351,7 +351,7 @@ Cargo workspace (edition 2024, `default-members` = the shell):
     to the `backdrop` image in `main.slint`; `Shell::update_ambience` decides when it runs (shown by
     the "Background" setting and the shell in front).
   - `src/music.rs`: background music on its own thread (ambient loop through `pw-cat --raw` with fades,
-    or the user's files, or with "Game themes" the theme of the focused game, decoded by `ffmpeg`, Story 6.12);
+    or the user's files, and over it the theme of the focused game, row "Game themes", decoded and normalized by `ffmpeg`, Story 6.12);
     `Shell::update_ambience` lets it play only while the shell is in front. `src/themes.rs` searches the themes with
     `yt-dlp` (`consoleui_core::themes`: query, cache file, arguments, the choice per game).
   - `src/grab.rs`: while the quick menu is open, `EVIOCGRAB` on the controller's evdev nodes (matched by
