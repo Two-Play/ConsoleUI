@@ -15,7 +15,7 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, TryRecvError};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use consoleui_core::music;
 use consoleui_core::settings::MusicChoice;
@@ -29,6 +29,9 @@ const VOLUME: f32 = 0.7;
 const CHUNK: usize = 2400;
 /// Loudness of the themes: a little below what streaming services aim at, under the UI sounds
 const LOUDNESS: &str = "loudnorm=I=-18:TP=-2:LRA=11";
+/// Silence between a game's theme and the background music (either way): one fades out, a short
+/// breath, then the other fades in
+const GAP: Duration = Duration::from_millis(700);
 /// Fade of a game's theme: shorter than the ambient one, the focus moves on quickly
 const THEME_FADE: Duration = Duration::from_millis(900);
 
@@ -90,6 +93,10 @@ fn run(receiver: Receiver<Control>) {
     let mut folder: Option<Folder> = None;
     let mut theme_file: Option<PathBuf> = None;
     let mut theme: Option<Theme> = None;
+    // When the background music or the theme went quiet, for the gap before the other one
+    let mut background_quiet: Option<Instant> = None;
+    let mut theme_quiet: Option<Instant> = None;
+    let mut background_audible = false;
     loop {
         // Writing the ambient loop paces itself on the pipe; otherwise wait for news.
         let writing = ambient.as_ref().is_some_and(|a| active || a.gain > 0.0) || theme.is_some();
@@ -118,9 +125,11 @@ fn run(receiver: Receiver<Control>) {
             None => {}
         }
 
-        // A theme takes the place of the background music while it plays
+        // A theme takes the place of the background music while it plays; the background music
+        // comes back only after the theme faded out and a short silence
         let wanted_theme = theme_file.clone().filter(|_| active);
-        let background = active && wanted_theme.is_none();
+        let after_theme = theme_quiet.is_none_or(|since| since.elapsed() >= GAP);
+        let background = active && wanted_theme.is_none() && theme.is_none() && (background_audible || after_theme);
         if choice != MusicChoice::Ambient {
             ambient = None;
         }
@@ -155,14 +164,23 @@ fn run(receiver: Receiver<Control>) {
                 }
             }
         }
+        let audible = ambient.as_ref().is_some_and(|a| a.gain > 0.0) || folder.as_ref().is_some_and(Folder::playing);
+        if background_audible && !audible {
+            background_quiet = Some(Instant::now());
+        }
+        background_audible = audible;
         if let Some(player) = &mut theme {
             // Another game: this one fades out first, then the next one starts
             let keep = wanted_theme.as_ref() == Some(&player.file);
             if !player.write_chunk(keep) || (!keep && player.gain == 0.0) {
                 theme = None;
+                theme_quiet = Some(Instant::now());
             }
         }
+        // A theme starts once the background music is quiet, after the same short silence
+        let after_background = !audible && background_quiet.is_none_or(|since| since.elapsed() >= GAP);
         if theme.is_none()
+            && after_background
             && let Some(file) = &wanted_theme
         {
             theme = Theme::start(file);
@@ -171,6 +189,17 @@ fn run(receiver: Receiver<Control>) {
                 theme_file = None;
             }
         }
+    }
+}
+
+/// A small pipe to `pw-cat`: the music thread runs only this far ahead of what is heard, so fades
+/// and the silence between theme and background music happen when they are meant to (the
+/// default 64 KiB hold a third of a second).
+fn small_pipe(stdin: &ChildStdin) {
+    use std::os::fd::AsRawFd;
+    // Safety: fcntl(2) on a pipe we own; a failure only keeps the default size.
+    unsafe {
+        libc::fcntl(stdin.as_raw_fd(), libc::F_SETPIPE_SZ, 16 * 1024);
     }
 }
 
@@ -197,6 +226,7 @@ impl Ambient {
             .map_err(|err| eprintln!("Music not available (pw-cat): {err}"))
             .ok()?;
         let stdin = child.stdin.take()?;
+        small_pipe(&stdin);
         let samples = music::ambient_loop(music::CHORD_SECONDS);
         Some(Self { child, stdin, samples, position: 0, gain: 0.0 })
     }
@@ -249,6 +279,7 @@ impl Theme {
             .map_err(|err| eprintln!("Music not available (pw-cat): {err}"))
             .ok()?;
         let stdin = player.stdin.take()?;
+        small_pipe(&stdin);
         let decoder = match decode(file) {
             Ok(decoder) => decoder,
             Err(err) => {
@@ -347,6 +378,11 @@ impl Folder {
             tracks.swap(i, (seed >> 8) as usize % (i + 1));
         }
         Some(Self { tracks, next: 0, current: None, paused: false })
+    }
+
+    /// A track plays and is not paused.
+    fn playing(&self) -> bool {
+        self.current.is_some() && !self.paused
     }
 
     fn update(&mut self, active: bool) {

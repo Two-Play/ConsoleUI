@@ -338,6 +338,8 @@ Cargo workspace (edition 2024, `default-members` = the shell):
   - `@consoleui/glass.slint`: `GlassPanel`, the frosted background of menus, dialogs and toasts; it shows the
     blurred hero copy from `hero.rs` (global `Glass`, set only by the main window).
   - `ui/types.slint`: shell-only types (`Screen`, `NetView`, `ProfileView`, ...); the shared ones live in the `ui` crate.
+  - Every input passes `Shell::drop_hidden_layers` first: a dialog, plugin panel or player that takes input but is not
+    on screen is dropped with a log line ("Input: dropped …"), so the keyboard never hangs on something invisible.
   - `src/shell.rs`: `Shell` owns entries plus a parallel `tiles` vector, all `running` apps (each with a
     gamescope app ID, a stop handle and an `Owner`), the `foreground` app, the three tile models (home =
     `home_entries` from `home_view` + library tile, library view, search results), the `Collection`,
@@ -363,7 +365,9 @@ Cargo workspace (edition 2024, `default-members` = the shell):
     to the `backdrop` image in `main.slint`; `Shell::update_ambience` decides when it runs (shown by
     the "Background" setting and the shell in front).
   - `src/music.rs`: background music on its own thread (ambient loop through `pw-cat --raw` with fades,
-    or the user's files, and over it the theme of the focused game, row "Game themes", decoded and normalized by `ffmpeg`, Story 6.12);
+    or the user's files, and over it the theme of the focused game, row "Game themes", decoded and normalized by `ffmpeg`, Story 6.12;
+    between theme and background music one fades out, 0.7 s of silence, then the other fades in; the pipes to `pw-cat`
+    are 16 KiB so the thread runs only ~85 ms ahead of what is heard);
     `Shell::update_ambience` lets it play only while the shell is in front. `src/themes.rs` searches the themes with
     `yt-dlp` (`consoleui_core::themes`: query, cache file, arguments, the choice per game).
   - `src/grab.rs`: while the quick menu is open, `EVIOCGRAB` on the controller's evdev nodes (matched by

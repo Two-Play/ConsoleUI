@@ -57,6 +57,11 @@ impl Plugins {
     }
 
     /// The plugins that are on and have a panel, for the quick menu's cards.
+    /// The open panel came from the quick menu (not from the settings).
+    pub fn panel_over_menu(&self) -> bool {
+        self.panel.as_ref().is_some_and(|open| open.plugin.is_some() && !open.settings)
+    }
+
     /// A plugin that is on offers `what`.
     pub fn any_active(&self, what: Provides) -> bool {
         self.settings.active(&self.infos).iter().any(|info| info.provides(what))

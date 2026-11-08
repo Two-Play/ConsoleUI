@@ -977,6 +977,7 @@ impl Shell {
             }
             return;
         }
+        self.drop_hidden_layers(ui);
         if self.dialog.is_some() {
             self.apply_dialog(ui, action);
             // A panel waits under a dialog it opened
@@ -2412,6 +2413,11 @@ impl Shell {
     }
 
     fn close_quick(&mut self, ui: &AppWindow) {
+        // What opened above the menu goes with it
+        self.close_player(ui);
+        if self.plugins.panel_over_menu() {
+            self.close_panel(ui);
+        }
         self.show_quick(ui, false);
         self.quick = None;
     }
@@ -3083,6 +3089,38 @@ impl Shell {
                     }
                     DialogTag::Close => {}
                 }
+            }
+        }
+    }
+
+    /// A layer that takes every input but is not on screen would make the shell look dead: the
+    /// dialog, a plugin panel or the player whose window is not open (any more). Such a state is
+    /// dropped, and the log says which, so the cause can be found.
+    fn drop_hidden_layers(&mut self, ui: &AppWindow) {
+        let overlay = self.overlay_window();
+        let shown = |main: bool, over: bool| main || over;
+        if self.dialog.is_some() {
+            let over = overlay.as_ref().is_some_and(|o| o.get_dialog_open());
+            if !shown(ui.get_dialog_open(), over) {
+                eprintln!("Input: dropped a dialog that was not on screen");
+                self.dialog = None;
+            }
+        }
+        if self.dialog.is_some() {
+            return;
+        }
+        if self.player.is_some() {
+            let over = overlay.as_ref().is_some_and(|o| o.get_player_open());
+            if !shown(ui.get_player_open(), over) {
+                eprintln!("Input: dropped the player window that was not on screen");
+                self.player = None;
+            }
+        }
+        if self.plugins.panel.is_some() {
+            let over = overlay.as_ref().is_some_and(|o| o.get_panel_open());
+            if !shown(ui.get_panel_open(), over) {
+                eprintln!("Input: dropped a plugin panel that was not on screen");
+                self.plugins.panel = None;
             }
         }
     }
