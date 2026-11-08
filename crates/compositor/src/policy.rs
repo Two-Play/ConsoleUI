@@ -255,6 +255,11 @@ impl Policy {
         !self.overlay && matches!(self.front(), Target::App { .. })
     }
 
+    /// Whether any normal window shows content (the first frame worth showing).
+    pub fn any_content(&self) -> bool {
+        self.windows.iter().any(|w| w.layer == Layer::Normal && !w.popup && w.visible)
+    }
+
     /// Whether a normal window of the app shows content.
     pub fn app_has_content(&self, app_id: u32) -> bool {
         self.has_content(Role::App(app_id))
@@ -503,6 +508,20 @@ mod tests {
         policy.add_window(1, Some(SHELL), false, "ConsoleUI", &processes());
         policy.show(1);
         policy
+    }
+
+    #[test]
+    fn content_counts_only_for_normal_windows_with_a_buffer() {
+        let lookup = processes();
+        let mut policy = Policy::default();
+        policy.set_shell_pid(SHELL, &lookup);
+        policy.set_window_role("ConsoleUI Overlay", WindowRole::Overlay);
+        policy.add_window(1, Some(SHELL), false, "ConsoleUI Overlay", &lookup);
+        policy.show(1);
+        policy.add_window(2, Some(SHELL), false, "ConsoleUI", &lookup);
+        assert!(!policy.any_content(), "an overlay or a window without a buffer keeps the boot splash");
+        policy.show(2);
+        assert!(policy.any_content());
     }
 
     #[test]

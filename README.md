@@ -124,6 +124,7 @@ Quit with `Ctrl+Q`. Handy flags: `--fps` (overlay), `--profile <name>`, `--start
 session/consoleui-nested                 # simulate the console session in a desktop window
 session/consoleui-nested --compositor    # same, on our own compositor
 sudo session/install.sh                  # install a login-manager session (after cargo build --release)
+sudo session/install-plymouth.sh         # console-style boot splash (Plymouth); --restore undoes it
 ```
 
 See [`docs/spike-gamescope.md`](docs/spike-gamescope.md) and [`docs/spike-smithay.md`](docs/spike-smithay.md).

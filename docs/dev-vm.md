@@ -32,7 +32,9 @@ Settings via environment: `VM_SHARE` (default: the main checkout, also when the 
 worktree below `.claude/worktrees`), `VM_CPUS` (4), `VM_MEM` (6G), `VM_DISK` (20G overlay), `VM_RES`
 (1280x800, the virtual monitor's mode; in a window the guest's preferred mode follows the
 window size instead, so use `--headless` for reproducible screenshots), `VM_SSH_PORT` (2222, bound to 127.0.0.1),
-`CONSOLEUI_VM_DIR` (`~/.local/share/consoleui-vm`), `VM_HEADS` (1; number of virtual monitors).
+`CONSOLEUI_VM_DIR` (`~/.local/share/consoleui-vm`), `VM_HEADS` (1; number of virtual monitors), `VM_UEFI` (1 boots with
+OVMF from `edk2-ovmf` instead of SeaBIOS, like a real PC: the boot splash test then shows the firmware logo and no
+BIOS or GRUB text; the EFI variables are kept in the state dir).
 
 A second, independent VM (e.g. while another agent uses the first one) needs its own state dir and
 port; copying the downloaded image and `CHECKSUM` there first saves the download:

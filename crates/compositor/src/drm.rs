@@ -6,7 +6,7 @@
 //! DRM leasing and the debug overlays.
 
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use smithay::backend::allocator::format::FormatSet;
 use smithay::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags, GbmDevice};
@@ -52,7 +52,7 @@ use consoleui_core::protocol::CompositorMessage;
 use crate::backend::Backend;
 use crate::modes::{self, ModeInfo};
 use crate::options::Options;
-use crate::render::{self, OutputElement, ScanoutFeedback};
+use crate::render::{self, Drawn, OutputElement, ScanoutFeedback};
 use crate::state::State;
 
 /// 8-bit formats only: widely supported, and the screenshot read-back stays simple.
@@ -85,6 +85,9 @@ pub struct DrmData {
     scanout: bool,
     /// The "Variable refresh rate" setting of the shell (Story 7.9)
     vrr_wanted: bool,
+    /// Plymouth's boot splash was on screen when we started (Story 6.11): it stays there until a
+    /// window shows content or this deadline passes, instead of a black screen in between
+    splash_until: Option<Instant>,
 }
 
 struct Gpu {
@@ -93,7 +96,22 @@ struct Gpu {
     scanner: DrmScanner,
     renderer: GlesRenderer,
     surface: Option<Surface>,
+    /// An output whose DRM side waits for the first frame worth showing (boot splash, Story 6.11)
+    pending: Option<PendingOutput>,
     token: RegistrationToken,
+}
+
+/// Clients already see the output (its global exists), but the CRTC is not ours yet: Smithay
+/// shows a frame as soon as the DRM output is set up, which would blank the boot splash. It is
+/// set up with the shell's first frame instead (`State::finish_drm_output`).
+struct PendingOutput {
+    crtc: crtc::Handle,
+    connector: connector::Info,
+    mode: DrmMode,
+    output: Output,
+    global: GlobalId,
+    planes: Planes,
+    feedback: Option<ScanoutFeedback>,
 }
 
 struct Surface {
@@ -159,6 +177,7 @@ pub fn run(options: &Options) -> Result<i32, Box<dyn std::error::Error>> {
         wanted_size: None,
         scanout: options.scanout,
         vrr_wanted: false,
+        splash_until: boot_splash_running().then(|| Instant::now() + SPLASH_HOLD),
     };
     let mut state = State::new(display, event_loop.handle(), event_loop.get_signal(), Backend::Drm(Box::new(data)))?;
     state.preferred_output = options.output.clone();
@@ -265,7 +284,9 @@ impl State {
         let Some(drm) = self.drm() else { return Ok(()) };
         let fd = drm.session.open(path, OFlags::RDWR | OFlags::CLOEXEC | OFlags::NOCTTY | OFlags::NONBLOCK)?;
         let fd = DrmDeviceFd::new(DeviceFd::from(fd));
-        let (device, notifier) = DrmDevice::new(fd.clone(), true)?;
+        // Turning all connectors off first would blank the boot splash until our first frame
+        let keep_splash = drm.splash_until.is_some();
+        let (device, notifier) = DrmDevice::new(fd.clone(), !keep_splash)?;
         let gbm = GbmDevice::new(fd)?;
 
         // Safety: the GBM device outlives the display (both live in `Gpu`).
@@ -310,7 +331,8 @@ impl State {
         })?;
         info!("opened {} (render node {render_node})", path.display());
         let Some(drm) = self.drm() else { return Ok(()) };
-        drm.device = Some(Gpu { node, manager, scanner: DrmScanner::new(), renderer, surface: None, token });
+        drm.device =
+            Some(Gpu { node, manager, scanner: DrmScanner::new(), renderer, surface: None, pending: None, token });
         self.drm_device_changed();
         Ok(())
     }
@@ -358,7 +380,8 @@ impl State {
             match event {
                 DrmScanEvent::Connected { .. } => plugged = true,
                 DrmScanEvent::Disconnected { connector, .. }
-                    if gpu.surface.as_ref().is_some_and(|s| s.connector == connector.handle()) =>
+                    if gpu.surface.as_ref().is_some_and(|s| s.connector == connector.handle())
+                        || gpu.pending.as_ref().is_some_and(|p| p.connector.handle() == connector.handle()) =>
                 {
                     info!("output {:?} unplugged", connector.handle());
                     lost = true;
@@ -388,7 +411,11 @@ impl State {
             return;
         };
         // A monitor we prefer was plugged in while another one is in use (Story 7.11)
-        let current = gpu.surface.as_ref().map(|surface| surface.connector);
+        let current = gpu
+            .surface
+            .as_ref()
+            .map(|surface| surface.connector)
+            .or_else(|| gpu.pending.as_ref().map(|pending| pending.connector.handle()));
         if plugged && current.is_some_and(|current| current != connector.handle()) {
             info!("switching to the output {}", connector_name(&connector));
             self.drop_drm_surface();
@@ -400,11 +427,14 @@ impl State {
 
     /// Gives up our output; dropping the DRM output turns its CRTC off.
     fn drop_drm_surface(&mut self) {
-        let Some(surface) = self.drm().and_then(|d| d.device.as_mut()).and_then(|gpu| gpu.surface.take()) else {
-            return;
+        let Some(gpu) = self.drm().and_then(|d| d.device.as_mut()) else { return };
+        let gone = match (gpu.surface.take(), gpu.pending.take()) {
+            (Some(surface), _) => (surface.output, surface.global),
+            (None, Some(pending)) => (pending.output, pending.global),
+            (None, None) => return,
         };
-        self.space.unmap_output(&surface.output);
-        self.display_handle.remove_global::<State>(surface.global);
+        self.space.unmap_output(&gone.0);
+        self.display_handle.remove_global::<State>(gone.1);
         self.output = None;
     }
 
@@ -557,24 +587,59 @@ impl State {
         }
 
         let feedback = scanout_feedback(gpu.node, &gpu.renderer, &planes);
+        let global = output.create_global::<State>(&dh);
+        info!("output {name}: {}x{}@{}", wl_mode.size.w, wl_mode.size.h, wl_mode.refresh);
+        gpu.pending =
+            Some(PendingOutput { crtc, connector, mode: drm_mode, output: output.clone(), global, planes, feedback });
+        let hold_splash = data.splash_until.is_some();
+        self.set_output(output);
+        if hold_splash {
+            // render_drm finishes it once a window shows content
+            self.schedule_drm_render(Duration::ZERO);
+        } else {
+            self.finish_drm_output(None);
+        }
+    }
 
+    /// Sets up the DRM side of the pending output. Smithay shows a first frame right away: the
+    /// given windows, or only the clear color.
+    fn finish_drm_output(&mut self, windows: Option<Vec<Drawn>>) {
+        let pointer = self.pointer.current_location();
+        let Backend::Drm(drm) = &mut self.backend else { return };
+        let Some(gpu) = drm.device.as_mut() else { return };
+        let Some(pending) = gpu.pending.take() else { return };
+        let PendingOutput { crtc, connector, mode, output, global, planes, feedback } = pending;
+        let name = output.name();
+        let mut first_frame = DrmOutputRenderElements::default();
+        if let Some(windows) = windows {
+            let elements = render::output_elements(
+                &mut gpu.renderer,
+                &windows,
+                &output,
+                &self.cursor_status,
+                pointer,
+                &mut self.blur_cache,
+            );
+            first_frame.add_output(&crtc, render::CLEAR_COLOR.into(), elements);
+        }
         let drm_output = match gpu.manager.lock().initialize_output::<_, OutputElement>(
             crtc,
-            drm_mode,
+            mode,
             &[connector.handle()],
             &output,
             Some(planes),
             &mut gpu.renderer,
-            &DrmOutputRenderElements::default(),
+            &first_frame,
         ) {
             Ok(drm_output) => drm_output,
             Err(err) => {
                 warn!("cannot initialize output {name}: {err}");
+                self.space.unmap_output(&output);
+                self.display_handle.remove_global::<State>(global);
+                self.output = None;
                 return;
             }
         };
-        let global = output.create_global::<State>(&dh);
-        info!("output {name}: {}x{}@{}", wl_mode.size.w, wl_mode.size.h, wl_mode.refresh);
         let vrr = drm_output.with_compositor(|compositor| compositor.vrr_supported(connector.handle()));
         let vrr_supported = matches!(vrr, Ok(VrrSupport::Supported));
         if matches!(vrr, Ok(VrrSupport::RequiresModeset)) {
@@ -583,9 +648,9 @@ impl State {
         gpu.surface = Some(Surface {
             crtc,
             connector: connector.handle(),
-            mode: drm_mode,
+            mode,
             modes: connector.modes().to_vec(),
-            output: output.clone(),
+            output,
             drm_output,
             global,
             queued: false,
@@ -594,7 +659,6 @@ impl State {
             vrr_supported,
             vrr_active: false,
         });
-        self.set_output(output);
         self.announce_modes();
         self.schedule_drm_render(Duration::ZERO);
     }
@@ -640,6 +704,29 @@ impl State {
     }
 
     fn render_drm(&mut self) {
+        // Leave the boot splash on screen until there is something to show
+        let content = self.policy.any_content();
+        let hold_splash = match self.drm() {
+            Some(drm) => match drm.splash_until {
+                Some(until) if !content && Instant::now() < until => true,
+                Some(_) => {
+                    drm.splash_until = None;
+                    info!("taking the screen over from the boot splash");
+                    false
+                }
+                None => false,
+            },
+            None => false,
+        };
+        if hold_splash {
+            self.schedule_drm_render(Duration::from_millis(16));
+            return;
+        }
+        if self.drm().and_then(|drm| drm.device.as_ref()).is_some_and(|gpu| gpu.pending.is_some()) {
+            let windows = content.then(|| self.frame_windows());
+            self.finish_drm_output(windows);
+            return;
+        }
         self.update_vrr();
         let pointer = self.pointer.current_location();
         let windows = self.frame_windows();
@@ -750,6 +837,15 @@ fn scanout_feedback(node: DrmNode, renderer: &GlesRenderer, planes: &Planes) -> 
 }
 
 /// The connector's name as the kernel and `--output` spell it, e.g. `HDMI-A-1`.
+/// How long the boot splash may stay on screen while no window shows content
+const SPLASH_HOLD: Duration = Duration::from_secs(5);
+
+/// Whether Plymouth runs, i.e. its boot splash is on screen (the session's display manager
+/// deactivated it, see session/install-plymouth.sh, and it quits once we draw).
+fn boot_splash_running() -> bool {
+    Path::new("/run/plymouth/pid").exists()
+}
+
 fn connector_name(connector: &connector::Info) -> String {
     format!("{}-{}", connector.interface().as_str(), connector.interface_id())
 }

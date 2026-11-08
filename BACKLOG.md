@@ -121,6 +121,7 @@ Schätzung in Story Points (SP): 1, 2, 3, 5, 8, 13. Ein Sprint dauert 2 Wochen.
 | 6.9 | **Done (Sprint 11).** Animated background ("shader" background) as a settings choice: Artwork (animated where an entry has no artwork), Animated (always), Classic | 3 |
 | 6.8 | **Done (Sprint 11).** Animation polish: focus ring with a gap, light sweep on focus, ripple on press, gliding tab underline, crossfading info area, progress indicator on the launch screen | 3 |
 | 6.10 | **Done.** UI feedback round: the game comes to the front only once the launch screen is fully open, rounded corners on the zooming game image, frosted-glass panels, a calm info area on the home screen, keyboard key caps in the hints after keyboard input | 5 |
+| 6.11 | **Done.** Boot splash like a console's: from power-on the screen shows the shell's own boot screen (logo, pulsing glow, loading dots) instead of the distribution's, as a Plymouth theme, including the disk password prompt and the update/shutdown screens | 2 |
 
 ## Epic 7 (optional, phase 3) – Own Smithay compositor (hybrid)
 
@@ -965,3 +966,32 @@ Branch `agent/compositor-blur`, on top of the UI feedback round (6.10).
 - **Not tested:** the real Steam client, a real DualSense. Steam Input reads the controller too (hidraw), so its
   desktop layout may act at the same time. A Wayland app that sets no cursor of its own shows no pointer (foot and
   XWayland apps do).
+
+### Boot splash (done: 6.11)
+
+- **Plymouth theme** `session/plymouth/consoleui` (script plugin; Fedora: `plymouth-plugin-script`, the others ship
+  it with plymouth). `consoleui.script` draws what `ui/boot.slint` draws with the same scale factor
+  (`max(0.4, min(w / 1920, h / 1080))`), layout and timings (glow pulsing every 900 ms, dots every 700 ms), so the
+  splash and the shell's boot screen look the same at every resolution. The images are still pictures at twice the
+  reference size (184 KB in the initramfs); Plymouth scales them and animates their opacity. Slint's circle gradient
+  spans half the box diagonal, `generate.py` bakes the glow the same way. The disk password prompt (glass field,
+  padlock, bullets), questions, messages and an update screen (title and progress bar for offline updates and
+  upgrades) are part of the script. A first version with the two-step plugin (60 pre-rendered frames, 3 MB) could
+  not scale and jumped in size at the handover.
+- **Handover without a gap:** three things showed the text console or black between the splash and the shell.
+  SDDM waits for `plymouth-quit`, which tears the splash down before the session exists: the SDDM drop-in from
+  `install-plymouth.sh` makes it deactivate Plymouth instead (like GDM) and quit it with `--retain-splash` once the
+  compositor's control socket exists plus 3 s. The compositor turned all connectors off when it opened the GPU, and
+  Smithay's `initialize_output` commits an empty frame: while Plymouth runs, the compositor keeps the connectors and
+  sets up the DRM output only with the shell's first frame (`PendingOutput`, at most 5 s; the `wl_output` exists
+  from the start so the shell gets its size).
+- **Generated:** `session/plymouth/generate.py` (Pillow, Noto Sans ExtraBold) renders the PNGs; they are checked in.
+  `sudo session/install-plymouth.sh` installs and selects the theme, adds the SDDM drop-in when SDDM is installed,
+  rebuilds the initramfs and remembers the previous theme; `--restore` goes back to it and removes the drop-in.
+- **Tested in the VM** (`VM_UEFI=1`, SDDM autologin into "ConsoleUI (own compositor)", kernel arguments
+  `rhgb quiet plymouth.ignore-serial-consoles` because the VM has a serial console): firmware logo, splash, then
+  the shell's boot screen fading into the home screen, no black frame (screenshots every ~60 ms and a trace of the
+  scanned-out framebuffer from debugfs). Password prompt, messages and the update screen with `plymouthd` by hand.
+  With SeaBIOS (the VM's default) the BIOS, iPXE and GRUB print text first; a real PC with UEFI does not.
+- **Not tested:** real hardware and 4K; GDM (does its own handover) and other display managers; a second monitor
+  (the compositor drives one output, the splash stays on the other until Plymouth quits).

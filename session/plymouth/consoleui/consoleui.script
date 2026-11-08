@@ -1,0 +1,192 @@
+# ConsoleUI boot splash (Story 6.11): the shell's boot screen (crates/shell/ui/boot.slint) from
+# power-on. Same scale factor, layout and timings as boot.slint, so the handover to the shell does
+# not show: the logo, a glow pulsing every 900 ms, three dots fading in turn every 700 ms.
+# The images come from session/plymouth/generate.py at twice the 1920x1080 reference size.
+
+# Theme.base #06070c
+BASE_R = 6 / 255; BASE_G = 7 / 255; BASE_B = 12 / 255;
+Window.SetBackgroundTopColor(BASE_R, BASE_G, BASE_B);
+Window.SetBackgroundBottomColor(BASE_R, BASE_G, BASE_B);
+
+W = Window.GetWidth();
+H = Window.GetHeight();
+X0 = Window.GetX();
+Y0 = Window.GetY();
+# main.slint: s = max(0.4, min(width / 1920, height / 1080))
+s = Math.Max(0.4, Math.Min(W / 1920, H / 1080));
+FPS = 50;  # the script plugin calls the refresh function 50 times a second
+
+fun load(file, factor) {
+    image = Image(file);
+    return image.Scale(Math.Int(image.GetWidth() * factor + 0.5), Math.Int(image.GetHeight() * factor + 0.5));
+}
+
+fun text_image(text, size, alpha) {
+    # Theme.text #f4f6fb
+    return Image.Text(text, 244 / 255, 246 / 255, 251 / 255, alpha, "Noto Sans " + Math.Int(size * global.s + 0.5));
+}
+
+# Glow behind the logo: a 900 px box in the middle of the screen
+glow_image = load("glow.png", s);
+glow = Sprite(glow_image);
+glow.SetPosition(X0 + (W - glow_image.GetWidth()) / 2, Y0 + (H - glow_image.GetHeight()) / 2, 0);
+
+# Logo: centered, 20 px above the middle
+logo_image = load("logo.png", s / 2);
+logo_y = Y0 + (H - logo_image.GetHeight()) / 2 - 20 * s;
+logo = Sprite(logo_image);
+logo.SetPosition(X0 + (W - logo_image.GetWidth()) / 2, logo_y, 1);
+below_logo = logo_y + logo_image.GetHeight();
+
+# Three dots, 16 px apart, 48 px below the logo
+dot_image = load("dot.png", s / 2);
+dot_size = dot_image.GetWidth();
+dot_gap = 16 * s;
+dots_x = X0 + (W - 3 * dot_size - 2 * dot_gap) / 2;
+for (i = 0; i < 3; i++) {
+    dots[i] = Sprite(dot_image);
+    dots[i].SetPosition(dots_x + i * (dot_size + dot_gap), below_logo + 48 * s, 1);
+}
+
+ticks = 0;
+fun refresh() {
+    global.ticks++;
+    t = global.ticks / global.FPS;
+    wave = (Math.Sin(t / 0.9 * 2 * Math.Pi) + 1) / 2;
+    global.glow.SetOpacity(0.45 + 0.55 * wave);
+    for (i = 0; i < 3; i++) {
+        phase = (Math.Sin((t / 0.7 - i * 0.18) * 2 * Math.Pi) + 1) / 2;
+        global.dots[i].SetOpacity(global.dots_visible * (0.25 + 0.75 * phase));
+    }
+}
+dots_visible = 1;
+Plymouth.SetRefreshFunction(refresh);
+
+# Messages (e.g. from a disk check) near the bottom edge
+message = Sprite();
+message.SetZ(2);
+fun show_message(text) {
+    image = text_image(text, 22, 0.7);
+    global.message.SetImage(image);
+    global.message.SetPosition(global.X0 + (global.W - image.GetWidth()) / 2, global.Y0 + global.H * 0.9, 2);
+    global.message.SetOpacity(1);
+}
+fun hide_message(text) {
+    global.message.SetOpacity(0);
+}
+Plymouth.SetMessageFunction(show_message);
+Plymouth.SetHideMessageFunction(hide_message);
+
+# Offline updates and upgrades show a progress bar in place of the dots (see the end)
+mode = Plymouth.GetMode();
+updating = mode == "updates" || mode == "system-upgrade" || mode == "firmware-upgrade" || mode == "system-reset";
+
+# Disk password and questions: a glass field with a padlock in place of the dots, the prompt below
+entry_image = load("entry.png", s / 2);
+entry_x = X0 + (W - entry_image.GetWidth()) / 2;
+entry_y = below_logo + 36 * s;
+entry = Sprite(entry_image);
+entry.SetPosition(entry_x, entry_y, 3);
+lock_image = load("lock.png", s / 2);
+lock = Sprite(lock_image);
+lock.SetPosition(entry_x - lock_image.GetWidth() - 20 * s, entry_y + (entry_image.GetHeight() - lock_image.GetHeight()) / 2, 3);
+bullet_image = load("bullet.png", s / 2);
+prompt = Sprite();
+prompt.SetZ(3);
+answer = Sprite();
+answer.SetZ(4);
+
+fun show_dialog(text) {
+    global.dots_visible = 0;
+    global.entry.SetOpacity(1);
+    global.lock.SetOpacity(1);
+    image = text_image(text, 24, 0.75);
+    global.prompt.SetImage(image);
+    global.prompt.SetPosition(global.X0 + (global.W - image.GetWidth()) / 2, global.entry_y + global.entry_image.GetHeight() + 20 * global.s, 3);
+    global.prompt.SetOpacity(1);
+}
+
+fun hide_dialog() {
+    global.dots_visible = !global.updating;
+    global.entry.SetOpacity(0);
+    global.lock.SetOpacity(0);
+    global.prompt.SetOpacity(0);
+    global.answer.SetOpacity(0);
+    for (i = 0; global.bullets[i]; i++)
+        global.bullets[i].SetOpacity(0);
+}
+hide_dialog();
+
+fun display_password(text, count) {
+    show_dialog(text);
+    global.answer.SetOpacity(0);
+    size = global.bullet_image.GetWidth();
+    gap = 10 * global.s;
+    left = global.entry_x + 24 * global.s;
+    room = global.entry_image.GetWidth() - 48 * global.s;
+    y = global.entry_y + (global.entry_image.GetHeight() - size) / 2;
+    for (i = 0; global.bullets[i] || i < count; i++) {
+        if (!global.bullets[i]) {
+            global.bullets[i] = Sprite(global.bullet_image);
+            global.bullets[i].SetZ(4);
+        }
+        x = left + i * (size + gap);
+        if (i < count && x + size <= left + room) {
+            global.bullets[i].SetPosition(x, y, 4);
+            global.bullets[i].SetOpacity(1);
+        } else {
+            global.bullets[i].SetOpacity(0);
+        }
+    }
+}
+
+fun display_question(text, typed) {
+    show_dialog(text);
+    for (i = 0; global.bullets[i]; i++)
+        global.bullets[i].SetOpacity(0);
+    if (typed == "") typed = " ";
+    image = text_image(typed, 28, 1);
+    global.answer.SetImage(image);
+    global.answer.SetPosition(global.entry_x + 24 * global.s, global.entry_y + (global.entry_image.GetHeight() - image.GetHeight()) / 2, 4);
+    global.answer.SetOpacity(1);
+}
+
+Plymouth.SetDisplayPasswordFunction(display_password);
+Plymouth.SetDisplayQuestionFunction(display_question);
+Plymouth.SetDisplayNormalFunction(hide_dialog);
+
+fun update_progress(percent) {
+    width = Math.Int(global.track_image.GetWidth() * Math.Min(100, Math.Max(0, percent)) / 100);
+    if (width < 1) {
+        global.fill.SetOpacity(0);
+    } else {
+        global.fill.SetImage(global.fill_source.Scale(width, global.track_image.GetHeight()));
+        global.fill.SetOpacity(1);
+    }
+}
+
+# Offline updates and upgrades: a title and a progress bar in place of the dots
+if (updating) {
+    dots_visible = 0;
+    if (mode == "updates") title_text = "Installing updates...";
+    else if (mode == "system-upgrade") title_text = "Upgrading the system...";
+    else if (mode == "firmware-upgrade") title_text = "Upgrading firmware...";
+    else title_text = "Resetting the system...";
+    title_image = text_image(title_text, 28, 1);
+    title = Sprite(title_image);
+    title.SetPosition(X0 + (W - title_image.GetWidth()) / 2, below_logo + 40 * s, 1);
+    hint_image = text_image("Do not turn off your console", 22, 0.6);
+    hint = Sprite(hint_image);
+    hint.SetPosition(X0 + (W - hint_image.GetWidth()) / 2, below_logo + 40 * s + title_image.GetHeight() + 12 * s, 1);
+    track_image = load("progress-track.png", s / 2);
+    track_x = X0 + (W - track_image.GetWidth()) / 2;
+    track_y = below_logo + 40 * s + title_image.GetHeight() + hint_image.GetHeight() + 40 * s;
+    track = Sprite(track_image);
+    track.SetPosition(track_x, track_y, 1);
+    fill_source = Image("progress-fill.png");
+    fill = Sprite();
+    fill.SetPosition(track_x, track_y, 2);
+
+    update_progress(0);
+    Plymouth.SetSystemUpdateFunction(update_progress);
+}

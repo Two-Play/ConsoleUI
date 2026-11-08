@@ -1,0 +1,12 @@
+# ConsoleUI boot splash (Story 6.11): the shell's boot screen from power-on, see consoleui.script.
+# Installed by session/install-plymouth.sh.
+[Plymouth Theme]
+Name=ConsoleUI
+Description=Console-style boot splash: the ConsoleUI logo with a pulsing glow and loading dots.
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/consoleui
+ScriptFile=/usr/share/plymouth/themes/consoleui/consoleui.script
+# The font of messages and the password prompt; the initramfs gets it through this key
+Font=Noto Sans 14

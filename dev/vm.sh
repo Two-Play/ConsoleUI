@@ -32,6 +32,7 @@
 # Environment: CONSOLEUI_VM_DIR (state dir), VM_SHARE (host dir to share, default: the main checkout),
 # VM_CPUS (4), VM_MEM (6G), VM_DISK (20G), VM_RES (1280x800), VM_SSH_PORT (2222), VM_HEADS (1, virtual
 # monitors of the virtio-vga; only the first is connected at boot),
+# VM_UEFI (1 = boot with OVMF like a real PC instead of SeaBIOS; its EFI variables live in the state dir),
 # VM_USB (vendor:product[,vendor:product...] USB devices to pass through, e.g. a gamepad; needs
 # write access to /dev/bus/usb/BBB/DDD on the host, see docs/dev-vm.md).
 set -euo pipefail
@@ -54,6 +55,8 @@ VM_RES="${VM_RES:-1280x800}"
 VM_SSH_PORT="${VM_SSH_PORT:-2222}"
 VM_USB="${VM_USB:-}"
 VM_HEADS="${VM_HEADS:-1}"
+VM_UEFI="${VM_UEFI:-}"
+OVMF_CODE=/usr/share/edk2/ovmf/OVMF_CODE.fd
 VM_USER=tester
 VIRTIOFSD=/usr/libexec/virtiofsd
 
@@ -259,16 +262,27 @@ start_vm() { # start_vm <headless:0|1>
         rm -f "$VM_DIR/vnc$head.sock"
         vnc+=(-vnc "unix:$VM_DIR/vnc$head.sock,id=vnc$head,display=video0,head=$head")
     done
+    # UEFI like a real PC (VM_UEFI=1): the boot splash test then sees what a real boot shows, without
+    # SeaBIOS and GRUB in VGA text mode
+    local firmware=()
+    if [ -n "$VM_UEFI" ]; then
+        [ -f "$OVMF_CODE" ] || die "VM_UEFI needs $OVMF_CODE (dnf install edk2-ovmf)"
+        [ -f "$VM_DIR/OVMF_VARS.fd" ] || cp "${OVMF_CODE%/*}/OVMF_VARS.fd" "$VM_DIR/OVMF_VARS.fd"
+        firmware=(-drive "if=pflash,format=raw,readonly=on,file=$OVMF_CODE"
+            -drive "if=pflash,format=raw,file=$VM_DIR/OVMF_VARS.fd")
+    fi
     rm -f "$QMP"
     : >"$SERIAL_LOG"
     setsid qemu-system-x86_64 \
         -name consoleui-vm \
+        "${firmware[@]}" \
         -machine q35,accel=kvm,memory-backend=mem -cpu host -smp "$VM_CPUS" -m "$VM_MEM" \
         -object "memory-backend-memfd,id=mem,size=$VM_MEM,share=on" \
         -drive "file=$DISK,if=virtio,discard=unmap" \
         -drive "file=$SEED,if=virtio,media=cdrom,readonly=on" \
         -chardev "socket,id=vfs,path=$VFS_SOCK" -device vhost-user-fs-pci,chardev=vfs,tag=consoleui \
-        -nic "user,model=virtio-net-pci,hostfwd=tcp:127.0.0.1:$VM_SSH_PORT-:22" \
+        -netdev "user,id=net0,hostfwd=tcp:127.0.0.1:$VM_SSH_PORT-:22" \
+        -device virtio-net-pci,netdev=net0,romfile= \
         -vga none -device "virtio-vga,id=video0,max_outputs=$VM_HEADS,xres=${VM_RES%x*},yres=${VM_RES#*x}" \
         "${vnc[@]}" \
         -device virtio-keyboard-pci -device virtio-tablet-pci \

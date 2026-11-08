@@ -83,6 +83,7 @@ Test focus and input with real key events, not only `--actions` (a focus bug sli
 way): `dev/vm.sh keys` sends keys through QMP `send-key` (chords with `-`, `sleep:MS`); a foot terminal
 that writes raw keyboard input to a file makes a good stand-in "game" to prove no key leaks to it.
 `dev/vm.sh output <head> <WxH|off>` (with `VM_HEADS=2`) changes modes and plugs/unplugs monitors.
+`VM_UEFI=1 dev/vm.sh start` boots with OVMF like a real PC (for the boot splash: no SeaBIOS and GRUB text).
 The compositor logs to stderr; the installed session sends its output to `journalctl --user -t consoleui`.
 
 Quit the running shell with Ctrl+Q. Pressing Enter on a real entry really launches that game or app.
@@ -107,6 +108,8 @@ Console session (see `docs/spike-gamescope.md`; gamescope runs in Steam mode `-e
 ```bash
 session/consoleui-nested   # simulate the console session in a desktop window (nested gamescope -e)
 sudo session/install.sh   # after `cargo build --release`; installs to /usr/local/bin + wayland-sessions
+sudo session/install-plymouth.sh   # boot splash (Plymouth script theme + SDDM handover, rebuilds the initramfs; --restore)
+python3 session/plymouth/generate.py   # re-render the splash images (Pillow, Noto Sans) after changing its look
 ```
 
 Inside gamescope, children get `DISPLAY=:1` and an empty `WAYLAND_DISPLAY`, so the shell and everything
@@ -211,6 +214,9 @@ Cargo workspace (edition 2024, `default-members` = the shell):
   window, cached while nothing below changes; `backdrop.rs` is its Smithay-free part (regions, fades,
   captured area). Smithay makes render targets current lazily, so offscreen passes may run while the
   output is bound.
+  While Plymouth runs at start (`/run/plymouth/pid`, Story 6.11), `drm.rs` keeps the boot splash on screen: the DRM
+  device is opened without turning the connectors off and the DRM output (`PendingOutput`) is set up only with the
+  first window content as its first frame, so the splash goes straight to the shell's identical boot screen.
   `drm.rs` also sends clients dmabuf feedback with a scanout tranche (Story 7.8; the log says `direct scanout on/off`),
   turns VRR on while `Policy::wants_vrr` holds and the shell's setting allows it (Story 7.9; `ShellMessage::Vrr`, then a
   commit goes out at once instead of at the next timer) and moves to a preferred monitor when it is plugged in (Story 7.11).
