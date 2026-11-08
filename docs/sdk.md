@@ -43,6 +43,31 @@ starts with the app's ID, such as `org.example.App-cover`.
 | `ui/main.slint` | The window, built from the design system |
 | `build.rs` | Compiles the UI with `consoleui_sdk::build::compile` |
 | `my-app.desktop` | How the shell and desktops find the app |
+| `org.example.MyApp.yml` | Flatpak manifest, see below |
+
+## Flatpak
+
+`dev/new-app.sh` puts a manifest named after the app's Flatpak ID next to the code (`org.example.<Name>`; change it to
+your own domain, in the file name too). The SDK is linked into the app, so there is no shared base app: the
+Freedesktop runtime holds what Slint needs (fonts, Wayland, xkbcommon), and `pw-cat` for the sounds.
+
+```bash
+flatpak install --user flathub org.freedesktop.Sdk.Extension.rust-stable//25.08   # once
+flatpak-builder --user --install --force-clean build-dir org.example.MyApp.yml
+# in a container such as the dev toolbox, add --disable-rofiles-fuse
+```
+
+| Permission | Why |
+|---|---|
+| `--socket=wayland`, `--socket=fallback-x11`, `--share=ipc`, `--device=dri` | The window, also inside gamescope (XWayland) |
+| `--device=input` | Controllers. gilrs finds them without udev in the sandbox, plugged in later too |
+| `--filesystem=xdg-run/pipewire-0` | UI sounds |
+| `--talk-name=org.consoleui.Shell1` | The shell's settings and toasts |
+
+Until the crates are published, the build reads them from the ConsoleUI checkout the app was created from and lets
+cargo download the other crates (`--share=network` while building). Flathub builds without network, so publishing
+there needs vendored sources ([flatpak-cargo-generator](https://github.com/flatpak/flatpak-builder-tools)). The
+shell lists an installed Flatpak like any other app and starts it through `flatpak run`.
 
 ## What the SDK offers
 

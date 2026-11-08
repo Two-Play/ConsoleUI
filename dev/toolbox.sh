@@ -32,6 +32,8 @@ PACKAGES=(
     # Runtime and test tools (Mesa software rendering, nested runs, snapshots)
     mesa-dri-drivers mesa-vulkan-drivers vulkan-tools mesa-demos glx-utils gamescope
     xprop xdpyinfo wayland-utils pipewire-utils
+    # Flatpak packaging of apps (Story 8.5)
+    flatpak-builder
 )
 
 exists() { podman container exists "$NAME" 2>/dev/null; }

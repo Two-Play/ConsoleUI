@@ -21,9 +21,14 @@ fi
 # my-cool-app -> My Cool App
 title="$(printf '%s' "$name" | tr '-' ' ' | awk '{ for (i = 1; i <= NF; i++) $i = toupper(substr($i, 1, 1)) substr($i, 2); print }')"
 
+# Flatpak ID: org.example.MyCoolApp, to be changed to the author's own domain
+app_id="org.example.$(printf '%s' "$title" | tr -d ' ')"
+
 cp -r "$root/templates/app" "$target"
 mv "$target/my-app.desktop" "$target/$name.desktop"
+mv "$target/flatpak.yml" "$target/$app_id.yml"
 find "$target" -type f -exec sed -i \
-    -e "s|@SDK_PATH@|$root/crates/sdk|g" -e "s|my-app|$name|g" -e "s|My App|$title|g" {} +
+    -e "s|@SDK_PATH@|$root/crates/sdk|g" -e "s|@CONSOLEUI@|$root|g" -e "s|@APP_ID@|$app_id|g" \
+    -e "s|my-app|$name|g" -e "s|My App|$title|g" {} +
 echo "Created $title in $target"
 echo "Run it with: cd $target && cargo run"

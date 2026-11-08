@@ -278,6 +278,9 @@ Cargo workspace (edition 2024, `default-members` = the shell):
   controller and keyboard input, `build::compile` is the app's `build.rs`. `templates/app` is the project template,
   `dev/new-app.sh <name> [dir]` creates an app from it (path dependency on this checkout). Rules: `docs/sdk.md`.
   Keep the template building: create an app in a scratch directory and run its tests after changing the SDK.
+  The template's `flatpak.yml` (Story 8.5) builds it as a Flatpak: `dev/toolbox.sh run flatpak-builder --user --install
+  --force-clean --disable-rofiles-fuse build-dir <id>.yml` in the app's directory (the Rust extension is installed for the
+  user). A scratch `XDG_DATA_HOME` also hides the user's Flatpak installation; set `FLATPAK_USER_DIR=~/.local/share/flatpak`.
 - `crates/store` (binary `consoleui-store`, Story 8.9, not a default member): the store, an app on the SDK that also
   uses `consoleui-core`. `appstream.rs` streams the Flathub catalog flatpak keeps on disk (only apps `desktop::wanted_categories`
   lets into the shell's lists), `page.rs` is the UI-free state (seven columns, only the rows on screen reach Slint),
