@@ -978,6 +978,13 @@ Branch `agent/compositor-blur`, on top of the UI feedback round (6.10).
   padlock, bullets), questions, messages and an update screen (title and progress bar for offline updates and
   upgrades) are part of the script. A first version with the two-step plugin (60 pre-rendered frames, 3 MB) could
   not scale and jumped in size at the handover.
+- **Start like a console:** the splash starts black and fades in (0.8 s, ease-out). When the firmware showed a logo,
+  `install-plymouth.sh` copies it from the ACPI BGRT table (`/sys/firmware/acpi/bgrt`, a BMP and its offsets) with
+  `firmware-logo.py` (standard library only) to `firmware.png` and writes its offsets into the installed script; the
+  splash draws it at the same place, holds it 0.4 s and fades it out before its own logo fades in, so the firmware
+  logo does not vanish with a cut. The firmware screen is taken as horizontally centered and the same shape as
+  Plymouth's. Run the installer again after a firmware update. Only the logo from power-on is out of reach: a
+  board's BIOS option that turns the logo off (then black, fading into ours) or a vendor tool for a custom logo.
 - **Handover without a gap:** three things showed the text console or black between the splash and the shell.
   SDDM waits for `plymouth-quit`, which tears the splash down before the session exists: the SDDM drop-in from
   `install-plymouth.sh` makes it deactivate Plymouth instead (like GDM) and quit it with `--retain-splash` once the
@@ -992,6 +999,8 @@ Branch `agent/compositor-blur`, on top of the UI feedback round (6.10).
   `rhgb quiet plymouth.ignore-serial-consoles` because the VM has a serial console): firmware logo, splash, then
   the shell's boot screen fading into the home screen, no black frame (screenshots every ~60 ms and a trace of the
   scanned-out framebuffer from debugfs). Password prompt, messages and the update screen with `plymouthd` by hand.
+  The TianoCore logo of OVMF stays in place and fades into ours; OVMF itself prints two "BdsDxe: loading" lines
+  above it while the boot loader loads, which vendor firmware does not.
   With SeaBIOS (the VM's default) the BIOS, iPXE and GRUB print text first; a real PC with UEFI does not.
 - **Not tested:** real hardware and 4K; GDM (does its own handover) and other display managers; a second monitor
   (the compositor drives one output, the splash stays on the other until Plymouth quits).

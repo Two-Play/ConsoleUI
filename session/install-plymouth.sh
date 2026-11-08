@@ -67,6 +67,17 @@ install -d "$dest"
 install -m644 "$root"/session/plymouth/consoleui/* "$dest"/
 echo "Installed the theme to $dest (previous theme: $(cat "$state" 2>/dev/null || echo unknown))."
 
+# The firmware's own logo, so the splash can fade from it into ours (run again after a firmware update)
+offsets="$(python3 "$root/session/plymouth/firmware-logo.py" "$dest" 2>/dev/null || true)"
+if [ -n "$offsets" ]; then
+    x="${offsets% *}"
+    y="${offsets#* }"
+    sed -i "s/^FIRMWARE_X = -1; FIRMWARE_Y = -1;\$/FIRMWARE_X = $x; FIRMWARE_Y = $y;/" "$dest/consoleui.script"
+    echo "The splash fades from the firmware's logo (at $x,$y)."
+else
+    echo "No firmware logo found (BIOS or logo off); the splash fades in from black."
+fi
+
 remove_handover
 if [ -e /usr/lib/systemd/system/sddm.service ] || [ -e /etc/systemd/system/sddm.service ]; then
     install -d "${handover%/*}"

@@ -108,7 +108,8 @@ Console session (see `docs/spike-gamescope.md`; gamescope runs in Steam mode `-e
 ```bash
 session/consoleui-nested   # simulate the console session in a desktop window (nested gamescope -e)
 sudo session/install.sh   # after `cargo build --release`; installs to /usr/local/bin + wayland-sessions
-sudo session/install-plymouth.sh   # boot splash (Plymouth script theme + SDDM handover, rebuilds the initramfs; --restore)
+sudo session/install-plymouth.sh   # boot splash (Plymouth script theme fading from the firmware logo + SDDM handover,
+                                  # rebuilds the initramfs; --restore)
 python3 session/plymouth/generate.py   # re-render the splash images (Pillow, Noto Sans) after changing its look
 ```
 

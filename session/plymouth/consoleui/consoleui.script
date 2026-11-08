@@ -2,11 +2,19 @@
 # power-on. Same scale factor, layout and timings as boot.slint, so the handover to the shell does
 # not show: the logo, a glow pulsing every 900 ms, three dots fading in turn every 700 ms.
 # The images come from session/plymouth/generate.py at twice the 1920x1080 reference size.
+#
+# It starts black, like the screen the firmware leaves, and fades in. When the firmware showed a
+# logo, install-plymouth.sh copies it to firmware.png (firmware-logo.py) and sets its position
+# below; the splash keeps it in place for a moment and fades it out before its own logo fades in.
+FIRMWARE_X = -1; FIRMWARE_Y = -1;
 
 # Theme.base #06070c
 BASE_R = 6 / 255; BASE_G = 7 / 255; BASE_B = 12 / 255;
-Window.SetBackgroundTopColor(BASE_R, BASE_G, BASE_B);
-Window.SetBackgroundBottomColor(BASE_R, BASE_G, BASE_B);
+fun set_background(level) {
+    Window.SetBackgroundTopColor(level * global.BASE_R, level * global.BASE_G, level * global.BASE_B);
+    Window.SetBackgroundBottomColor(level * global.BASE_R, level * global.BASE_G, level * global.BASE_B);
+}
+set_background(0);
 
 W = Window.GetWidth();
 H = Window.GetHeight();
@@ -15,6 +23,23 @@ Y0 = Window.GetY();
 # main.slint: s = max(0.4, min(width / 1920, height / 1080))
 s = Math.Max(0.4, Math.Min(W / 1920, H / 1080));
 FPS = 50;  # the script plugin calls the refresh function 50 times a second
+
+# Firmware logo: where the firmware drew it, at the firmware's pixel size. The firmware centers it
+# horizontally, which gives its screen width; its screen is taken to have the same shape as this one.
+FIRMWARE_HOLD = 0.4;   # seconds unchanged
+FIRMWARE_FADE = 0.6;   # then fading out
+if (FIRMWARE_X >= 0) {
+    firmware_image = Image("firmware.png");
+    firmware_scale = W / (2 * FIRMWARE_X + firmware_image.GetWidth());
+    if (Math.Abs(firmware_scale - 1) > 0.01)
+        firmware_image = firmware_image.Scale(Math.Int(firmware_image.GetWidth() * firmware_scale + 0.5), Math.Int(firmware_image.GetHeight() * firmware_scale + 0.5));
+    firmware = Sprite(firmware_image);
+    firmware.SetPosition(X0 + FIRMWARE_X * firmware_scale, Y0 + FIRMWARE_Y * firmware_scale, 5);
+    intro_start = FIRMWARE_HOLD + FIRMWARE_FADE - 0.1;
+} else {
+    intro_start = 0.15;
+}
+INTRO = 0.8;   # seconds of fading in
 
 fun load(file, factor) {
     image = Image(file);
@@ -29,6 +54,7 @@ fun text_image(text, size, alpha) {
 # Glow behind the logo: a 900 px box in the middle of the screen
 glow_image = load("glow.png", s);
 glow = Sprite(glow_image);
+glow.SetOpacity(0);
 glow.SetPosition(X0 + (W - glow_image.GetWidth()) / 2, Y0 + (H - glow_image.GetHeight()) / 2, 0);
 
 # Logo: centered, 20 px above the middle
@@ -36,6 +62,7 @@ logo_image = load("logo.png", s / 2);
 logo_y = Y0 + (H - logo_image.GetHeight()) / 2 - 20 * s;
 logo = Sprite(logo_image);
 logo.SetPosition(X0 + (W - logo_image.GetWidth()) / 2, logo_y, 1);
+logo.SetOpacity(0);
 below_logo = logo_y + logo_image.GetHeight();
 
 # Three dots, 16 px apart, 48 px below the logo
@@ -45,18 +72,39 @@ dot_gap = 16 * s;
 dots_x = X0 + (W - 3 * dot_size - 2 * dot_gap) / 2;
 for (i = 0; i < 3; i++) {
     dots[i] = Sprite(dot_image);
+    dots[i].SetOpacity(0);
     dots[i].SetPosition(dots_x + i * (dot_size + dot_gap), below_logo + 48 * s, 1);
 }
 
+fun clamp01(value) {
+    return Math.Min(1, Math.Max(0, value));
+}
+
 ticks = 0;
+intro = 0;   # 0 to 1 while fading in
 fun refresh() {
     global.ticks++;
     t = global.ticks / global.FPS;
+    if (global.FIRMWARE_X >= 0 && t <= global.FIRMWARE_HOLD + global.FIRMWARE_FADE + 0.1)
+        global.firmware.SetOpacity(1 - clamp01((t - global.FIRMWARE_HOLD) / global.FIRMWARE_FADE));
+    if (global.intro < 1) {
+        # ease-out cubic
+        rest = 1 - clamp01((t - global.intro_start) / global.INTRO);
+        global.intro = 1 - rest * rest * rest;
+        set_background(global.intro);
+        global.logo.SetOpacity(global.intro);
+        if (global.updating) {
+            global.title.SetOpacity(global.intro);
+            global.hint.SetOpacity(global.intro);
+            global.track.SetOpacity(global.intro);
+            global.fill.SetOpacity(global.fill_shown * global.intro);
+        }
+    }
     wave = (Math.Sin(t / 0.9 * 2 * Math.Pi) + 1) / 2;
-    global.glow.SetOpacity(0.45 + 0.55 * wave);
+    global.glow.SetOpacity(global.intro * (0.45 + 0.55 * wave));
     for (i = 0; i < 3; i++) {
         phase = (Math.Sin((t / 0.7 - i * 0.18) * 2 * Math.Pi) + 1) / 2;
-        global.dots[i].SetOpacity(global.dots_visible * (0.25 + 0.75 * phase));
+        global.dots[i].SetOpacity(global.intro * global.dots_visible * (0.25 + 0.75 * phase));
     }
 }
 dots_visible = 1;
@@ -158,11 +206,12 @@ Plymouth.SetDisplayNormalFunction(hide_dialog);
 fun update_progress(percent) {
     width = Math.Int(global.track_image.GetWidth() * Math.Min(100, Math.Max(0, percent)) / 100);
     if (width < 1) {
-        global.fill.SetOpacity(0);
+        global.fill_shown = 0;
     } else {
         global.fill.SetImage(global.fill_source.Scale(width, global.track_image.GetHeight()));
-        global.fill.SetOpacity(1);
+        global.fill_shown = 1;
     }
+    global.fill.SetOpacity(global.fill_shown * global.intro);
 }
 
 # Offline updates and upgrades: a title and a progress bar in place of the dots
@@ -174,14 +223,17 @@ if (updating) {
     else title_text = "Resetting the system...";
     title_image = text_image(title_text, 28, 1);
     title = Sprite(title_image);
+    title.SetOpacity(0);
     title.SetPosition(X0 + (W - title_image.GetWidth()) / 2, below_logo + 40 * s, 1);
     hint_image = text_image("Do not turn off your console", 22, 0.6);
     hint = Sprite(hint_image);
+    hint.SetOpacity(0);
     hint.SetPosition(X0 + (W - hint_image.GetWidth()) / 2, below_logo + 40 * s + title_image.GetHeight() + 12 * s, 1);
     track_image = load("progress-track.png", s / 2);
     track_x = X0 + (W - track_image.GetWidth()) / 2;
     track_y = below_logo + 40 * s + title_image.GetHeight() + hint_image.GetHeight() + 40 * s;
     track = Sprite(track_image);
+    track.SetOpacity(0);
     track.SetPosition(track_x, track_y, 1);
     fill_source = Image("progress-fill.png");
     fill = Sprite();
