@@ -206,6 +206,38 @@ found by its desktop entry (`X-ConsoleUI-Plugin`), started only once the user tu
 | 9.5 | Plugins in the store (8.9), with what they can before the install | 3 |
 | 9.6 | **Done.** More extension points: a plugin's own settings page (`Settings()`, ≡ in the plugin list), pictures for games without a cover (`Artwork`, asked once per game, e.g. for SteamGridDB), theme music before YouTube (`Theme`); background work and toasts already go through the shell's service (documented). Checked with a probe plugin made from the template | 8 |
 
+## Epic 10 – Game manager (Windows games without Steam)
+
+**Goal:** install, set up and run Windows games from outside Steam with the controller on the TV: setup programs
+from a disc or download, GOG and Epic accounts. Lutris, Heroic, Bottles and Faugus do this on the desktop with a
+mouse; Steam's Big Picture only starts such games and Playnite's fullscreen mode is Windows-only. Linux has no
+controller-first launcher that also installs and configures them.
+
+**Approach:** an app on the SDK (Epic 8) like the store, `crates/games` (binary `consoleui-games`): UI-free state in
+`page.rs`, a backend thread, external programs instead of linked libraries. Proton outside Steam through
+**umu-launcher** (`umu-run`, also used by Lutris and Heroic; brings the per-game fixes of `umu-protonfixes`), store
+accounts through **gogdl** (GOG) and **legendary** (Epic) as programs. Lutris' YAML installer scripts are not the
+base, they are too large a surface for the start (10.10). Installed games reach the shell's library as desktop
+entries with the `X-ConsoleUI` keys (8.6), so they start, quit and count in the history like every other entry; the
+Lutris plugin (9.1) stays for games the user keeps in Lutris.
+
+| ID | Story | SP |
+|---|---|---|
+| 10.1 | **Done.** Spike (`docs/spike-umu.md`): `umu-run` under our compositor runs a D3D11 test program (`dev/winprobe`) through DXVK, in the shell's scope, in front, behind the quick menu without input, and quitting ends every process. Fixed on the way: a TTY session's ambient `CAP_WAKE_ALARM` made bubblewrap refuse (umu and Flatpak), the compositor and the shell now drop it. Decided: `crates/games` on the host, not a Flatpak; the desktop entry runs `consoleui-games --run <id>`, which execs `umu-run`. Open: nested gamescope and the gamescope session (host) | 3 |
+| 10.2 | Model in `consoleui-core` (`games.rs`): `GameInstall` per game (prefix, executable, arguments, working directory, Proton version, environment, umu `GAMEID` for the fixes), stored per game under `$XDG_DATA_HOME/consoleui/games/`, the launch plan for `umu-run` and the desktop entry written for the library (`Exec=consoleui-games --run <id>`). Unit tests | 5 |
+| 10.3 | Install from a setup program: choose the `.exe` with the file browser parts of `crates/files`, create the prefix, run the installer (its dialogs with the gamepad mouse, 7.15), then pick the game's executable from the found candidates (uninstallers, redistributables and helpers ranked last), name it, cover through the `Artwork` plugins (9.6). The game appears in the library (`RefreshLibrary`) | 8 |
+| 10.4 | Settings per game (≡ on the entry or in the app): Proton version, DXVK/VKD3D on/off, environment variables, launch arguments, the gamescope options of 7.10, run a tool in the prefix (`winecfg`, another `.exe`), uninstall with confirmation (prefix, entry, files). Quitting asks the window to close first (WM_DELETE_WINDOW) and stops the scope only after a few seconds, so the game can save | 5 |
+| 10.5 | Proton versions: list the installed ones, download and update UMU-Proton and GE-Proton with progress, remove the ones no game uses | 5 |
+| 10.6 | GOG account through `gogdl`: sign in without a mouse (login page in a browser window with the on-screen keyboard, or the code on a phone), owned games with covers, install with progress, updates, cloud saves later | 8 |
+| 10.7 | Epic account through `legendary`: like 10.6 (sign in, owned games, install, updates); EA app and Ubisoft Connect inside a prefix stay out | 8 |
+| 10.8 | Taking over existing games: import prefixes and games from Lutris and Heroic (or point to the Lutris plugin), and from a folder with an already installed game (no setup program) | 3 |
+| 10.9 | Downloads and installs in the background: the app may close, progress in the quick menu and as toasts through the shell's service (8.7), resumes after a reboot | 5 |
+| 10.10 | Optional: run a subset of Lutris' installer scripts (`wine`/`umu` runner, `extract`, `move`, `execute`) for games that need more steps | 13 |
+
+**Risks:** anti-cheat refuses Proton in many online games (show it, ProtonDB/areweanticheatyet as a hint); a store
+login needs a browser; installers' own windows are made for a mouse (7.15 must hold up); gogdl, legendary and
+umu-launcher change without notice, so their output is parsed in `consoleui-core` with tests against saved samples.
+
 ## Sprint plan (proposal)
 
 | Sprint | Goal | Stories |
@@ -1023,3 +1055,20 @@ Branch `agent/compositor-blur`, on top of the UI feedback round (6.10).
   With SeaBIOS (the VM's default) the BIOS, iPXE and GRUB print text first; a real PC with UEFI does not.
 - **Not tested:** real hardware and 4K; GDM (does its own handover) and other display managers; a second monitor
   (the compositor drives one output, the splash stays on the other until Plymouth quits).
+
+### Proton outside Steam (done: 10.1)
+
+- **Spike:** `docs/spike-umu.md`. umu-launcher 1.4.4 with UMU-Proton 10.0-4 runs the stand-in game
+  `dev/winprobe/probe.exe` (D3D11, logs adapter, frames, keys and XInput) on the host's GPU and in the VM on lavapipe
+  under `consoleui-compositor --drm`: started by the shell in its scope, mapped to the app, in front, no keys while
+  the quick menu is open, and "Quit" leaves no Wine or runtime process behind.
+- **Ambient capabilities:** a session on a TTY hands `CAP_WAKE_ALARM` to every process as ambient capability, and
+  bubblewrap then refuses to start ("Unexpected capabilities but not setuid"), umu's and the system's (Flatpak) alike.
+  The compositor and the shell now clear their ambient set at start; the same launch works afterwards.
+- **Decided:** `crates/games` (`consoleui-games`) on the host, installed with the shell, not as a Flatpak (it needs the
+  GPU, all devices, 32-bit libraries, bubblewrap and any folder). A game's desktop entry runs
+  `consoleui-games --run <id>`, which execs `umu-run`, so the shell's scope tracks it.
+- **Watch out (10.2):** a `GAMEID` from the umu database sets `SteamAppId` to that game's Steam ID, which
+  `steam::running_games()` and `steam::stop_game()` would take for the Steam game.
+- **Not tested:** nested gamescope around umu (the VM's gamescope fails even with `true`), the gamescope session,
+  controllers in the game, real games and installers, umu's own downloads.

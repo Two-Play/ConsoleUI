@@ -73,6 +73,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("{USAGE}");
         return Ok(());
     }
+    clear_ambient_capabilities();
 
     // The language decides the desktop entry names the loader reads, so it is set first. It comes
     // from the settings of the profile chosen last (or given with `--profile`, Story 5.7).
@@ -510,6 +511,17 @@ impl ReadyTasks {
 }
 
 /// Approximate duration of an `--actions` script (start delay, waits, one tick per step)
+/// A session started on a TTY hands its processes the ambient capability `CAP_WAKE_ALARM`; every app we
+/// launch would inherit it, and bubblewrap then refuses to run, so no Flatpak app and no Proton game through
+/// umu-launcher would start (Story 10.1). The compositor drops it too, but the shell also runs without it.
+fn clear_ambient_capabilities() {
+    // SAFETY: plain prctl call without pointers
+    let result = unsafe { libc::prctl(libc::PR_CAP_AMBIENT, libc::PR_CAP_AMBIENT_CLEAR_ALL, 0, 0, 0) };
+    if result != 0 {
+        eprintln!("Could not clear the ambient capabilities: {}", std::io::Error::last_os_error());
+    }
+}
+
 fn script_duration(steps: &[ScriptStep]) -> Duration {
     if steps.is_empty() {
         return Duration::ZERO;

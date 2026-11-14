@@ -34,6 +34,8 @@ PACKAGES=(
     xprop xdpyinfo wayland-utils pipewire-utils
     # Flatpak packaging of apps (Story 8.5)
     flatpak-builder
+    # Windows test program for the game manager (Epic 10, dev/winprobe)
+    mingw64-gcc
 )
 
 exists() { podman container exists "$NAME" 2>/dev/null; }

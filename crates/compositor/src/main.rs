@@ -62,6 +62,7 @@ fn main() {
         .with_writer(stderr)
         .with_ansi(std::io::IsTerminal::is_terminal(&stderr()))
         .init();
+    clear_ambient_capabilities();
 
     let nested = std::env::var_os("WAYLAND_DISPLAY").is_some() || std::env::var_os("DISPLAY").is_some();
     let mut options = match Options::parse(std::env::args().skip(1), nested) {
@@ -121,5 +122,17 @@ impl State {
             shell.terminate();
         }
         self.exit_code
+    }
+}
+
+/// A session started on a TTY (`systemd-run -p TTYPath=…`, as `dev/vm.sh seat` does) hands its processes the
+/// ambient capability `CAP_WAKE_ALARM`. Every program we start would inherit it, and bubblewrap then refuses
+/// to run ("Unexpected capabilities but not setuid"): no Flatpak app and no Proton game through umu-launcher
+/// (Story 10.1). Nothing here needs it, so drop the whole ambient set for us and our children.
+fn clear_ambient_capabilities() {
+    // SAFETY: plain prctl call without pointers
+    let result = unsafe { libc::prctl(libc::PR_CAP_AMBIENT, libc::PR_CAP_AMBIENT_CLEAR_ALL, 0, 0, 0) };
+    if result != 0 {
+        tracing::warn!("could not clear the ambient capabilities: {}", std::io::Error::last_os_error());
     }
 }
