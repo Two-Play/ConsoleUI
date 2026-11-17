@@ -44,8 +44,8 @@ guest found them on the shared checkout; the prefix stayed on the guest's disk.
    `umu-default` gives `default`/`0` (no number, so `ownership` and `steam::running_games` ignore it), but an ID
    from the umu database like `umu-1091500` gives `SteamAppId=1091500`, the Steam ID of that game. The shell
    finds the game's windows through its scope first, but `steam::running_games()` and `steam::stop_game()` would
-   take such a process for the Steam game with that ID. Harmless as long as the same game is not installed in
-   Steam too; keep it in mind for 10.2.
+   take such a process for the Steam game with that ID. Fixed in 10.2: processes with `UMU_ID` are
+   skipped there and in `ownership`.
 6. **Where umu comes from.** Not in Fedora's own repositories (only third-party `terra`); Lutris downloads the
    upstream zipapp into its runtime folder, Heroic's Flatpak bundles it. umu downloads the runtime (`steamrt3`,
    about 800 MB) and, without `PROTONPATH`, the newest UMU-Proton (about 1.4 GB) by itself;

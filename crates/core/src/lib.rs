@@ -8,6 +8,7 @@ pub mod desktop;
 pub mod dialog;
 pub mod fakenet;
 pub mod game_options;
+pub mod games;
 mod grid;
 mod history;
 pub mod i18n;

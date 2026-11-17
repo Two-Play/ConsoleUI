@@ -55,7 +55,12 @@ fn parent_from_stat(stat: &str) -> Option<u32> {
     after_name.split_whitespace().nth(1)?.parse().ok().filter(|&p| p > 1)
 }
 
+/// umu-launcher (Proton outside Steam, Epic 10) sets `SteamAppId` too, to the Steam ID of the game it found
+/// in its database; such a process (it has `UMU_ID`) is not that Steam game.
 fn steam_app_id(environ: &[u8]) -> Option<u32> {
+    if environ.split(|&b| b == 0).any(|var| var.starts_with(b"UMU_ID=")) {
+        return None;
+    }
     environ
         .split(|&b| b == 0)
         .find_map(|var| var.strip_prefix(b"SteamAppId="))
@@ -137,6 +142,7 @@ mod tests {
         assert_eq!(parent_from_stat("1 (systemd) S 0 1 1"), None);
         assert_eq!(steam_app_id(b"A=1\0SteamAppId=730\0B=2\0"), Some(730));
         assert_eq!(steam_app_id(b"SteamAppId=0\0"), None);
+        assert_eq!(steam_app_id(b"SteamAppId=1091500\0UMU_ID=umu-1091500\0"), None);
     }
 
     #[test]

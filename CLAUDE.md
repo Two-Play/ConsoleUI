@@ -286,6 +286,10 @@ Cargo workspace (edition 2024, `default-members` = the shell):
   `WINEPREFIX`. It opens a borderless window the size of the screen: test it in the VM, not on the user's desktop.
   The compositor and the shell clear their ambient capabilities at start, otherwise bubblewrap (umu, Flatpak)
   refuses to run in a session started on a TTY.
+  The model is `consoleui_core::games` (Story 10.2): `GameInstall` in `$XDG_DATA_HOME/consoleui/games/<id>/game.json`
+  (prefix in `prefix/` next to it), `launch_plan` (env + `umu-run`), `desktop_entry` (`consoleui-game-<id>.desktop`
+  with `Exec=consoleui-games --run <id>` and the `X-ConsoleUI` keys), `find_umu_run`, `installed_protons`. umu sets
+  `SteamAppId` from `GAMEID`; `steam` and `ownership` ignore processes that have `UMU_ID`.
 - `crates/sdk` (`consoleui-sdk`, Epic 8): the one public API of an app, on top of `ui` and `app`; `Controls` merges
   controller and keyboard input, `build::compile` is the app's `build.rs`. `templates/app` is the project template,
   `dev/new-app.sh <name> [dir]` creates an app from it (path dependency on this checkout). Rules: `docs/sdk.md`.

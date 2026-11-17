@@ -224,7 +224,7 @@ Lutris plugin (9.1) stays for games the user keeps in Lutris.
 | ID | Story | SP |
 |---|---|---|
 | 10.1 | **Done.** Spike (`docs/spike-umu.md`): `umu-run` under our compositor runs a D3D11 test program (`dev/winprobe`) through DXVK, in the shell's scope, in front, behind the quick menu without input, and quitting ends every process. Fixed on the way: a TTY session's ambient `CAP_WAKE_ALARM` made bubblewrap refuse (umu and Flatpak), the compositor and the shell now drop it. Decided: `crates/games` on the host, not a Flatpak; the desktop entry runs `consoleui-games --run <id>`, which execs `umu-run`. Open: nested gamescope and the gamescope session (host) | 3 |
-| 10.2 | Model in `consoleui-core` (`games.rs`): `GameInstall` per game (prefix, executable, arguments, working directory, Proton version, environment, umu `GAMEID` for the fixes), stored per game under `$XDG_DATA_HOME/consoleui/games/`, the launch plan for `umu-run` and the desktop entry written for the library (`Exec=consoleui-games --run <id>`). Unit tests | 5 |
+| 10.2 | **Done.** Model in `consoleui-core` (`games.rs`): `GameInstall` per game (executable, arguments, working directory, prefix, Proton: umu's choice, newest GE-Proton or an installed build, umu `GAMEID` and `STORE`, WineD3D instead of DXVK, environment, artwork) in `$XDG_DATA_HOME/consoleui/games/<id>/game.json`, IDs from titles, the launch plan for `umu-run`, the desktop entry (`consoleui-game-<id>.desktop`, `Exec=consoleui-games --run <id>`, read back by the shell's parser in a test), finding `umu-run` and the installed Proton builds. Processes with `UMU_ID` no longer count as the Steam game with the same `SteamAppId` | 5 |
 | 10.3 | Install from a setup program: choose the `.exe` with the file browser parts of `crates/files`, create the prefix, run the installer (its dialogs with the gamepad mouse, 7.15), then pick the game's executable from the found candidates (uninstallers, redistributables and helpers ranked last), name it, cover through the `Artwork` plugins (9.6). The game appears in the library (`RefreshLibrary`) | 8 |
 | 10.4 | Settings per game (≡ on the entry or in the app): Proton version, DXVK/VKD3D on/off, environment variables, launch arguments, the gamescope options of 7.10, run a tool in the prefix (`winecfg`, another `.exe`), uninstall with confirmation (prefix, entry, files). Quitting asks the window to close first (WM_DELETE_WINDOW) and stops the scope only after a few seconds, so the game can save | 5 |
 | 10.5 | Proton versions: list the installed ones, download and update UMU-Proton and GE-Proton with progress, remove the ones no game uses | 5 |
@@ -1068,7 +1068,8 @@ Branch `agent/compositor-blur`, on top of the UI feedback round (6.10).
 - **Decided:** `crates/games` (`consoleui-games`) on the host, installed with the shell, not as a Flatpak (it needs the
   GPU, all devices, 32-bit libraries, bubblewrap and any folder). A game's desktop entry runs
   `consoleui-games --run <id>`, which execs `umu-run`, so the shell's scope tracks it.
-- **Watch out (10.2):** a `GAMEID` from the umu database sets `SteamAppId` to that game's Steam ID, which
-  `steam::running_games()` and `steam::stop_game()` would take for the Steam game.
+- **Watch out (10.2, fixed there):** a `GAMEID` from the umu database sets `SteamAppId` to that game's Steam ID,
+  which `steam::running_games()` and `steam::stop_game()` took for the Steam game; processes with `UMU_ID` are
+  skipped now.
 - **Not tested:** nested gamescope around umu (the VM's gamescope fails even with `true`), the gamescope session,
   controllers in the game, real games and installers, umu's own downloads.
