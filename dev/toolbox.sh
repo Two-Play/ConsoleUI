@@ -36,6 +36,8 @@ PACKAGES=(
     flatpak-builder
     # Windows test program for the game manager (Epic 10, dev/winprobe)
     mingw64-gcc
+    # Web view spike (Epic 11, dev/webprobe)
+    webkitgtk6.0-devel chromium
 )
 
 exists() { podman container exists "$NAME" 2>/dev/null; }

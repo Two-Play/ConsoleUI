@@ -245,16 +245,18 @@ pops up only when something opens a link (an app, a notification, a store login 
 closes it again, back to where the user was; a game behind it keeps running. A full browser with tabs, bookmarks and
 an address field, like the PS4's, may follow later (11.8).
 
-**Approach:** a process of its own, `consoleui-web <url>`, with a web engine (WebKitGTK 6 is installed here and
-speaks `text-input-v3`, so the shell's floating keyboard (typing into apps) works in web forms without extra work;
-WPE WebKit/cog and Chromium in app mode are the alternatives the spike compares). The page fills the screen without
-any browser chrome; the controls (title, loading, back, reload, close) are drawn by the shell in its overlay window
-with the design system, and the stick moves a pointer like the gamepad mouse (7.15). It is the URL handler only in
+**Approach (decided in 11.1, `docs/spike-web.md`):** not a browser of our own and not a steered existing browser, but
+a thin frame of our own around the distribution's WebKitGTK 6: `crates/web`, binary `consoleui-web <url>`, a GTK 4
+window that is only the page. It speaks `text-input-v3`, so the shell's floating keyboard (typing into apps) works in
+web forms without extra work. The controls (title, loading, back, reload, close) are drawn by the shell in its overlay
+window with the design system and steer the web view over D-Bus (`org.consoleui.Web1`); popups, permission requests,
+certificate errors and downloads go through our code, and the stick moves a pointer like the gamepad mouse (7.15).
+Pages that need DRM (Widevine) are offered to Firefox or Google Chrome in kiosk mode. It is the URL handler only in
 the console session (`XDG_CURRENT_DESKTOP`, `<desktop>-mimeapps.list`), so the desktop keeps its own browser.
 
 | ID | Story | SP |
 |---|---|---|
-| 11.1 | Spike: WebKitGTK 6 (`webkit6` crate), WPE WebKit (cog) and Chromium `--app` under our compositor and in the gamescope session: start time, memory, video (no DRM, no Widevine), the on-screen keyboard in a form, controls over D-Bus from the shell. Result: engine, crate layout, how shell and web view talk | 3 |
+| 11.1 | **Done.** Spike: WebKitGTK 6 (`webkit6` crate), WPE WebKit (cog) and Chromium `--app` under our compositor and in the gamescope session: start time, memory, video (no DRM, no Widevine), the on-screen keyboard in a form, controls over D-Bus from the shell. Result: engine, crate layout, how shell and web view talk | 3 |
 | 11.2 | Link handler: `consoleui-web` takes http(s) links in the console session only (mimeapps for our desktop name, the portal's `OpenURI` follows it), and `OpenUrl` on `org.consoleui.Shell1` for apps; a link while the web view is open replaces the page | 3 |
 | 11.3 | The web view pops up over what is in front (the shell or a game), with an animation from the bottom; ○ closes it and the previous app gets the focus back; the game behind it keeps running | 5 |
 | 11.4 | Controller: the left stick moves a pointer that slows down over links and snaps lightly to them, ✕ clicks, the right stick scrolls, L2/R2 zoom, L1/R1 back and forward; text fields open the floating keyboard | 5 |
@@ -1102,3 +1104,17 @@ Branch `agent/compositor-blur`, on top of the UI feedback round (6.10).
   skipped now.
 - **Not tested:** nested gamescope around umu (the VM's gamescope fails even with `true`), the gamescope session,
   controllers in the game, real games and installers, umu's own downloads.
+
+### Web view for links (done: 11.1)
+
+- **Spike:** `docs/spike-web.md`. WebKitGTK 6 in a small frame of our own (`dev/webprobe`), Chromium `--app` and
+  Firefox `--kiosk` in the VM under `consoleui-compositor --drm`: all three run as apps without browser chrome, and the
+  shell's floating keyboard types into a web form in all three. WebKit starts fastest (0.5 s to content, Chromium
+  0.8 s, Firefox 1.5 s) and needs the least memory; WPE/cog is not packaged in Fedora.
+- **Decided:** our own frame around WebKitGTK 6 (`crates/web`, `consoleui-web`, steered over D-Bus, bar and dialogs
+  drawn by the shell), because popups, permissions, certificate errors and downloads then go through our code; an
+  existing browser in kiosk/app mode keeps its own mouse-made dialogs and windows and is steered through a debug port.
+  Pages with DRM go to Firefox or Google Chrome (Widevine), not to the web view.
+- **Watch out:** the floating keyboard's preview runs one or two letters behind the field (all engines, so the shell's
+  side); `webkit6` 0.6.1 needs `gtk4/v4_18` enabled by hand.
+- **Not tested:** the host GPU, the gamescope session, video, the controller (11.4), Widevine.

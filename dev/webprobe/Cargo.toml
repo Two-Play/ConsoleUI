@@ -1,0 +1,15 @@
+[package]
+name = "webprobe"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+publish = false
+description = "Spike 11.1: a bare WebKitGTK 6 web view, steered over stdin like the shell would"
+
+# Not part of the ConsoleUI workspace: a throwaway spike program (build with dev/webprobe/build.sh)
+[workspace]
+
+[dependencies]
+webkit6 = { version = "0.6.1", features = ["v2_52", "gtk_v4_18"] }
+# webkit6 0.6.1 needs gtk4 with v4_10 (gtk::Accessible) but does not enable it
+gtk4 = { version = "0.11", features = ["v4_18"] }

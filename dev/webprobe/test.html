@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ConsoleUI web probe</title>
+<style>
+  body { font-family: sans-serif; background: #10141c; color: #e8ecf4; margin: 4em; }
+  input { font-size: 1.4em; padding: .4em; width: 24em; }
+  a { color: #7fb2ff; }
+  .tall { height: 3000px; background: linear-gradient(#10141c, #2a3550); }
+</style>
+</head>
+<body>
+<h1>ConsoleUI web probe</h1>
+<p>A form, links and a long page for Spike 11.1.</p>
+<form onsubmit="document.getElementById('out').textContent = 'Submitted: ' + this.q.value; return false">
+  <input name="q" id="q" placeholder="Type here" autofocus>
+</form>
+<p id="out"></p>
+<p><a href="https://en.wikipedia.org/wiki/Linux">Wikipedia: Linux</a> ·
+   <a href="https://example.org" target="_blank">example.org in a new window</a></p>
+<div class="tall"></div>
+<p>End of the page</p>
+</body>
+</html>
