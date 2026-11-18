@@ -62,8 +62,8 @@ pub fn to_tile(loaded: &LoadedEntry, index: usize, today: NaiveDate) -> AppTile 
     }
 }
 
-/// Where an entry comes from, shown under its title in the library grid (not on the tiles). Names of
-/// programs, so they are not translated; dummy entries have none.
+/// Where an entry comes from, shown above the title on home and under it in the library grid (not on the
+/// tiles). Names of programs, so they are not translated; dummy entries have none.
 pub fn source_label(entry: &AppEntry) -> &'static str {
     match entry.id.split_once(':').map(|(source, _)| source) {
         Some("steam") => "Steam",

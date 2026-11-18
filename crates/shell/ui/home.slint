@@ -45,8 +45,9 @@ component InfoBlock {
         alignment: start;
         spacing: 8px * root.s;
 
+        // Where the entry comes from (STEAM, DESKTOP, ...); the kind for entries without a source
         Text {
-            text: root.tile.kind;
+            text: root.tile.source != "" ? root.tile.source.to-uppercase() : root.tile.kind;
             color: Theme.text-dim;
             font-size: 18px * root.s;
             font-weight: 600;
