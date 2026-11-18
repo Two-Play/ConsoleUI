@@ -892,6 +892,18 @@ msgstr "Animationsstil"
 msgid "Game artwork"
 msgstr "Spiel-Artwork"
 
+msgid "Tile shape"
+msgstr "Kachelform"
+
+msgid "Tall covers like on Steam, or square"
+msgstr "Hohe Cover wie bei Steam oder quadratisch"
+
+msgid "Portrait"
+msgstr "Hochformat"
+
+msgid "Square"
+msgstr "Quadratisch"
+
 msgid "Look of the animated background"
 msgstr "Aussehen des animierten Hintergrunds"
 

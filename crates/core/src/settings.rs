@@ -151,6 +151,27 @@ impl MusicChoice {
     }
 }
 
+/// Shape of the tiles on the home screen and in the library
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TileShape {
+    /// Tall 2:3 covers, like Steam's library
+    #[default]
+    Portrait,
+    Square,
+}
+
+impl TileShape {
+    pub const ALL: [TileShape; 2] = [Self::Portrait, Self::Square];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Portrait => tr("Portrait"),
+            Self::Square => tr("Square"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
@@ -165,6 +186,8 @@ pub struct Settings {
     pub palette: Palette,
     /// Load covers and logos (off: generated placeholders, nothing decoded)
     pub artwork: bool,
+    /// Shape of the tiles on the home screen and in the library
+    pub library_tiles: TileShape,
     /// Show messages of other programs and download news as toasts
     pub notifications: bool,
     pub sounds: bool,
@@ -198,6 +221,7 @@ impl Default for Settings {
             shader: Style::default(),
             palette: Palette::default(),
             artwork: true,
+            library_tiles: TileShape::default(),
             notifications: true,
             sounds: true,
             music: MusicChoice::default(),
@@ -228,6 +252,8 @@ pub enum Setting {
     AnimationColors,
     /// Load covers and logos
     Artwork,
+    /// Portrait or square tiles on the home screen and in the library
+    LibraryTiles,
     /// Toasts for messages of other programs and downloads
     Notifications,
     Sounds,
@@ -259,7 +285,7 @@ pub enum Setting {
 }
 
 impl Setting {
-    pub const ALL: [Setting; 22] = [
+    pub const ALL: [Setting; 23] = [
         Self::Accent,
         Self::Animations,
         Self::FocusGlow,
@@ -267,6 +293,7 @@ impl Setting {
         Self::AnimationStyle,
         Self::AnimationColors,
         Self::Artwork,
+        Self::LibraryTiles,
         Self::Notifications,
         Self::Sounds,
         Self::Music,
@@ -298,6 +325,7 @@ impl Setting {
             Self::AnimationStyle => tr("Animation style"),
             Self::AnimationColors => tr("Animation colors"),
             Self::Artwork => tr("Game artwork"),
+            Self::LibraryTiles => tr("Tile shape"),
             Self::Notifications => tr("Notifications"),
             Self::Sounds => tr("Sounds"),
             Self::Music => tr("Background music"),
@@ -325,6 +353,7 @@ impl Setting {
             Self::AnimationStyle => tr("Look of the animated background"),
             Self::AnimationColors => tr("Colors of the animated background"),
             Self::Artwork => tr("Load covers and logos; off saves memory"),
+            Self::LibraryTiles => tr("Tall covers like on Steam, or square"),
             Self::Notifications => tr("Toasts for messages from other programs and downloads"),
             Self::Sounds => tr("Sounds while navigating"),
             Self::Music => tr("Plays while the home screen is in front"),
@@ -438,6 +467,7 @@ impl Settings {
             Setting::AnimationStyle => self.shader.label(),
             Setting::AnimationColors => self.palette.label(),
             Setting::Artwork => on_off(self.artwork),
+            Setting::LibraryTiles => self.library_tiles.label(),
             Setting::Notifications => on_off(self.notifications),
             Setting::Sounds => on_off(self.sounds),
             Setting::Music => self.music.label(),
@@ -462,6 +492,7 @@ impl Settings {
             Setting::AnimationStyle => self.shader = cycle(&Style::ALL, self.shader, forward),
             Setting::AnimationColors => self.palette = cycle(&Palette::ALL, self.palette, forward),
             Setting::Artwork => self.artwork = !self.artwork,
+            Setting::LibraryTiles => self.library_tiles = cycle(&TileShape::ALL, self.library_tiles, forward),
             Setting::Notifications => self.notifications = !self.notifications,
             Setting::Sounds => self.sounds = !self.sounds,
             Setting::Vrr => self.vrr = !self.vrr,
@@ -587,6 +618,18 @@ mod tests {
         settings.change(Setting::Artwork, true);
         assert!(!settings.artwork);
         assert_eq!(settings.value_label(Setting::Artwork), "Off");
+    }
+
+    #[test]
+    fn library_tiles_are_portrait_by_default() {
+        let mut settings = Settings::default();
+        assert_eq!(settings.library_tiles, TileShape::Portrait);
+        assert_eq!(settings.value_label(Setting::LibraryTiles), "Portrait");
+        settings.change(Setting::LibraryTiles, true);
+        assert_eq!(settings.library_tiles, TileShape::Square);
+        settings.change(Setting::LibraryTiles, false);
+        assert_eq!(settings.library_tiles, TileShape::Portrait);
+        assert_eq!(Settings::parse(r#"{"library_tiles": "square"}"#).unwrap().library_tiles, TileShape::Square);
     }
 
     #[test]

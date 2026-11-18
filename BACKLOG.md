@@ -238,6 +238,35 @@ Lutris plugin (9.1) stays for games the user keeps in Lutris.
 login needs a browser; installers' own windows are made for a mouse (7.15 must hold up); gogdl, legendary and
 umu-launcher change without notice, so their output is parsed in `consoleui-core` with tests against saved samples.
 
+## Epic 11 – Web view for links (like the PS5)
+
+**Goal:** a link opens a web page that is made for the controller, without a browser tile: like on a PS5, the web view
+pops up only when something opens a link (an app, a notification, a store login such as 10.6, a help text) and ○
+closes it again, back to where the user was; a game behind it keeps running. A full browser with tabs, bookmarks and
+an address field, like the PS4's, may follow later (11.8).
+
+**Approach:** a process of its own, `consoleui-web <url>`, with a web engine (WebKitGTK 6 is installed here and
+speaks `text-input-v3`, so the shell's floating keyboard (typing into apps) works in web forms without extra work;
+WPE WebKit/cog and Chromium in app mode are the alternatives the spike compares). The page fills the screen without
+any browser chrome; the controls (title, loading, back, reload, close) are drawn by the shell in its overlay window
+with the design system, and the stick moves a pointer like the gamepad mouse (7.15). It is the URL handler only in
+the console session (`XDG_CURRENT_DESKTOP`, `<desktop>-mimeapps.list`), so the desktop keeps its own browser.
+
+| ID | Story | SP |
+|---|---|---|
+| 11.1 | Spike: WebKitGTK 6 (`webkit6` crate), WPE WebKit (cog) and Chromium `--app` under our compositor and in the gamescope session: start time, memory, video (no DRM, no Widevine), the on-screen keyboard in a form, controls over D-Bus from the shell. Result: engine, crate layout, how shell and web view talk | 3 |
+| 11.2 | Link handler: `consoleui-web` takes http(s) links in the console session only (mimeapps for our desktop name, the portal's `OpenURI` follows it), and `OpenUrl` on `org.consoleui.Shell1` for apps; a link while the web view is open replaces the page | 3 |
+| 11.3 | The web view pops up over what is in front (the shell or a game), with an animation from the bottom; ○ closes it and the previous app gets the focus back; the game behind it keeps running | 5 |
+| 11.4 | Controller: the left stick moves a pointer that slows down over links and snaps lightly to them, ✕ clicks, the right stick scrolls, L2/R2 zoom, L1/R1 back and forward; text fields open the floating keyboard | 5 |
+| 11.5 | The bar (≡ or △): page title and host with a lock or a warning, loading progress, back, reload, zoom, close; certificate errors and permission requests (camera, notifications) as the shell's dialog | 3 |
+| 11.6 | Data per profile (5.7): cookies, logins and cache separate for each profile, "Clear website data" in the settings; downloads are asked about and go to the Downloads folder | 3 |
+| 11.7 | Pages for the TV: a larger default zoom from the screen size, a readable font size, dark pages follow the shell's theme where the page offers it | 2 |
+| 11.8 | Later, like the PS4: the browser as an app of its own with a library tile, address field with search, tabs, bookmarks and history | 8 |
+
+**Risks:** streaming services need Widevine, which WebKit does not have (a hint, no workaround); a web engine is a
+large dependency to keep updated (the distribution's package, not a bundled one); pages built for the mouse (hover
+menus) need the pointer, not only focus moves.
+
 ## Sprint plan (proposal)
 
 | Sprint | Goal | Stories |

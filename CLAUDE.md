@@ -419,7 +419,10 @@ Cargo workspace (edition 2024, `default-members` = the shell):
     the shell applies the profile's history.
   - `ui/home.slint`, `ui/library.slint`, `ui/search.slint`: one component per `Screen`, all stacked in
     `main.slint` and cross-faded. Each exposes `focus-x/-y/-size` so the launch overlay starts on the right
-    tile. `library.slint` computes `columns` from the window width; Rust reads it for grid navigation.
+    tile. `library.slint` computes `columns` from the window width; Rust reads it for grid navigation. Its tiles
+    are 2:3 portrait like Steam's covers (`portrait`, setting "Tile shape" = `TileShape`, also the home row
+    through `TileRow.aspect`), or square; the launch
+    overlay and the compositor's zoom start from `tile-height`.
   - `ui/theme.slint`: `Theme.accent` and all durations are `in-out` and set from Rust (`Shell::apply_settings`),
     for the main window, the overlay and the notification window separately (globals are per component instance).
   - `ui/settings.slint`, `ui/boot.slint`, `ui/toast.slint`: settings page, boot screen, toast.

@@ -162,6 +162,9 @@ export component AppWindow inherits Window {
     out property <length> tile-x: root.screen == Screen.home ? home.focus-x : root.screen == Screen.library ? library.focus-x : search.focus-x;
     out property <length> tile-y: root.screen == Screen.home ? home.focus-y : root.screen == Screen.library ? library.focus-y : search.focus-y;
     out property <length> tile-size: root.screen == Screen.home ? home.focus-size : root.screen == Screen.library ? library.focus-size : search.focus-size;
+    // Home and library tiles may be portrait (setting "Tile shape"); search tiles are square
+    out property <length> tile-height: root.screen == Screen.home ? home.focus-height : root.screen == Screen.library ? library.focus-height : root.tile-size;
+    in property <bool> tiles-portrait: true;
 
     callback action(NavAction);
     // The pointer clicked a tab, a tile, a settings row, a dialog button or a quick menu card
@@ -429,6 +432,7 @@ export component AppWindow inherits Window {
             }
             tiles: root.home-tiles;
             focused: root.home-focused;
+            portrait: root.tiles-portrait;
             area: root.home-area;
             area-index: root.home-area-index;
             pulse: root.pulse && root.screen == Screen.home;
@@ -487,6 +491,7 @@ export component AppWindow inherits Window {
             filter-label: root.filter-label;
             sort-label: root.sort-label;
             style: root.controller-style;
+            portrait: root.tiles-portrait;
         }
 
         search := SearchPage {
@@ -575,11 +580,12 @@ export component AppWindow inherits Window {
             property <length> origin-x: root.tile-x;
             property <length> origin-y: root.tile-y;
             property <length> origin-size: root.tile-size;
+            property <length> origin-height: root.tile-height;
 
             x: self.origin-x;
             y: self.origin-y;
             width: self.origin-size;
-            height: self.origin-size;
+            height: self.origin-height;
             border-radius: self.origin-size * 0.12;
             background: root.launch-accent;
             opacity: 0;
@@ -602,6 +608,14 @@ export component AppWindow inherits Window {
                 alignment: end;
                 padding: root.margin;
                 spacing: 8px * s;
+                // Only on the full screen: the text appears once the zoom out of the tile is done and
+                // is gone before the screen shrinks back into it
+                opacity: root.launching ? 1 : 0;
+                animate opacity {
+                    delay: root.launching ? Theme.launch-duration : 0ms;
+                    duration: root.launching ? Theme.page-duration : 0ms;
+                    easing: ease-out-quad;
+                }
 
                 Text {
                     text: root.launch-title;

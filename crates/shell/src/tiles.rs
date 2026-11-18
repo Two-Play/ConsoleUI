@@ -46,6 +46,7 @@ pub fn to_tile(loaded: &LoadedEntry, index: usize, today: NaiveDate) -> AppTile 
         title: entry.title.as_str().into(),
         subtitle: subtitle(entry, today).into(),
         kind: kind_label(entry.kind).into(),
+        source: source_label(entry).into(),
         action_label: action_label(entry, false).into(),
         monogram: entry.monogram().into(),
         show_monogram: real_cover.is_none() && icon.is_none(),
@@ -58,6 +59,18 @@ pub fn to_tile(loaded: &LoadedEntry, index: usize, today: NaiveDate) -> AppTile 
         running: false,
         pinned: false,
         not_installed: !entry.installed(),
+    }
+}
+
+/// Where an entry comes from, shown under its title in the library grid (not on the tiles). Names of
+/// programs, so they are not translated; dummy entries have none.
+pub fn source_label(entry: &AppEntry) -> &'static str {
+    match entry.id.split_once(':').map(|(source, _)| source) {
+        Some("steam") => "Steam",
+        Some("xtux") => "xTux",
+        Some("desktop") => "Desktop",
+        Some("plugin") => "Plugin",
+        _ => "",
     }
 }
 
@@ -87,6 +100,7 @@ pub fn library_tile(count: usize) -> AppTile {
         title: tr("Library").into(),
         subtitle: trn("{n} game or app", "{n} games and apps", count, &[]).into(),
         kind: tr("ALL APPS").into(),
+        source: "".into(),
         action_label: tr("Open").into(),
         monogram: "".into(),
         show_monogram: false,

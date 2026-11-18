@@ -26,7 +26,7 @@ use consoleui_core::protocol::{
     BlurRegion, CompositorMessage, DisplayInfo, Rect, ShellMessage, Transition, WindowRole,
 };
 use consoleui_core::running::{MIN_HOLD, Phase, RunningApp, STEAM_HELP_AFTER};
-use consoleui_core::settings::{BackgroundChoice, GlyphChoice, Setting, Settings, ThemeMusic};
+use consoleui_core::settings::{BackgroundChoice, GlyphChoice, Setting, Settings, ThemeMusic, TileShape};
 use consoleui_core::sound::Sound;
 use consoleui_core::switcher::{Switcher, SwitcherApp, most_recent_first};
 use consoleui_core::system::{self, PowerAction};
@@ -1234,6 +1234,7 @@ impl Shell {
             theme.set_page_duration(durations[4]);
         };
         apply_theme(ui.global::<Theme>());
+        ui.set_tiles_portrait(self.settings.library_tiles == TileShape::Portrait);
         if let Some(gamescope) = &self.gamescope {
             apply_theme(gamescope.overlay.global::<Theme>());
             apply_theme(gamescope.notification.global::<Theme>());
@@ -2649,8 +2650,12 @@ impl Shell {
     /// The focused tile in output pixels (the main window is fullscreen in our compositor).
     fn tile_rect(&self, ui: &AppWindow) -> Option<Rect> {
         self.compositor.as_ref()?;
-        let size = ui.get_tile_size().round() as i32;
-        Some(Rect { x: ui.get_tile_x().round() as i32, y: ui.get_tile_y().round() as i32, width: size, height: size })
+        Some(Rect {
+            x: ui.get_tile_x().round() as i32,
+            y: ui.get_tile_y().round() as i32,
+            width: ui.get_tile_size().round() as i32,
+            height: ui.get_tile_height().round() as i32,
+        })
     }
 
     /// How our compositor animates the next front change (Story 7.7); `None` with animations off.

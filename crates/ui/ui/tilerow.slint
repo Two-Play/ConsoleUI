@@ -14,6 +14,8 @@ export component TileRow inherits Rectangle {
     in property <length> tile;
     in property <length> tile-focused;
     in property <length> gap;
+    // Tile height per width: 1 square, 1.5 for 2:3 portrait covers like Steam's
+    in property <float> aspect: 1;
     // Room left of the focused tile for this many tiles; it stays reserved at the first tile, so
     // the focused tile (and the info below it) always sits at the same place
     in property <int> lead: 0;
@@ -24,11 +26,12 @@ export component TileRow inherits Rectangle {
     out property <length> focus-x: root.x + root.lead-x;
     out property <length> focus-y: root.y;
     out property <length> focus-size: root.tile-focused;
+    out property <length> focus-height: root.tile-focused * root.aspect;
 
     // A tile was clicked
     callback clicked(int);
 
-    height: root.tile-focused;
+    height: root.tile-focused * root.aspect;
 
     for app[i] in root.tiles: Tile {
         property <bool> is-focused: root.active && i == root.focused;
@@ -40,9 +43,9 @@ export component TileRow inherits Rectangle {
         ring: root.ring;
         pressed: root.pulse && self.is-focused;
         width: self.size;
-        height: self.size;
+        height: self.size * root.aspect;
         x: root.lead-x + (i - root.focused) * (root.tile + root.gap) + (i > root.focused && root.active ? root.tile-focused - root.tile : 0px) + (self.base - self.size) / 2;
-        y: (self.base - self.size) / 2;
+        y: (self.base - self.size) * root.aspect / 2;
 
         animate x, y, width, height {
             duration: Theme.focus-duration;
@@ -54,7 +57,7 @@ export component TileRow inherits Rectangle {
         property <bool> is-focused: root.active && i == root.focused;
         x: root.lead-x + (i - root.focused) * (root.tile + root.gap) + (i > root.focused && root.active ? root.tile-focused - root.tile : 0px);
         width: self.is-focused ? root.tile-focused : root.tile;
-        height: self.width;
+        height: self.width * root.aspect;
         clicked => { root.clicked(i); }
     }
 }

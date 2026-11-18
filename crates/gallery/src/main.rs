@@ -20,6 +20,7 @@ fn tile(title: &str, monogram: &str, accent: Color) -> AppTile {
         title: title.into(),
         subtitle: "".into(),
         kind: "APP".into(),
+        source: "".into(),
         action_label: "Open".into(),
         monogram: monogram.into(),
         show_monogram: true,

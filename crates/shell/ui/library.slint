@@ -35,13 +35,17 @@ export component LibraryPage inherits Rectangle {
     in property <string> filter-label;
     in property <string> sort-label;
     in property <ControllerStyle> style;
+    // Tall 2:3 tiles like Steam's library covers (setting "Tile shape"); square otherwise
+    in property <bool> portrait: true;
 
     callback tile-clicked(int);
 
     property <length> margin: 110px * root.s;
-    property <length> tile: 180px * root.s;
+    property <length> tile: (root.portrait ? 172px : 180px) * root.s;
+    property <length> tile-height: root.portrait ? root.tile * 1.5 : root.tile;
     property <length> gap: 32px * root.s;
-    property <length> row-height: root.tile + 60px * root.s;
+    // Title and source below each tile
+    property <length> row-height: root.tile-height + 84px * root.s;
     property <length> grid-y: 250px * root.s;
     // Space above the first row so the glow and frame of the focused tile are not cut off
     property <length> grid-pad: 24px * root.s;
@@ -59,6 +63,7 @@ export component LibraryPage inherits Rectangle {
     out property <length> focus-x: root.margin + mod(root.focused, root.columns) * (root.tile + root.gap);
     out property <length> focus-y: root.grid-y + root.focused-row * root.row-height - root.scroll;
     out property <length> focus-size: root.tile;
+    out property <length> focus-height: root.tile-height;
 
     Text {
         x: root.margin;
@@ -119,11 +124,11 @@ export component LibraryPage inherits Rectangle {
             height: root.row-height;
 
             Tile {
-                property <length> size: root.tile * (parent.is-focused ? (root.pulse ? 0.94 : 1) : 0.9);
-                x: (root.tile - self.size) / 2;
-                y: (root.tile - self.size) / 2;
-                width: self.size;
-                height: self.size;
+                property <float> scale: parent.is-focused ? (root.pulse ? 0.94 : 1) : 0.9;
+                x: root.tile * (1 - self.scale) / 2;
+                y: root.tile-height * (1 - self.scale) / 2;
+                width: root.tile * self.scale;
+                height: root.tile-height * self.scale;
                 data: app;
                 focused: parent.is-focused;
                 ring: root.ring;
@@ -136,17 +141,30 @@ export component LibraryPage inherits Rectangle {
 
             TouchArea {
                 width: root.tile;
-                height: root.tile;
+                height: root.tile-height;
                 clicked => { root.tile-clicked(i); }
             }
 
             Text {
-                y: root.tile + 12px * root.s;
+                y: root.tile-height + 12px * root.s;
                 width: root.tile;
                 text: app.title;
                 color: parent.is-focused ? Theme.text : Theme.text-dim;
                 font-size: 18px * root.s;
                 font-weight: parent.is-focused ? 700 : 400;
+                overflow: elide;
+                horizontal-alignment: center;
+            }
+
+            // Where the entry comes from (Steam, xTux, ...); only here, not on the tiles
+            Text {
+                y: root.tile-height + 38px * root.s;
+                width: root.tile;
+                text: app.source;
+                color: Theme.text-dim;
+                opacity: 0.7;
+                font-size: 15px * root.s;
+                letter-spacing: 1px * root.s;
                 overflow: elide;
                 horizontal-alignment: center;
             }

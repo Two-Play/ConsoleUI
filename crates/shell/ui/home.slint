@@ -150,12 +150,15 @@ export component HomePage inherits Rectangle {
     // Where the selection is: 0 the tile row, 1 the buttons, 2 the tabs (drawn by the main window)
     in property <int> area;
     in property <int> area-index;
+    // Tall 2:3 tiles like Steam's covers (setting "Tile shape"); square otherwise
+    in property <bool> portrait: true;
 
     callback tile-clicked(int);
 
     out property <length> focus-x: row.focus-x;
     out property <length> focus-y: row.focus-y;
     out property <length> focus-size: row.focus-size;
+    out property <length> focus-height: row.focus-height;
 
     property <length> margin: 110px * root.s;
     property <AppTile> current: root.tiles[root.focused];
@@ -166,8 +169,10 @@ export component HomePage inherits Rectangle {
         tiles: root.tiles;
         focused: root.focused;
         pulse: root.pulse;
-        tile: 150px * root.s;
-        tile-focused: 230px * root.s;
+        // Portrait tiles are a little narrower, so the row and the info below still fit
+        tile: (root.portrait ? 130px : 150px) * root.s;
+        tile-focused: (root.portrait ? 200px : 230px) * root.s;
+        aspect: root.portrait ? 1.5 : 1;
         gap: 20px * root.s;
         // One tile stays visible to the left of the focused one.
         lead: 1;
